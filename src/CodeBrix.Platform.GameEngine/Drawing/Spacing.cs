@@ -1,0 +1,37 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace CodeBrix.Platform.GameEngine.Drawing; //was previously: Gondwana.Drawing;
+/// <summary>
+/// Represents dimensions in pixels when spacing Tilesheets
+/// </summary>
+/// <param name="Left">The number of pixels on the left boundary.</param>
+/// <param name="Top">The number of pixels on the top boundary.</param>
+/// <param name="Right">The number of pixels on the right boundary.</param>
+/// <param name="Bottom">The number of pixels on the bottom boundary.</param>
+public record struct Spacing(
+    [property: JsonPropertyName("left")] int Left,
+    [property: JsonPropertyName("top")] int Top,
+    [property: JsonPropertyName("right")] int Right,
+    [property: JsonPropertyName("bottom")] int Bottom)
+{
+    /// <summary>
+    /// Represents a spacing with no extension in any direction (all values are zero).
+    /// </summary>
+    public static readonly Spacing None = new(0, 0, 0, 0);
+
+    /// <summary>
+    /// Gets a value indicating whether this spacing has no extension in any direction.
+    /// Returns <see langword="true"/> if all spacing values (Left, Top, Right, Bottom) are zero;
+    /// otherwise, <see langword="false"/>.
+    /// </summary>
+    [JsonIgnore]
+    public readonly bool IsEmpty => Left == 0 && Top == 0 && Right == 0 && Bottom == 0;
+}

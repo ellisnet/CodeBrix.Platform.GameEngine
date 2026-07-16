@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENT-README.txt" />
+    <File Path="icon-codebrix-128.png" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path="THIRD-PARTY-NOTICES.txt" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/CodeBrix.Platform.GameEngine.Tests/CodeBrix.Platform.GameEngine.Tests.csproj" />
+    <Project Path="tests/CodeBrix.Platform.GameEngine.Host.Tests/CodeBrix.Platform.GameEngine.Host.Tests.csproj" />
+  </Folder>
+  <Project Path="src/CodeBrix.Platform.GameEngine/CodeBrix.Platform.GameEngine.csproj" />
+  <Project Path="src/CodeBrix.Platform.GameEngine.Host/CodeBrix.Platform.GameEngine.Host.csproj" />
+</Solution>

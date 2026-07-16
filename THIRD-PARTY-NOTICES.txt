@@ -1,0 +1,79 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+CodeBrix.Platform.GameEngine and CodeBrix.Platform.GameEngine.Host are a
+managed, cross-platform 2D / 2.5D game engine for .NET. The engine core is a
+vendored port of the open-source Gondwana game engine; the notice below records
+that incorporated source and reproduces its license as required.
+
+NuGet package dependencies (SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression,
+CodeBrix.Audio, CodeBrix.Json.Extensions, System.Text.Json, and the
+Microsoft.Extensions.* packages) are NOT listed here: they are referenced as
+packages and ship with their own LICENSE and third-party notices; their source
+is not incorporated into these assemblies.
+
+================================================================================
+
+1. Gondwana Game Engine
+   -------------------------------------------------------------------------
+   Project:    Gondwana
+   Author:     Michael Adkins (Hidden Worlds Games)
+   Source:     https://github.com/Isthimius/Gondwana
+   Version:    v2.5.0 (commit 9da4631d)
+   License:    MIT
+
+   The core library CodeBrix.Platform.GameEngine is a port of the Gondwana
+   engine's core project. Source files were copied and adapted: namespaces were
+   rewritten from "Gondwana.*" to "CodeBrix.Platform.GameEngine.*" (each ported
+   file carries a "//was previously: Gondwana.*" provenance comment on its
+   namespace line), the target framework was moved to net10.0, and the following
+   dependency substitutions were made during the port:
+
+     * Svg.Skia            -> CodeBrix.SkiaSvg (raw SKSvg / SKPicture surface)
+     * SharpZipLib         -> CodeBrix.Compression
+     * NAudio              -> CodeBrix.Audio
+     * Newtonsoft.Json     -> System.Text.Json + CodeBrix.Json.Extensions
+     * SkiaSharp 3.119.2   -> SkiaSharp 4.150.1 (SKFilterQuality -> SKSamplingOptions,
+                              SKPaint text API -> SKFont)
+     * SkiaSharp.HarfBuzz  -> removed (unused by the core)
+
+   The CodeBrix.Platform.GameEngine.Host library provides CodeBrix.Platform
+   integration (render-surface adapters, input adapters, dispatcher); it is
+   modeled on Gondwana's Gondwana.Avalonia host project but is fresh code
+   written against CodeBrix.Platform.
+
+   Gondwana is licensed under the MIT License, reproduced in full below:
+
+   -------------------------------------------------------------------------
+   MIT License
+
+   Copyright (c) 2025 Michael Adkins
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+   -------------------------------------------------------------------------
+
+================================================================================
+
+If you have any questions about any third-party code or services referenced
+here, or if you believe that any third-party code has been included in
+CodeBrix.Platform.GameEngine in error, please open a new issue at:
+https://github.com/ellisnet/CodeBrix.Platform.GameEngine/issues
+
+================================================================================
+
+END OF THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
