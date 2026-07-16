@@ -1,12 +1,13 @@
 using CodeBrix.Platform.UI.Hosting;
 using System;
+using System.Threading.Tasks;
 
 namespace ParticleTest;
 
 internal class Program
 {
     [STAThread]
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         App.InitializeLogging();
 
@@ -15,6 +16,6 @@ internal class Program
             .UseWindowsWin32()
             .Build();
 
-        host.Run();
+        await host.RunAsync();
     }
 }

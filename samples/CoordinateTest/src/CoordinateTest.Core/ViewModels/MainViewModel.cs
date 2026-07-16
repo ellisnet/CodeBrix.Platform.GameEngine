@@ -8,11 +8,20 @@ public class MainViewModel : SimpleViewModel
 {
     public MainViewModel()
     {
-        if (!IsDesignMode(true)) 
-        {
-            Debug.WriteLine("Main view model startup.");
-        }
+        if (IsDesignMode(true)) { return; } //Leave as the first line of constructor
+
+        Debug.WriteLine("Main view model startup.");
     }
 
+    #region | Bindable properties |
+
     public string Greeting => "Hello from CoordinateTest!";
+
+    #endregion
+
+    #region | Commands and their implementations |
+
+    //No commands yet...
+
+    #endregion
 }

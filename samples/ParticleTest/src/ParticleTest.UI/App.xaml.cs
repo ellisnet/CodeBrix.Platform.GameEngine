@@ -1,7 +1,9 @@
+using CodeBrix.Platform.Simple;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using ParticleTest.Helpers;
 using System;
 
 namespace ParticleTest;
@@ -13,6 +15,12 @@ public partial class App : Application
         //Set Open Sans as the default font for all text in the application
         global::CodeBrix.Platform.UI.FeatureConfiguration.Font.DefaultTextFontFamily =
             "ms-appx:///CodeBrix.Platform.Fonts.OpenSans/Fonts/OpenSans.ttf";
+
+        SimpleServiceResolver.CreateInstance(HostHelper.GetHost(), services =>
+        {
+            //Register the app's services here
+        });
+        SimpleViewModel.SetIsDesignMode(false);
 
         InitializeComponent();
     }
@@ -60,10 +68,7 @@ public partial class App : Application
         });
 
         global::CodeBrix.Platform.Extensions.LogExtensionPoint.AmbientLoggerFactory = factory;
-
-#if HAS_CODEBRIX
         global::CodeBrix.Platform.UI.Adapter.Microsoft.Extensions.Logging.LoggingAdapter.Initialize();
-#endif
 #endif
     }
 }
