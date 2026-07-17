@@ -1,9 +1,9 @@
 using CodeBrix.Platform.Simple;
-using CoordinateTest.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using CoordinateTest.Helpers;
 using System;
 
 namespace CoordinateTest;
@@ -15,11 +15,11 @@ public partial class App : Application
         //Set Open Sans as the default font for all text in the application
         global::CodeBrix.Platform.UI.FeatureConfiguration.Font.DefaultTextFontFamily =
             "ms-appx:///CodeBrix.Platform.Fonts.OpenSans/Fonts/OpenSans.ttf";
-            
+
         SimpleServiceResolver.CreateInstance(HostHelper.GetHost(), services =>
         {
-            //Register my custom services here
-            
+            //Register the app's services here
+
         });
         SimpleViewModel.SetIsDesignMode(false);
 

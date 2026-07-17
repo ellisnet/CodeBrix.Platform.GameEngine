@@ -106,7 +106,7 @@ public sealed class EngineInputSystems
     /// This property provides access to the touch input subsystem, which also implements
     /// <see cref="ITouchInput"/> for gesture recognizer consumption. Initialize it by assigning
     /// a platform adapter to <see cref="TouchAdapter"/>, or by calling
-    /// <c>engine.InitializeAvaloniaTouchAdapter(control)</c> from the <c>CodeBrix.Platform.GameEngine.Avalonia</c>
+    /// <c>engine.InitializeCodeBrixTouchAdapter(element)</c> from the <c>CodeBrix.Platform.GameEngine.Host</c>
     /// package.
     /// </remarks>
     public TouchEventPoller? TouchEventPoller => TouchEventPoller.Instance;

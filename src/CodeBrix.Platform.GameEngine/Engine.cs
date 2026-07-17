@@ -81,6 +81,10 @@ public sealed class Engine : IDisposable
 
     private Task? _cycleTask;
 
+    // Throttling state for logging unhandled exceptions raised from within an engine cycle.
+    private long _lastCycleExceptionLogTick;
+    private int _suppressedCycleExceptionCount;
+
     #endregion private fields
 
     #region events
@@ -441,7 +445,18 @@ public sealed class Engine : IDisposable
 
             while (Instance.IsRunning)
             {
-                Instance.Cycle();
+                try
+                {
+                    Instance.Cycle();
+                }
+                catch (Exception ex)
+                {
+                    // A single unhandled exception in a cycle must never permanently kill the engine
+                    // loop — that loop drives input polling, movement, timers and rendering, so losing
+                    // it silently bricks the running game (the faulted Task is never observed). Log
+                    // (throttled) and continue so the engine recovers from transient faults.
+                    Instance.HandleCycleException(ex);
+                }
                 Thread.Yield(); // optional
             }
         });
@@ -793,6 +808,30 @@ public sealed class Engine : IDisposable
     #endregion public properties
 
     #region private methods
+
+    /// <summary>
+    /// Handles an unhandled exception raised from within an engine cycle so a transient fault does
+    /// not permanently stop the engine loop. The exception is logged (throttled to at most once per
+    /// second, with a count of any suppressed in between) and the loop continues on the next cycle.
+    /// </summary>
+    /// <param name="ex">The exception thrown by <see cref="Cycle"/>.</param>
+    private void HandleCycleException(Exception ex)
+    {
+        _suppressedCycleExceptionCount++;
+
+        long now = HighResTimer.GetCurrentTick();
+        if (_lastCycleExceptionLogTick != 0 && HighResTimer.GetDuration(_lastCycleExceptionLogTick, now) < 1f)
+            return;
+
+        int suppressed = _suppressedCycleExceptionCount - 1;
+        _lastCycleExceptionLogTick = now;
+        _suppressedCycleExceptionCount = 0;
+
+        if (suppressed > 0)
+            Logger.LogError(ex, "Unhandled exception in engine cycle; engine continued ({SuppressedCount} further occurrences suppressed in the last second).", suppressed);
+        else
+            Logger.LogError(ex, "Unhandled exception in engine cycle; engine continued.");
+    }
 
     private void Cycle()
     {

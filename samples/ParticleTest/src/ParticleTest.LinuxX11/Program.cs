@@ -13,6 +13,7 @@ internal class Program
         var host = CodeBrixPlatformHostBuilder.Create()
             .App(() => new App())
             .UseLinuxX11()
+            .UseDirectSkiaCanvasMode()
             .Build();
 
         host.Run();

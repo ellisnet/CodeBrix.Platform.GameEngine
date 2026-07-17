@@ -3,16 +3,20 @@ using Microsoft.Extensions.Hosting;
 
 namespace CoordinateTest.Helpers;
 
+/// <summary>
+/// Supplies the generic-host builder that <see cref="SimpleServiceResolver"/> uses to build
+/// the application's dependency-injection container at startup.
+/// </summary>
 public static class HostHelper
 {
-    private class HostBuilderProvider : IHostBuilderProvider
+    private sealed class HostBuilderProvider : IHostBuilderProvider
     {
         public IHostBuilder CreateDefaultBuilder() => Host.CreateDefaultBuilder();
         public IHostBuilder CreateDefaultBuilder(string[] args) => Host.CreateDefaultBuilder(args);
     }
 
-    // ReSharper disable once InconsistentNaming
-    private static readonly HostBuilderProvider _hostBuilderProvider = new();
+    private static readonly HostBuilderProvider Provider = new();
 
-    public static IHostBuilderProvider GetHost() => _hostBuilderProvider;
+    /// <summary>Gets the shared host-builder provider.</summary>
+    public static IHostBuilderProvider GetHost() => Provider;
 }

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Keep a distinct RootNamespace (not the app's "Slider") so a transitive
+         CodeBrix.Platform reference does not generate a duplicate GlobalStaticResources. -->
+    <RootNamespace>Slider.Game</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The game logic owns the CodeBrix.Platform.GameEngine references; the app's .Core
+       project depends on this library rather than referencing the engine directly. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine.Host\CodeBrix.Platform.GameEngine.Host.csproj" />
+  </ItemGroup>
+</Project>

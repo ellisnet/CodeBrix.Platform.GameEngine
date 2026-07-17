@@ -19,6 +19,7 @@ public partial class App : Application
         SimpleServiceResolver.CreateInstance(HostHelper.GetHost(), services =>
         {
             //Register the app's services here
+
         });
         SimpleViewModel.SetIsDesignMode(false);
 

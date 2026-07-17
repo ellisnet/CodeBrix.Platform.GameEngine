@@ -12,4 +12,12 @@
     <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" Version="1.0.197.800" />
     <PackageReference Include="CodeBrix.Platform.Fonts.OpenSans.ApacheLicenseForever" Version="1.0.181.655" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\libs\CoordinateTest.Game\CoordinateTest.Game.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -38,7 +38,7 @@ is not incorporated into these assemblies.
 
    The CodeBrix.Platform.GameEngine.Host library provides CodeBrix.Platform
    integration (render-surface adapters, input adapters, dispatcher); it is
-   modeled on Gondwana's Gondwana.Avalonia host project but is fresh code
+   modeled on Gondwana's platform host projects but is fresh code
    written against CodeBrix.Platform.
 
    Gondwana is licensed under the MIT License, reproduced in full below:

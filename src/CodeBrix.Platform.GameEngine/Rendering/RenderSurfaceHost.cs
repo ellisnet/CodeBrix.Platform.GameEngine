@@ -269,6 +269,17 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     {
         RenderBackbufferBegin?.Invoke();
 
+        // The bound scene can become null transiently on the engine thread — e.g. while a consumer
+        // disposes one scene before binding its replacement, OnSourceDisposing clears _scene. There
+        // is nothing to render in that window, so clear the surface and bail out rather than
+        // dereferencing a null Scene, which would fault the entire engine cycle.
+        if (Scene is null)
+        {
+            Backbuffer.ClearRect(new Rectangle(0, 0, Backbuffer.Width, Backbuffer.Height));
+            RenderBackbufferEnd?.Invoke();
+            return;
+        }
+
         // For GL-thread-rendered backbuffers (GpuBackbuffer), the RefreshQueue mechanism is
         // unreliable: AddWorldRect and ClearRefreshQueue both post to the engine thread, so
         // enqueued rects are not present when CollectDirtyScreenArea runs, and posted clears
@@ -297,10 +308,18 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         }
         else
         {
-            // 1) Handle full scene refresh once (camera moved, zoom changed, etc.): clear and mark all layers as dirty.
-            //    This already clears the whole backbuffer and enqueues a full rect per layer.
+            // 1) Handle full scene refresh once (camera moved, zoom changed, window resized, etc.):
+            //    clear the ENTIRE backbuffer surface, then mark all layers dirty so they redraw.
             if (Scene.FullRefreshNeeded)
             {
+                // Clear the whole surface — NOT just the per-viewport dirty rects that
+                // PreclearScreenAreas handles below (those are clipped to Viewport.TargetRectPx).
+                // On a resize the viewport can shrink or move, and overlays (e.g. score labels)
+                // reposition; without a full-surface clear, the pre-resize pixels outside the new
+                // viewport survive as stale "ghosts" (frozen background, duplicated overlays).
+                // ClearRect also unions the whole surface into the present dirty rectangle.
+                Backbuffer.ClearRect(new Rectangle(0, 0, Backbuffer.Width, Backbuffer.Height));
+
                 // this will mark the Scene.IsDirty flag as true
                 EnqueueFullSceneRefresh();
             }
@@ -420,6 +439,13 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// </remarks>
     private void RenderToBackbufferGpuFull(long tick)
     {
+        // Guard against a transiently-null scene on the engine thread (see RenderToBackbuffer).
+        if (Scene is null)
+        {
+            Backbuffer.ClearRect(new Rectangle(0, 0, Backbuffer.Width, Backbuffer.Height));
+            return;
+        }
+
         // When there are no views at all, clear the whole surface and bail.
         // If there ARE views but no scene layers, we fall through so view-mode
         // DirectDrawings (e.g. a splash screen overlay) are still rendered.
@@ -677,7 +703,11 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
     private void OnSourceDisposing(Scene scene)
     {
-        _scene = null;
+        // Only clear the binding if the scene being disposed is the one we are currently bound to.
+        // A consumer may dispose an old, already-unbound scene after binding its replacement; that
+        // must not null out the live binding.
+        if (ReferenceEquals(scene, _scene))
+            _scene = null;
     }
 
     private void OnRenderSurfaceAdapterResized(RenderSurfaceAdapterResizedEventArgs args)

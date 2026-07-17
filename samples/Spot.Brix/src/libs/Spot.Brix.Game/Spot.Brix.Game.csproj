@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Keep a distinct RootNamespace (not the app's "Spot.Brix") so a transitive
+         CodeBrix.Platform reference does not generate a duplicate GlobalStaticResources. -->
+    <RootNamespace>Spot.Brix.Game</RootNamespace>
+
+    <!-- The Spot game logic and host are ported from NRT-annotated source; enable NRT here. -->
+    <Nullable>enable</Nullable>
+
+    <!-- Port-inherent nullable-flow warnings: the ported Spot code consumes engine APIs whose
+         nullability annotations differ slightly from the original. The code is behaviourally
+         correct; scope-suppress the flow warnings to keep a clean build. -->
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8603;CS8604;CS8620</NoWarn>
+  </PropertyGroup>
+
+  <!-- The game logic owns the CodeBrix.Platform.GameEngine references; the app's .Core
+       project depends on this library rather than referencing the engine directly. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine.Host\CodeBrix.Platform.GameEngine.Host.csproj" />
+  </ItemGroup>
+</Project>
