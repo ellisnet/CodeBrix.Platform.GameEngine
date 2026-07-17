@@ -41,11 +41,16 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
 
     private readonly UIElement _element;
 
-    // Key state table indexed by (int)VirtualKey.
+    // Key state table indexed by (int)VirtualKey: 0 = up, 1 = down, 2 = release pending
+    // (see OnKeyUp for the release+press coalescing).
     private readonly int[] _down = new int[512];
 
     // Modifier bits published lock-free.
     private int _modsBits;
+
+    // Deferred-release machinery (UI thread), see OnKeyUp.
+    private Microsoft.UI.Dispatching.DispatcherQueueHandler? _finalizeReleasesHandler;
+    private int _finalizeScheduled;
 
     private bool _isDisposed;
 
@@ -100,7 +105,46 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
     private void OnKeyUp(object sender, KeyRoutedEventArgs e)
     {
         if (_isDisposed) return;
-        SetDown((int)e.Key, false);
+
+        // Same-batch release+press coalescing (defense-in-depth against key-repeat schemes
+        // that deliver synthetic KeyUp/KeyDown pairs for held keys): instead of clearing the
+        // key immediately, mark the release pending and finalize it on a later dispatcher
+        // pass. A KeyDown for the same key arriving in the same input batch overwrites the
+        // pending mark, so a game thread polling IsDown never observes a phantom release of
+        // a key that is physically held. Real releases become visible one dispatcher hop
+        // (typically well under a millisecond) later.
+        var keyCode = (int)e.Key;
+        if ((uint)keyCode < (uint)_down.Length)
+            Volatile.Write(ref _down[keyCode], 2);
+
+        RecomputeMods();
+        ScheduleFinalizeReleases();
+    }
+
+    private void ScheduleFinalizeReleases()
+    {
+        if (Interlocked.CompareExchange(ref _finalizeScheduled, 1, 0) != 0) return;
+
+        _finalizeReleasesHandler ??= FinalizeReleases;
+        if (_element.DispatcherQueue is { } dispatcherQueue)
+        {
+            dispatcherQueue.TryEnqueue(_finalizeReleasesHandler);
+        }
+        else
+        {
+            // No dispatcher (headless usage): finalize immediately.
+            FinalizeReleases();
+        }
+    }
+
+    private void FinalizeReleases()
+    {
+        Interlocked.Exchange(ref _finalizeScheduled, 0);
+        for (var keyCode = 0; keyCode < _down.Length; keyCode++)
+        {
+            if (Volatile.Read(ref _down[keyCode]) == 2)
+                Volatile.Write(ref _down[keyCode], 0);
+        }
         RecomputeMods();
     }
 

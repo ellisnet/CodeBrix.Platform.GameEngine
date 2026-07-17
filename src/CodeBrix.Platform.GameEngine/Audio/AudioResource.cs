@@ -23,6 +23,7 @@ public class AudioResource : IDisposable
 {
     private readonly IWavePlayer outputDevice;
     private readonly WaveStream waveStream;
+    private readonly WaveFormat? rawPcmFormat;              // set only for LoadFromPcm resources
     private PanningSampleProvider? monoPanProvider;         // for mono sources only
     private StereoPanSampleProvider? stereoPanProvider;     // for stereo sources only
     private VolumeSampleProvider? volumeProvider;           // final stage
@@ -65,10 +66,12 @@ public class AudioResource : IDisposable
         string? filePathOrExt = null,
         byte[]? rawBytes = null,
         string? tempFilePath = null,
-        AssetsFileIdentifier? assetIdentifier = null)
+        AssetsFileIdentifier? assetIdentifier = null,
+        WaveFormat? rawPcmFormat = null)
     {
         Key = key;
         waveStream = audioStream;
+        this.rawPcmFormat = rawPcmFormat;
         outputDevice = new WaveOutEvent();
         outputDevice.Init(BuildAudioGraph(waveStream, volume, pan));
         outputDevice.PlaybackStopped += OnPlaybackStopped;
@@ -91,6 +94,14 @@ public class AudioResource : IDisposable
     {
         _pan = Math.Clamp(pan, -1f, 1f);
         ISampleProvider baseProvider = source.ToSampleProvider();
+
+        if (AudioSystem.IsInitialized && baseProvider.WaveFormat.SampleRate != AudioSystem.DeviceSampleRate)
+        {
+            // The app pinned the device rate (AudioSystem.Initialize) and this source's rate
+            // differs — CodeBrix.Audio has no resampler, so without this stage the voice
+            // initialization below would throw. Inert for apps that never pin.
+            baseProvider = new VariableRateSampleProvider(baseProvider, AudioSystem.DeviceSampleRate);
+        }
 
         int ch = baseProvider.WaveFormat.Channels;
         if (ch < 1)
@@ -350,6 +361,40 @@ public class AudioResource : IDisposable
     {
         _stopRequested = true;
         outputDevice.Stop();
+    }
+
+    /// <summary>
+    /// Creates a NEW, independent reader over this resource's in-memory source data, so
+    /// another voice (e.g. a <see cref="SoundChannel"/>) can play the clip without touching
+    /// this resource's own playback state.
+    /// </summary>
+    internal WaveStream CreateIndependentReader()
+    {
+        if (OriginalBytes is null)
+        {
+            throw new InvalidOperationException(
+                $"AudioResource '{Key}' has no in-memory source data, so it cannot be used as a {nameof(SoundChannel)} clip.");
+        }
+
+        if (rawPcmFormat is not null)
+        {
+            return new RawSourceWaveStream(new MemoryStream(OriginalBytes, writable: false), rawPcmFormat);
+        }
+
+        if (string.IsNullOrEmpty(SourceExtension))
+        {
+            throw new InvalidOperationException(
+                $"AudioResource '{Key}' has no source extension, so a reader cannot be selected for it.");
+        }
+
+        var (readerFactory, requiresFile) = GetReaderFactory(SourceExtension);
+        if (requiresFile)
+        {
+            throw new NotSupportedException(
+                $"The audio format '{SourceExtension}' requires a file-based reader and cannot be used as a {nameof(SoundChannel)} clip; load the clip as raw PCM ({nameof(AudioResourceManager)}.{nameof(AudioResourceManager.LoadFromPcm)}) or .wav instead.");
+        }
+
+        return readerFactory(new MemoryStream(OriginalBytes, writable: false));
     }
 
     /// <summary>

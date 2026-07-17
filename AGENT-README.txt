@@ -102,6 +102,88 @@ ARCHITECTURE
   Source is grouped into sub-folders that mirror the sub-namespaces
   (Drawing, Rendering, Scenes, Physics, Input, Audio, Assets, ...).
 
+SOFTWARE-RENDERED (FRAMEBUFFER) GAMES
+--------------------------------------------------------------------------------
+  A parallel enablement path for games that render whole CPU frames at a fixed
+  tic rate (35/70 Hz) and never touch the scene/sprite pipeline. All surfaces
+  are original, generic engine code.
+
+  PRESENTATION (core CodeBrix.Platform.GameEngine.Rendering + Host):
+    PixelFramePresenter      -- Configure(width, height, PixelBufferFormat
+                                {Rgba8888,Bgra8888}, FrameOrientation
+                                {Identity,Rotate90}, PixelFrameScaleMode
+                                {Fit,Stretch,PixelPerfect,Center},
+                                ImageFilterQuality); PresentFrame(bytes/uints)
+                                from ANY thread, once per tic: one full-frame
+                                copy, zero per-frame managed allocations,
+                                latest-frame-wins triple buffering. Rotate90
+                                shows column-major buffers with NO CPU
+                                transpose. WindowToBuffer/BufferToWindow map
+                                pointer coordinates across the letterbox.
+    GameSurfaceCanvas.UsePixelFramePresenter()
+                             -- enters presenter mode WITHOUT creating the
+                                scene/backbuffer pipeline. Presenter mode and
+                                .Host are mutually exclusive per canvas (the
+                                other one throws).
+
+  AUDIO (core CodeBrix.Platform.GameEngine.Audio; CodeBrix.Audio unmodified):
+    AudioSystem.Initialize(44100, 2)
+                             -- OPT-IN device-rate pinning; never automatic.
+                                Once pinned, odd-rate sources are rate-converted
+                                (AudioResource inserts the converter itself).
+    AudioResourceManager.LoadFromPcm(key, data, rate, bits {8u,16s}, channels)
+                             -- headerless raw-PCM lumps, no container needed.
+    SoundChannel             -- fixed channel: SetClip(key) (swap constantly),
+                                Play(volume, pan, pitch), live Volume/Pan/Pitch,
+                                State (NOTE: Stopped detection lags ~25 ms via
+                                the shared output's sweep timer), approximate
+                                Position/Duration. Requires AudioSystem.Initialize.
+    VariableRateSampleProvider -- linear-interpolation rate converter with a
+                                live pitch multiplier (0.05-20).
+    StreamingAudioSource     -- endless pull-model stream (synth music, emulated
+                                sound chips): FillAudioBuffer(Span<float>)
+                                callback or ISampleProvider, pulled on the AUDIO
+                                CALLBACK THREAD (fast, allocation-free, never
+                                block); Start/Stop + Volume.
+
+  INPUT (core CodeBrix.Platform.GameEngine.Input + Host):
+    InputPump.PollNow()      -- public, thread-safe pump for game-owned loops;
+                                THROWS while the engine loop runs (mutually
+                                exclusive; double-pumping corrupts poller state).
+    KeyDownEventArgs.KeyCode -- numeric key code on every poller event.
+    KeyboardEventPoller.StartMonitoringKeys(IEnumerable<int>) /
+    StartMonitoringAllKeys() -- bulk registration (whole binding sets / any-key).
+    IKeyboardAdapter.IsDown(int)
+                             -- CONTRACT: lock-free, any thread, per-tic polled
+                                gameplay path.
+    GameSurfaceCanvas.EnsureFocus()
+                             -- the IsTabStop + focus-on-load + refocus-on-press
+                                recipe, one call.
+    RelativeMouseSession     -- FPS mouse look over MouseDevice.MouseMoved:
+                                Begin() (hide cursor + confine + accumulate),
+                                per-tic ConsumeDelta() -> (dx, dy), End().
+                                Inactive (logged) on platform versions without
+                                relative mouse support.
+
+  GAME LOOP (core CodeBrix.Platform.GameEngine.Timers + Host):
+    FixedRateGameLoop        -- dedicated-thread fixed-Hz callback host:
+                                non-drifting timestep, bounded catch-up
+                                (MaxCatchUpTics, dropped tics counted),
+                                Pause/Resume without a burst, sleep+yield hybrid
+                                pacing (no busy loop), ActualTicsPerSecond stats.
+    SoftwareRenderedGameHostBase
+                             -- the GameHostBase sibling for these games: wires
+                                canvas presenter + input pump + fixed-rate loop;
+                                virtuals OnLoadContent (must Configure the
+                                presenter), OnTic, OnRenderFrame(Span<byte>),
+                                OnShutdown, ConfigureAudio (opt-in), and
+                                ConfigureInput.
+
+  The samples/SoftRender demo exercises this whole stack (plasma + starfield at
+  320x200/70 Hz, raw-PCM blips with random pitch, a streamed drone) and is the
+  reference consumer for these surfaces. These surfaces are EXPERIMENTAL until
+  the first two consuming games ship, then frozen.
+
 TESTING
 --------------------------------------------------------------------------------
   Core tests are headless unit tests (the UI-agnostic core makes this clean),

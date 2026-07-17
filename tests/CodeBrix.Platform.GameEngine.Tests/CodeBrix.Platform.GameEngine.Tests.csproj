@@ -17,6 +17,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.164.180" />
+    <!-- The base SkiaSharp package carries Windows/macOS natives; Linux needs this explicit
+         native-assets package for the PixelFramePresenter draw tests. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.150.1" />
   </ItemGroup>
 
   <ItemGroup>

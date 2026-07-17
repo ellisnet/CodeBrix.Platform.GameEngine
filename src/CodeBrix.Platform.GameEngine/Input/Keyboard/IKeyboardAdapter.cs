@@ -19,6 +19,11 @@ public interface IKeyboardAdapter
     /// Key codes should be stable integers agreed upon by the adapter and the engine.
     /// For WinForms, this should be the Windows Virtual-Key code (0..255).
     /// </summary>
+    /// <remarks>
+    /// CONTRACT: implementations must make this lock-free and safe to call from ANY thread at
+    /// high frequency — it is the per-tic polled-state path for game loops (called directly
+    /// from game threads, with or without the engine cycle running).
+    /// </remarks>
     bool IsDown(int keyCode);
 
     /// <summary>

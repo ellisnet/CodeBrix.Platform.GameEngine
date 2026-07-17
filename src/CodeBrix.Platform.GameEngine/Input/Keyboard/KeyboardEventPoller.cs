@@ -98,7 +98,7 @@ public sealed class KeyboardEventPoller
                 _previousPressed[keyCode] = true;
                 config._lastEventTick = tick;
 
-                KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Pressed));
+                KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Pressed, keyCode));
                 continue;
             }
 
@@ -108,7 +108,7 @@ public sealed class KeyboardEventPoller
                 if (!config.IsPaused && config.ReadyForNextEvent(tick))
                 {
                     config._lastEventTick = tick;
-                    KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Repeated));
+                    KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Repeated, keyCode));
                 }
                 continue;
             }
@@ -117,7 +117,7 @@ public sealed class KeyboardEventPoller
             if (!currentlyPressed && previouslyPressed)
             {
                 _previousPressed[keyCode] = false;
-                KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Released));
+                KeyDown?.Invoke(new KeyDownEventArgs(config, mods, KeyAction.Released, keyCode));
             }
 
             // not pressed && not previously pressed => nothing
@@ -143,6 +143,41 @@ public sealed class KeyboardEventPoller
             var adapter = Adapter;
             _previousPressed[keyCode] = adapter?.IsDown(keyCode) ?? false;
         });
+    }
+
+    /// <summary>
+    /// Registers a batch of key codes for monitoring in one call — a game's whole binding
+    /// set, for example. Equivalent to calling <see cref="StartMonitoringKey"/> for each code.
+    /// </summary>
+    /// <param name="keyCodes">The platform-agnostic key codes to monitor.</param>
+    /// <param name="timeBetweenEvents">
+    /// The repeat-event throttle in milliseconds applied to each key; negative uses the
+    /// engine configuration default.
+    /// </param>
+    public void StartMonitoringKeys(IEnumerable<int> keyCodes, double timeBetweenEvents = -1)
+    {
+        ArgumentNullException.ThrowIfNull(keyCodes);
+
+        foreach (var keyCode in keyCodes)
+        {
+            StartMonitoringKey(keyCode, null, timeBetweenEvents);
+        }
+    }
+
+    /// <summary>
+    /// Registers every key code in the standard 8-bit virtual-key space (1–255), so menu and
+    /// typing consumers receive events for any key without hand-registering the whole map.
+    /// </summary>
+    /// <param name="timeBetweenEvents">
+    /// The repeat-event throttle in milliseconds applied to each key; negative uses the
+    /// engine configuration default.
+    /// </param>
+    public void StartMonitoringAllKeys(double timeBetweenEvents = -1)
+    {
+        for (var keyCode = 1; keyCode <= 255; keyCode++)
+        {
+            StartMonitoringKey(keyCode, null, timeBetweenEvents);
+        }
     }
 
     /// <summary>

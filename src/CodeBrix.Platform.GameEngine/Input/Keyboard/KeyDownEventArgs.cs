@@ -38,6 +38,15 @@ public sealed class KeyDownEventArgs : EventArgs
     public KeyAction KeyAction { get; }
 
     /// <summary>
+    /// Gets the platform-agnostic numeric key code that generated this event — the same code
+    /// registered via <see cref="KeyboardEventPoller.StartMonitoringKey"/> and queried through
+    /// <see cref="IKeyboardAdapter.IsDown"/> — so handlers never need to parse the display
+    /// string in <see cref="KeyConfig"/>. -1 when the event was created without a key code
+    /// and the key's display string is not numeric.
+    /// </summary>
+    public int KeyCode { get; }
+
+    /// <summary>
     /// Gets a value indicating whether the Shift modifier key was pressed at the time this event was generated.
     /// This is a convenience property that checks if the <see cref="Modifiers"/> flags include
     /// <see cref="KeyboardModifierState.Shift"/>.
@@ -75,9 +84,34 @@ public sealed class KeyDownEventArgs : EventArgs
     /// indicating the phase of the key interaction.
     /// </param>
     public KeyDownEventArgs(KeyEventConfiguration config, KeyboardModifierState modifiers, KeyAction action)
+        : this(config, modifiers, action, int.TryParse(config?.Key, out var parsedCode) ? parsedCode : -1)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KeyDownEventArgs"/> class with the specified
+    /// key configuration, modifier state, key action, and numeric key code.
+    /// </summary>
+    /// <param name="config">
+    /// The configuration details for the key that generated the event, including key identification
+    /// and throttling settings.
+    /// </param>
+    /// <param name="modifiers">
+    /// The state of keyboard modifier keys (Shift, Ctrl, Alt) at the time of the event.
+    /// This can be a combination of multiple modifiers using bitwise flags.
+    /// </param>
+    /// <param name="action">
+    /// The type of action that occurred for this key (pressed, released, or repeated),
+    /// indicating the phase of the key interaction.
+    /// </param>
+    /// <param name="keyCode">
+    /// The platform-agnostic numeric key code that generated the event (see <see cref="KeyCode"/>).
+    /// </param>
+    public KeyDownEventArgs(KeyEventConfiguration config, KeyboardModifierState modifiers, KeyAction action, int keyCode)
     {
         KeyConfig = config;
         Modifiers = modifiers;
         KeyAction = action;
+        KeyCode = keyCode;
     }
 }

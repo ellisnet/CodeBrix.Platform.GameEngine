@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using CodeBrix.Audio.Wave; //was previously: using NAudio.Wave;
 using CodeBrix.Platform.GameEngine.Assets;
 using Microsoft.Extensions.Logging;
 using System;
@@ -79,6 +80,58 @@ public sealed class AudioResourceManager : IDisposable
         var bytes = ms.ToArray();
 
         return LoadFromBytes(key, bytes, fileExt, volume, pan);
+    }
+
+    /// <summary>
+    /// Loads an audio resource from raw, headerless PCM sample data — no container format or
+    /// file extension involved (classic game sound-effect lumps).
+    /// </summary>
+    /// <remarks>If a resource with the same key already exists, it will be disposed and replaced with the new resource.
+    /// Raw-PCM resources always qualify as <see cref="SoundChannel"/> clips.</remarks>
+    /// <param name="key">A unique identifier for the audio resource.</param>
+    /// <param name="data">The raw PCM sample bytes, interleaved when multi-channel.</param>
+    /// <param name="sampleRate">The PCM sample rate in Hz (e.g. 7000 or 11025 for classic lumps).</param>
+    /// <param name="bitsPerSample">The sample width: 8 (unsigned) or 16 (signed little-endian).</param>
+    /// <param name="channels">The channel count: 1 (mono) or 2 (stereo). Defaults to 1.</param>
+    /// <param name="volume">The initial volume level for the audio resource, ranging from 0.0 (silent) to 1.0 (full volume). Defaults to 1.0.</param>
+    /// <param name="pan">The initial stereo pan position, ranging from -1.0 (full left) to 1.0 (full right). Defaults to 0.0 (center).</param>
+    /// <returns>The loaded <see cref="AudioResource"/> instance.</returns>
+    public AudioResource LoadFromPcm(string key, byte[] data, int sampleRate, int bitsPerSample, int channels = 1, float volume = 1.0f, float pan = 0.0f)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (bitsPerSample is not (8 or 16))
+        {
+            throw new ArgumentOutOfRangeException(nameof(bitsPerSample), bitsPerSample, "Raw PCM must be 8-bit unsigned or 16-bit signed.");
+        }
+        if (channels is < 1 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(channels), channels, "Raw PCM must be mono or stereo.");
+        }
+        if (sampleRate < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "The sample rate must be positive.");
+        }
+
+        if (_soundResources.TryGetValue(key, out var existing))
+        {
+            existing.soundResource.Dispose(); // replace existing
+        }
+
+        var format = new WaveFormat(sampleRate, bitsPerSample, channels);
+        var reader = new RawSourceWaveStream(new MemoryStream(data, writable: false), format);
+        var sound = new AudioResource(
+            key,
+            reader,
+            volume,
+            pan,
+            filePathOrExt: null,
+            rawBytes: data,
+            tempFilePath: null,
+            rawPcmFormat: format);
+
+        _soundResources[key] = (sound, null);
+        RegisterLoadedSound(key, sound);
+        return sound;
     }
 
     /// <summary>
