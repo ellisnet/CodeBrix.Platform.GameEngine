@@ -226,6 +226,23 @@ public partial class EngineConfiguration
     public bool FlushAsyncLogsOnShutdown { get; set; } = true;
 
     /// <summary>
+    /// If true (the default), the global engine pause (<see cref="Engine.Pause"/>) also
+    /// suspends playing game audio, resuming exactly those voices on <see cref="Engine.Resume"/>.
+    /// Short fire-and-forget sound effects are exempt — see
+    /// <see cref="PauseShortSoundEffectSeconds"/>.
+    /// </summary>
+    public bool PauseSuspendsAudio { get; set; } = true;
+
+    /// <summary>
+    /// The short-sound-effect exemption threshold for the global engine pause, in seconds:
+    /// a playing voice whose material has a known finite duration of this value or less is
+    /// treated as a fire-and-forget effect — it rings out naturally instead of being
+    /// suspended, and is not resumed on <see cref="Engine.Resume"/>. Endless or looping
+    /// material always suspends. Default is 1.0.
+    /// </summary>
+    public double PauseShortSoundEffectSeconds { get; set; } = 1.0;
+
+    /// <summary>
     /// Optional collection of serialized <see cref="EngineState"/>s to mount at initialization.
     /// </summary>
     public List<StateFileMount>? StateFiles { get; set; }

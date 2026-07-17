@@ -19,6 +19,8 @@ public abstract class GameHostBase : IDisposable
     private bool _initialized;
     private bool _engineInitialized;
     private bool _engineStarted;
+    private Action? _enginePausedHandler;
+    private Action? _engineResumedHandler;
 
     /// <summary>
     /// Gets the singleton instance of the engine.
@@ -51,6 +53,13 @@ public abstract class GameHostBase : IDisposable
         ConfigureInput();
         InitializeGameContent();
 
+        // Hook the global pause before the engine starts, so a pause that lands during
+        // startup still reaches the game's overrides.
+        _enginePausedHandler = OnEnginePaused;
+        _engineResumedHandler = OnEngineResumed;
+        Engine.Paused += _enginePausedHandler;
+        Engine.Resumed += _engineResumedHandler;
+
         InitializeEngine(configPath, autoSaveConfig);
 
         StartEngine();
@@ -58,6 +67,27 @@ public abstract class GameHostBase : IDisposable
         _initialized = true;
 
         OnInitialized();
+    }
+
+    /// <summary>
+    /// Called when the global engine pause (<see cref="GameEngine.Engine.Pause"/>) takes
+    /// effect — the game's "do this when paused" hook (save the game, build a pause screen).
+    /// Runs under the <see cref="GameEngine.Engine.Paused"/> event's contract: game state is
+    /// quiescent, <see cref="GameEngine.Engine.LastFrameBeforePause"/> is already captured,
+    /// and one final frame is rendered after this returns so scene changes made here become
+    /// visible. The base implementation does nothing.
+    /// </summary>
+    protected virtual void OnEnginePaused()
+    {
+    }
+
+    /// <summary>
+    /// Called when <see cref="GameEngine.Engine.Resume"/> lifts the global engine pause,
+    /// before the engine cycle wakes — the place to tear down a pause screen. The base
+    /// implementation does nothing.
+    /// </summary>
+    protected virtual void OnEngineResumed()
+    {
     }
 
     /// <summary>
@@ -381,6 +411,17 @@ public abstract class GameHostBase : IDisposable
         OnDisposing();
 
         UnhookEvents();
+
+        if (_enginePausedHandler is not null)
+        {
+            Engine.Paused -= _enginePausedHandler;
+            _enginePausedHandler = null;
+        }
+        if (_engineResumedHandler is not null)
+        {
+            Engine.Resumed -= _engineResumedHandler;
+            _engineResumedHandler = null;
+        }
 
         if (_engineStarted)
             StopEngine();

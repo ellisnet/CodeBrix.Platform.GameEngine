@@ -164,6 +164,18 @@ public class Animator : IDisposable
         }
     }
 
+    /// <summary>
+    /// Shifts the animation schedule forward after a global engine pause, so the animator does
+    /// not churn through every frame "missed" during the pause on the first resumed cycle. The
+    /// sub-frame phase the animation had when the pause began is preserved.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        LastTick = HighResTimer.ShiftBaselineForResume(LastTick, pausedTicks, resumeTick);
+    }
+
     internal void CycleAnimation(long currentTick)
     {
         if (CurrentCycle is null)

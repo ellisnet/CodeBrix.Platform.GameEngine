@@ -190,6 +190,25 @@ public sealed class DirectDrawingManager : IDisposable
     }
 
     /// <summary>
+    /// Shifts every registered drawing's update time baseline forward after a global engine
+    /// pause, so the first resumed update does not see the paused time as one giant delta.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal void ShiftTimeBaselinesForResume(long pausedTicks, long resumeTick)
+    {
+        var snapshot = _directDrawings.Values.ToArray();
+
+        foreach (var drawing in snapshot)
+        {
+            if (drawing is DirectDrawingBase drawingBase)
+                drawingBase.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+            else if (drawing is DirectComposite composite)
+                composite.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+        }
+    }
+
+    /// <summary>
     /// Adds a new direct drawing or replaces an existing one with the same ID.
     /// </summary>
     /// <param name="drawing">The direct drawing to add. Must not be <see langword="null"/>.</param>

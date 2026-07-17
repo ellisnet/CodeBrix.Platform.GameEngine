@@ -37,6 +37,9 @@ public abstract class PixelFramePresenter : IDisposable
     private const int MailboxIndexMask = 0xFF;
     private const int MailboxNewFrameFlag = 0x100;
 
+    private static readonly object _registryGate = new();
+    private static readonly System.Collections.Generic.List<WeakReference<PixelFramePresenter>> _registry = new();
+
     private readonly object _paintGate = new();
 
     private FrameSlot?[] _slots = new FrameSlot?[3];
@@ -74,6 +77,42 @@ public abstract class PixelFramePresenter : IDisposable
 
     /// <summary>True after a successful <see cref="Configure"/> call.</summary>
     public bool IsConfigured => FrameWidth > 0;
+
+    /// <summary>
+    /// The frame the viewer was seeing at the moment the global engine pause
+    /// (<see cref="Engine.Pause"/>) took effect: a stable, screen-oriented copy of the newest
+    /// presented frame, captured before the <see cref="Engine.Paused"/> event is raised — so
+    /// a pause handler can, for example, present a dimmed version of it as a pause screen.
+    /// <c>null</c> until the first pause, or when no frame had been presented yet. The image
+    /// is owned by the presenter and remains valid until the next <see cref="Engine.Pause"/>
+    /// capture (or this presenter's disposal); copy it to keep it longer.
+    /// </summary>
+    public SKImage? LastFrameBeforePause { get; private set; }
+
+    /// <summary>
+    /// Returns <see cref="LastFrameBeforePause"/> as a raw RGBA8888 bitmap (4 bytes per
+    /// pixel in R,G,B,A memory order, row-major, unpremultiplied alpha) — the Skia-free
+    /// shape imaging libraries load directly. See
+    /// <see cref="Engine.LastFrameBeforePauseAsRgba"/> for the usage pattern.
+    /// </summary>
+    /// <param name="width">The bitmap width in pixels; 0 when the result is <c>null</c>.</param>
+    /// <param name="height">The bitmap height in pixels; 0 when the result is <c>null</c>.</param>
+    /// <returns>The RGBA8888 pixel bytes, or <c>null</c> when no frame has been captured.</returns>
+    public byte[]? LastFrameBeforePauseAsRgba(out int width, out int height)
+        => RgbaPixelExport.FromImage(LastFrameBeforePause, out width, out height);
+
+    /// <summary>
+    /// Creates the presenter and registers it for last-frame capture by the global engine
+    /// pause. Presenters are tracked weakly; disposal does not need to unregister.
+    /// </summary>
+    protected PixelFramePresenter()
+    {
+        lock (_registryGate)
+        {
+            _registry.RemoveAll(reference => !reference.TryGetTarget(out _));
+            _registry.Add(new WeakReference<PixelFramePresenter>(this));
+        }
+    }
 
     /// <summary>
     /// Configures (or reconfigures) the presenter for frames of the given logical size and
@@ -221,37 +260,103 @@ public abstract class PixelFramePresenter : IDisposable
                 return;
             }
 
-            // Take the newest frame out of the mailbox, if the producer put one there.
-            if ((Volatile.Read(ref _mailbox) & MailboxNewFrameFlag) != 0)
+            DrawFrameCore(canvas, surfaceWidth, surfaceHeight);
+        }
+    }
+
+    // The shared draw path for DrawCurrentFrame and the engine-pause capture. Caller holds
+    // _paintGate and has verified a frame exists.
+    private void DrawFrameCore(SKCanvas canvas, float surfaceWidth, float surfaceHeight)
+    {
+        // Take the newest frame out of the mailbox, if the producer put one there.
+        if ((Volatile.Read(ref _mailbox) & MailboxNewFrameFlag) != 0)
+        {
+            var previous = Interlocked.Exchange(ref _mailbox, _frontIndex);
+            _frontIndex = previous & MailboxIndexMask;
+        }
+
+        var image = _slots[_frontIndex]!.Image;
+        var destination = ComputeDestinationRect(surfaceWidth, surfaceHeight);
+        var sampling = FilterQuality.ToSamplingOptions();
+
+        if (Orientation == FrameOrientation.Rotate90)
+        {
+            // One transformed draw maps the column-major (transposed) image to the
+            // destination rect: screenX tracks the image's row axis, screenY its column
+            // axis.
+            var matrix = new SKMatrix(
+                scaleX: 0f, skewX: destination.Width / FrameWidth, transX: destination.Left,
+                skewY: destination.Height / FrameHeight, scaleY: 0f, transY: destination.Top,
+                persp0: 0f, persp1: 0f, persp2: 1f);
+            canvas.Save();
+            canvas.Concat(in matrix);
+            canvas.DrawImage(image, 0f, 0f, sampling);
+            canvas.Restore();
+        }
+        else
+        {
+            var source = new SKRect(0f, 0f, image.Width, image.Height);
+            canvas.DrawImage(image, source, destination, sampling);
+        }
+    }
+
+    /// <summary>
+    /// Captures the newest presented frame as a stable, screen-oriented image and stores it
+    /// in <see cref="LastFrameBeforePause"/> (disposing the previous capture). Returns the
+    /// captured image, or <c>null</c> when unconfigured, disposed, or no frame has been
+    /// presented yet.
+    /// </summary>
+    internal SKImage? CaptureForEnginePause()
+    {
+        lock (_paintGate)
+        {
+            if (_isDisposed || !IsConfigured || !_hasFrame)
             {
-                var previous = Interlocked.Exchange(ref _mailbox, _frontIndex);
-                _frontIndex = previous & MailboxIndexMask;
+                return null;
             }
 
-            var image = _slots[_frontIndex]!.Image;
-            var destination = ComputeDestinationRect(surfaceWidth, surfaceHeight);
-            var sampling = FilterQuality.ToSamplingOptions();
-
-            if (Orientation == FrameOrientation.Rotate90)
+            // Render at the logical frame size: every scale mode maps the frame to the full
+            // rect at that size, and the orientation transform is applied for Rotate90.
+            var info = new SKImageInfo(FrameWidth, FrameHeight, SKImageInfo.PlatformColorType, SKAlphaType.Opaque);
+            using var surface = SKSurface.Create(info);
+            if (surface is null)
             {
-                // One transformed draw maps the column-major (transposed) image to the
-                // destination rect: screenX tracks the image's row axis, screenY its column
-                // axis.
-                var matrix = new SKMatrix(
-                    scaleX: 0f, skewX: destination.Width / FrameWidth, transX: destination.Left,
-                    skewY: destination.Height / FrameHeight, scaleY: 0f, transY: destination.Top,
-                    persp0: 0f, persp1: 0f, persp2: 1f);
-                canvas.Save();
-                canvas.Concat(in matrix);
-                canvas.DrawImage(image, 0f, 0f, sampling);
-                canvas.Restore();
+                return null;
             }
-            else
+
+            surface.Canvas.Clear(SKColors.Black);
+            DrawFrameCore(surface.Canvas, FrameWidth, FrameHeight);
+
+            var capture = surface.Snapshot();
+            LastFrameBeforePause?.Dispose();
+            LastFrameBeforePause = capture;
+            return capture;
+        }
+    }
+
+    /// <summary>
+    /// Captures <see cref="LastFrameBeforePause"/> on every live presenter for the global
+    /// engine pause and returns the first captured image (for <see cref="Engine.LastFrameBeforePause"/>).
+    /// </summary>
+    internal static SKImage? CaptureAllForEnginePause()
+    {
+        WeakReference<PixelFramePresenter>[] snapshot;
+        lock (_registryGate)
+        {
+            snapshot = _registry.ToArray();
+        }
+
+        SKImage? first = null;
+        foreach (var reference in snapshot)
+        {
+            if (reference.TryGetTarget(out var presenter))
             {
-                var source = new SKRect(0f, 0f, image.Width, image.Height);
-                canvas.DrawImage(image, source, destination, sampling);
+                var capture = presenter.CaptureForEnginePause();
+                first ??= capture;
             }
         }
+
+        return first;
     }
 
     /// <summary>
@@ -305,6 +410,8 @@ public abstract class PixelFramePresenter : IDisposable
 
             _isDisposed = true;
             DisposeSlots();
+            LastFrameBeforePause?.Dispose();
+            LastFrameBeforePause = null;
         }
 
         GC.SuppressFinalize(this);

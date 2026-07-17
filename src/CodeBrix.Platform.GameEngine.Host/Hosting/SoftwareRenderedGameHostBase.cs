@@ -45,6 +45,8 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
     private byte[] _frameBuffer = [];
     private bool _initialized;
     private bool _isDisposed;
+    private Action? _enginePausedHandler;
+    private Action? _engineResumedHandler;
 
     /// <summary>
     /// Creates the host for the given canvas and tic rate. Call <see cref="Initialize"/>
@@ -57,7 +59,12 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
     {
         RenderSurface = renderSurface ?? throw new ArgumentNullException(nameof(renderSurface));
         Presenter = renderSurface.UsePixelFramePresenter();
-        GameLoop = new FixedRateGameLoop(ticsPerSecond, Tic);
+        GameLoop = new FixedRateGameLoop(ticsPerSecond, Tic)
+        {
+            // The host's loop honors the global engine pause: Engine.Pause() parks it after
+            // the tic in progress and Engine.Resume() wakes it burst-free.
+            PauseWithEngine = true,
+        };
         GameLoop.UnhandledException += OnGameLoopException;
     }
 
@@ -102,8 +109,36 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
 
         _frameBuffer = new byte[Presenter.FrameWidth * Presenter.FrameHeight * 4];
 
+        // Hook the global pause before the loop starts, so a pause that lands during
+        // startup still reaches the game's overrides.
+        _enginePausedHandler = OnEnginePaused;
+        _engineResumedHandler = OnEngineResumed;
+        Engine.Instance.Paused += _enginePausedHandler;
+        Engine.Instance.Resumed += _engineResumedHandler;
+
         GameLoop.Start();
         _initialized = true;
+    }
+
+    /// <summary>
+    /// Called when the global engine pause (<see cref="Engine.Pause"/>) takes effect — the
+    /// game's "do this when paused" hook (save the game, present a pause screen). By the time
+    /// this runs the game loop is parked (no <see cref="OnTic"/>/<see cref="OnRenderFrame"/>
+    /// in flight), and <see cref="Engine.LastFrameBeforePause"/> holds what the player was
+    /// seeing — presenting a dimmed copy of it via <see cref="Presenter"/> works while
+    /// parked. The base implementation does nothing.
+    /// </summary>
+    protected virtual void OnEnginePaused()
+    {
+    }
+
+    /// <summary>
+    /// Called when <see cref="Engine.Resume"/> lifts the global engine pause, before the game
+    /// loop wakes — the place to tear down a pause screen. The base implementation does
+    /// nothing.
+    /// </summary>
+    protected virtual void OnEngineResumed()
+    {
     }
 
     /// <summary>Stops the game loop, calls <see cref="OnShutdown"/>, and releases the host's resources.</summary>
@@ -115,6 +150,17 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
         }
 
         _isDisposed = true;
+
+        if (_enginePausedHandler is not null)
+        {
+            Engine.Instance.Paused -= _enginePausedHandler;
+            _enginePausedHandler = null;
+        }
+        if (_engineResumedHandler is not null)
+        {
+            Engine.Instance.Resumed -= _engineResumedHandler;
+            _engineResumedHandler = null;
+        }
 
         GameLoop.Stop();
         GameLoop.Dispose();

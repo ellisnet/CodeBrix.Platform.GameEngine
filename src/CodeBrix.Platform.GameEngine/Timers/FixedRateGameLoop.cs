@@ -37,12 +37,19 @@ public sealed class FixedRateGameLoop : IDisposable
 
     private readonly Action _tic;
     private readonly long _periodTicks;
-    private readonly ManualResetEventSlim _resumeSignal = new(true);
     private readonly object _stateGate = new();
+
+    // Pause/park handshake state. A Monitor (rather than reset-event) keeps the
+    // "is the loop actually parked?" question answerable across rapid pause/resume
+    // episodes without wake-up races.
+    private readonly object _pauseMonitor = new();
+    private bool _isParked;
 
     private Thread? _thread;
     private volatile bool _stopRequested;
     private volatile bool _isPaused;
+    private volatile bool _enginePaused;
+    private volatile bool _pauseWithEngine;
     private bool _isDisposed;
 
     private long _ticCount;
@@ -82,8 +89,46 @@ public sealed class FixedRateGameLoop : IDisposable
     /// <summary>True between <see cref="Start"/> and <see cref="Stop"/> (also while paused).</summary>
     public bool IsRunning => _thread is not null;
 
-    /// <summary>True while the loop is paused via <see cref="Pause"/>.</summary>
-    public bool IsPaused => _isPaused;
+    /// <summary>
+    /// True while the loop is paused — via <see cref="Pause"/>, or by the global
+    /// <see cref="Engine.Pause"/> when <see cref="PauseWithEngine"/> is enabled.
+    /// </summary>
+    public bool IsPaused => _isPaused || _enginePaused;
+
+    /// <summary>
+    /// When <c>true</c>, this loop participates in the global engine pause: it registers with
+    /// the <see cref="Engine"/> singleton while running, so <see cref="Engine.Pause"/> parks it
+    /// (after the tic in progress completes) and <see cref="Engine.Resume"/> wakes it, with the
+    /// schedule re-baselined so the pause produces no catch-up burst. The engine-pause state is
+    /// tracked separately from <see cref="Pause"/>/<see cref="Resume"/>, so a loop the game
+    /// paused itself stays paused across a global resume. Default is <c>false</c>; the
+    /// software-rendered game host base (in the Host library) enables it for its game loop.
+    /// </summary>
+    public bool PauseWithEngine
+    {
+        get => _pauseWithEngine;
+        set
+        {
+            if (_pauseWithEngine == value)
+            {
+                return;
+            }
+            _pauseWithEngine = value;
+
+            if (IsRunning)
+            {
+                if (value)
+                {
+                    Engine.Instance.RegisterEnginePausableLoop(this);
+                }
+                else
+                {
+                    Engine.Instance.UnregisterEnginePausableLoop(this);
+                    EngineResume();
+                }
+            }
+        }
+    }
 
     /// <summary>Total tics run since <see cref="Start"/>.</summary>
     public long TicCount => Interlocked.Read(ref _ticCount);
@@ -118,7 +163,9 @@ public sealed class FixedRateGameLoop : IDisposable
 
             _stopRequested = false;
             _isPaused = false;
-            _resumeSignal.Set();
+            // A loop that pauses with the engine starts parked when the engine is already
+            // globally paused (e.g. the hosting window was minimized before the game started).
+            _enginePaused = _pauseWithEngine && Engine.Instance.IsPaused;
             Interlocked.Exchange(ref _ticCount, 0);
             Interlocked.Exchange(ref _droppedTics, 0);
             Volatile.Write(ref _actualTicsPerSecond, 0);
@@ -131,6 +178,11 @@ public sealed class FixedRateGameLoop : IDisposable
             };
             _thread.Start();
         }
+
+        if (_pauseWithEngine)
+        {
+            Engine.Instance.RegisterEnginePausableLoop(this);
+        }
     }
 
     /// <summary>
@@ -139,13 +191,20 @@ public sealed class FixedRateGameLoop : IDisposable
     /// </summary>
     public void Stop()
     {
+        Engine.Instance.UnregisterEnginePausableLoop(this);
+
         Thread? thread;
         lock (_stateGate)
         {
             thread = _thread;
             _thread = null;
             _stopRequested = true;
-            _resumeSignal.Set(); // release a paused loop so it can observe the stop
+        }
+
+        // Release a parked loop so it can observe the stop.
+        lock (_pauseMonitor)
+        {
+            Monitor.PulseAll(_pauseMonitor);
         }
 
         if (thread is not null && thread != Thread.CurrentThread)
@@ -158,17 +217,58 @@ public sealed class FixedRateGameLoop : IDisposable
     public void Pause()
     {
         _isPaused = true;
-        _resumeSignal.Reset();
     }
 
     /// <summary>
-    /// Resumes a paused loop. The schedule is re-baselined, so the pause produces no
-    /// catch-up burst.
+    /// Resumes a loop paused via <see cref="Pause"/>. The schedule is re-baselined, so the
+    /// pause produces no catch-up burst. A loop also paused by the global engine pause stays
+    /// parked until <see cref="Engine.Resume"/>.
     /// </summary>
     public void Resume()
     {
-        _isPaused = false;
-        _resumeSignal.Set();
+        lock (_pauseMonitor)
+        {
+            _isPaused = false;
+            Monitor.PulseAll(_pauseMonitor);
+        }
+    }
+
+    /// <summary>
+    /// Blocks until the loop is actually parked (the tic in progress has completed and no
+    /// further tics will run), the loop stops, or the pause is lifted. Returns immediately
+    /// when called on the loop's own thread (a tic that pauses the loop parks right after it
+    /// returns), or when the loop is not running or not paused.
+    /// </summary>
+    public void WaitUntilPaused()
+    {
+        if (_thread == Thread.CurrentThread)
+        {
+            return;
+        }
+
+        lock (_pauseMonitor)
+        {
+            while (IsPaused && !_isParked && !_stopRequested && _thread is not null)
+            {
+                Monitor.Wait(_pauseMonitor);
+            }
+        }
+    }
+
+    /// <summary>Pauses this loop on behalf of the global engine pause.</summary>
+    internal void EnginePause()
+    {
+        _enginePaused = true;
+    }
+
+    /// <summary>Lifts the global engine pause from this loop.</summary>
+    internal void EngineResume()
+    {
+        lock (_pauseMonitor)
+        {
+            _enginePaused = false;
+            Monitor.PulseAll(_pauseMonitor);
+        }
     }
 
     /// <summary>Stops the loop and releases its resources.</summary>
@@ -184,7 +284,6 @@ public sealed class FixedRateGameLoop : IDisposable
         }
 
         Stop();
-        _resumeSignal.Dispose();
     }
 
     private void RunLoop()
@@ -195,9 +294,19 @@ public sealed class FixedRateGameLoop : IDisposable
 
         while (!_stopRequested)
         {
-            if (_isPaused)
+            if (IsPaused)
             {
-                _resumeSignal.Wait();
+                lock (_pauseMonitor)
+                {
+                    _isParked = true;
+                    Monitor.PulseAll(_pauseMonitor); // release WaitUntilPaused() callers
+                    while (IsPaused && !_stopRequested)
+                    {
+                        Monitor.Wait(_pauseMonitor);
+                    }
+                    _isParked = false;
+                }
+
                 // Re-baseline so the paused time does not turn into a catch-up burst.
                 nextTarget = Stopwatch.GetTimestamp() + _periodTicks;
                 _rateWindowStartTimestamp = Stopwatch.GetTimestamp();
@@ -223,6 +332,7 @@ public sealed class FixedRateGameLoop : IDisposable
                 {
                     _thread = null;
                 }
+                Engine.Instance.UnregisterEnginePausableLoop(this);
                 UnhandledException?.Invoke(ex);
                 return;
             }

@@ -506,6 +506,18 @@ public class DirectComposite : IDirectDrawable, IMovable
         _lastTick = tick;
     }
 
+    /// <summary>
+    /// Shifts the composite's movement time baseline forward after a global engine pause, so
+    /// the first resumed <see cref="Update(long)"/> does not see the paused time as one giant
+    /// movement delta.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        _lastTick = HighResTimer.ShiftBaselineForResume(_lastTick, pausedTicks, resumeTick);
+    }
+
     #endregion Update
 
     #region Disposal

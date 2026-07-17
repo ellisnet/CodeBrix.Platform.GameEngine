@@ -202,6 +202,20 @@ public sealed class Timer : IDisposable
             Remove(key);
     }
 
+    /// <summary>
+    /// Shifts every timer's schedule forward after a global engine pause, so a parked engine
+    /// loop does not produce a burst of missed timer events on resume. Repeating timers keep
+    /// the un-elapsed portion of their interval; timers created during the pause start their
+    /// interval at the resume point.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal static void ShiftAllForResume(long pausedTicks, long resumeTick)
+    {
+        foreach (var (_, timer) in _timers.ToArray())
+            timer._lastEventTick = HighResTimer.ShiftBaselineForResume(timer._lastEventTick, pausedTicks, resumeTick);
+    }
+
     internal static void RaiseTimerEvents(TimerType type, long engineTick)
     {
         var expired = new List<string>();

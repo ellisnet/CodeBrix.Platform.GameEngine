@@ -20,6 +20,13 @@ namespace ParticleTest.Game;
 /// </summary>
 public sealed class ParticleTestGame
 {
+    // The fixed render resolution the hosting page pins (SetRenderResolution) and the
+    // campfire's home at the middle of the bottom edge, in that render space.
+    private const float RenderWidth = 1280f;
+    private const float RenderHeight = 720f;
+    private const float CampfireHalfWidth = 90f;
+    private const float CampfireTop = 600f;
+
     private readonly GameSurfaceCanvas _canvas;
     private ParticleSurface _particleSurface;
     private TextBlock _textBlock;
@@ -95,6 +102,11 @@ public sealed class ParticleTestGame
                  .Add(_textBlock);
 
         composite.Movement.MoveBy(new Vector2(0, -500), 10f, EasingFunctions.EaseInOutQuad);
+
+        // Clicking the campfire (bottom-center) toggles the global engine pause. This hooks
+        // the canvas's UI-level pointer event on purpose: engine input pollers stop while
+        // paused, but UI-level input keeps flowing — so the same click resumes.
+        _canvas.PointerPressed += OnCanvasPointerPressed;
     }
 
     /// <summary>
@@ -102,7 +114,39 @@ public sealed class ParticleTestGame
     /// </summary>
     public void Stop()
     {
+        _canvas.PointerPressed -= OnCanvasPointerPressed;
         Engine.Instance.Stop();
+    }
+
+    private void OnCanvasPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        var position = e.GetCurrentPoint(_canvas).Position;
+
+        // Map the click from canvas element coordinates to the pinned 1280x720 render space,
+        // across the same aspect-fit letterbox the canvas paints with.
+        var rasterScale = (float)(_canvas.XamlRoot?.RasterizationScale ?? 1.0);
+        float surfaceWidth = (float)_canvas.ActualWidth * rasterScale;
+        float surfaceHeight = (float)_canvas.ActualHeight * rasterScale;
+        if (surfaceWidth <= 0f || surfaceHeight <= 0f)
+            return;
+
+        float fitScale = Math.Min(surfaceWidth / RenderWidth, surfaceHeight / RenderHeight);
+        float offsetX = (surfaceWidth - RenderWidth * fitScale) * 0.5f;
+        float offsetY = (surfaceHeight - RenderHeight * fitScale) * 0.5f;
+        float bufferX = ((float)position.X * rasterScale - offsetX) / fitScale;
+        float bufferY = ((float)position.Y * rasterScale - offsetY) / fitScale;
+
+        bool onCampfire = Math.Abs(bufferX - RenderWidth / 2f) <= CampfireHalfWidth
+            && bufferY >= CampfireTop && bufferY <= RenderHeight + 5f;
+        if (!onCampfire)
+            return;
+
+        if (Engine.Instance.IsPaused)
+            Engine.Instance.Resume();
+        else
+            Engine.Instance.Pause();
+
+        Console.WriteLine($"[ParticleTest] Campfire clicked -> {(Engine.Instance.IsPaused ? "PAUSED" : "RESUMED")}");
     }
 
     private ParticleEmitter GetSparks(float width, float height)

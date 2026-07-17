@@ -292,6 +292,14 @@ public sealed partial class ParticleSurface : DirectDrawingMovableBase
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc />
+    internal override void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        if (_particlesLastTick > 0)
+            _particlesLastTick = HighResTimer.ShiftBaselineForResume(_particlesLastTick, pausedTicks, resumeTick);
+        base.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+    }
+
     /// <summary>
     /// Tick-driven update override. Computes delta internally and advances simulation.
     /// </summary>

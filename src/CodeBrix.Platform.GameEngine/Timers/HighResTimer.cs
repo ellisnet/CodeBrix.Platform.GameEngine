@@ -40,4 +40,17 @@ public static class HighResTimer
     /// Returns the elapsed time in seconds since the given start tick.
     /// </summary>
     public static float GetElapsedSince(long start) => GetDuration(start, GetCurrentTick());
+
+    /// <summary>
+    /// Shifts a tick baseline forward on resume from a global engine pause: by the paused
+    /// duration, but never past <paramref name="resumeTick"/> — so a baseline captured DURING
+    /// the pause (e.g. by a pause-overlay drawing created in a Paused handler) is never pushed
+    /// into the future.
+    /// </summary>
+    /// <param name="baseline">The tick baseline to shift.</param>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    /// <returns>The shifted baseline.</returns>
+    internal static long ShiftBaselineForResume(long baseline, long pausedTicks, long resumeTick)
+        => baseline + Math.Min(pausedTicks, Math.Max(0L, resumeTick - baseline));
 }

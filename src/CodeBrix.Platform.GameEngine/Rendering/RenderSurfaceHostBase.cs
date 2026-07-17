@@ -63,6 +63,29 @@ public abstract class RenderSurfaceHostBase : IDisposable
     public abstract ViewManager ViewManager { get; }
 
     /// <summary>
+    /// The frame the viewer was seeing at the moment the global engine pause
+    /// (<see cref="Engine.Pause"/>) took effect: an immutable snapshot of this surface's
+    /// backbuffer, captured before the <see cref="Engine.Paused"/> event is raised — so a
+    /// pause handler can, for example, display a dimmed version of it as a pause screen.
+    /// <c>null</c> until the first pause, or for GL-thread-rendered (GPU) surfaces. The image
+    /// is owned by the engine and remains valid until the next <see cref="Engine.Pause"/>
+    /// capture; copy it to keep it longer.
+    /// </summary>
+    public SKImage? LastFrameBeforePause { get; internal set; }
+
+    /// <summary>
+    /// Returns <see cref="LastFrameBeforePause"/> as a raw RGBA8888 bitmap (4 bytes per
+    /// pixel in R,G,B,A memory order, row-major, unpremultiplied alpha) — the Skia-free
+    /// shape imaging libraries load directly. See
+    /// <see cref="Engine.LastFrameBeforePauseAsRgba"/> for the usage pattern.
+    /// </summary>
+    /// <param name="width">The bitmap width in pixels; 0 when the result is <c>null</c>.</param>
+    /// <param name="height">The bitmap height in pixels; 0 when the result is <c>null</c>.</param>
+    /// <returns>The RGBA8888 pixel bytes, or <c>null</c> when no frame has been captured.</returns>
+    public byte[]? LastFrameBeforePauseAsRgba(out int width, out int height)
+        => RgbaPixelExport.FromImage(LastFrameBeforePause, out width, out height);
+
+    /// <summary>
     /// Renders the current scene frame on the GL thread and returns a snapshot of the GPU backbuffer
     /// ready to be drawn to the window surface.
     /// </summary>
@@ -92,6 +115,11 @@ public abstract class RenderSurfaceHostBase : IDisposable
     public SKImage? GlRenderAndSnapshot()
     {
         if (!Backbuffer.IsGlThreadRendered)
+            return null;
+
+        // The global engine pause halts GL-thread rendering too: no new frame is produced,
+        // so the window keeps showing the last presented one.
+        if (Engine.Instance.IsPaused)
             return null;
 
         var tick = CodeBrix.Platform.GameEngine.Timers.HighResTimer.GetCurrentTick();

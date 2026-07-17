@@ -19,7 +19,7 @@ namespace CodeBrix.Platform.GameEngine.Audio; //was previously: Gondwana.Audio;
 /// Represents a audio resource that can be played, paused, resumed, and disposed.
 /// </summary>
 [JsonReferenceable]
-public class AudioResource : IDisposable
+public class AudioResource : IDisposable, IEnginePausableAudio
 {
     private readonly IWavePlayer outputDevice;
     private readonly WaveStream waveStream;
@@ -75,6 +75,8 @@ public class AudioResource : IDisposable
         outputDevice = new WaveOutEvent();
         outputDevice.Init(BuildAudioGraph(waveStream, volume, pan));
         outputDevice.PlaybackStopped += OnPlaybackStopped;
+
+        AudioPauseRegistry.Register(this);
 
         // Persisted rehydration info
         AssetIdentifier = assetIdentifier;
@@ -361,6 +363,37 @@ public class AudioResource : IDisposable
     {
         _stopRequested = true;
         outputDevice.Stop();
+    }
+
+    /// <summary>
+    /// Overrides the global engine pause's suspend decision for this resource: <c>true</c>
+    /// always suspends, <c>false</c> never suspends, <c>null</c> (the default) applies the
+    /// automatic exemption — a playing, non-looping clip no longer than
+    /// <see cref="Configuration.EngineConfiguration.PauseShortSoundEffectSeconds"/> is treated
+    /// as a fire-and-forget effect and left to ring out. A looping resource always suspends.
+    /// </summary>
+    public bool? SuspendOnEnginePause { get; set; }
+
+    bool IEnginePausableAudio.IsPlayingForEnginePause
+        => !disposed && outputDevice is not null && IsPlaying;
+
+    TimeSpan? IEnginePausableAudio.KnownDurationForEnginePause
+        => IsLooping || waveStream is null ? null : Duration;
+
+    void IEnginePausableAudio.EnginePause()
+    {
+        if (!disposed)
+        {
+            Pause();
+        }
+    }
+
+    void IEnginePausableAudio.EngineResume()
+    {
+        if (!disposed)
+        {
+            Resume();
+        }
     }
 
     /// <summary>

@@ -282,6 +282,17 @@ public sealed class SpriteManager : IDisposable
             _spriteList.Add(sprite);
     }
 
+    /// <summary>
+    /// Shifts the movement time baseline forward after a global engine pause, so sprite
+    /// movement does not see the paused time as one giant delta on the first resumed cycle.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        _lastTick = HighResTimer.ShiftBaselineForResume(_lastTick, pausedTicks, resumeTick);
+    }
+
     internal void MoveSprites(long tick)
     {
         if (tick <= _lastTick)

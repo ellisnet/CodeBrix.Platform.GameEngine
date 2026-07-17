@@ -1,3 +1,4 @@
+using CodeBrix.Platform.GameEngine.Audio;
 using CodeBrix.Platform.GameEngine.Configuration;
 using CodeBrix.Platform.GameEngine.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Direct;
@@ -12,6 +13,7 @@ using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Timers;
 using Microsoft.Extensions.Logging;
+using SkiaSharp;
 using Timer = CodeBrix.Platform.GameEngine.Timers.Timer;
 using System;
 using System.Collections.Generic;
@@ -84,6 +86,22 @@ public sealed class Engine : IDisposable
     // Throttling state for logging unhandled exceptions raised from within an engine cycle.
     private long _lastCycleExceptionLogTick;
     private int _suppressedCycleExceptionCount;
+
+    // Global pause state (see Pause/Resume). _pauseGate serializes the Pause/Resume state
+    // flips; _parkMonitor is the cycle loop's park/wake handshake, kept separate so waiters
+    // never hold the state gate while blocked.
+    private readonly object _pauseGate = new();
+    private readonly object _parkMonitor = new();
+    private bool _cycleLoopParked;
+    private volatile bool _isPaused;
+    private volatile bool _pauseTransitionDone;
+    private volatile bool _inCycle;
+    private bool _isTimerDriven;
+    private long _pauseStartTick;
+
+    // Game loops (framebuffer-style games) that pause and resume with the global engine
+    // pause; see FixedRateGameLoop.PauseWithEngine.
+    private readonly List<FixedRateGameLoop> _enginePausableLoops = new();
 
     #endregion private fields
 
@@ -198,6 +216,41 @@ public sealed class Engine : IDisposable
     /// </para>
     /// </remarks>
     public event Action<CyclesPerSecondCalculatedEventArgs>? CPSCalculated;
+
+    /// <summary>
+    /// Raised when the global engine pause takes effect — the game's "do this when paused"
+    /// hook (save the game, build a pause screen, and so on).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// By the time this event is raised, game execution is quiescent: registered game loops
+    /// have parked (their tic in progress completed), and in engine-cycle mode the event is
+    /// raised ON THE ENGINE THREAD between cycles — handlers have race-free access to game
+    /// state, which makes this the right place for a save-game routine.
+    /// </para>
+    /// <para>
+    /// <see cref="LastFrameBeforePause"/> is already captured when handlers run, so a handler
+    /// can use it (for example, a dimmed copy of it) to build a pause screen. In engine-cycle
+    /// mode, one final frame is rendered AFTER this event returns — ignoring the
+    /// <see cref="EngineConfiguration.TargetFPS"/> throttle — so scene changes a handler makes
+    /// (a "PAUSED" overlay, a dimmed snapshot) actually reach the screen before rendering
+    /// halts. A software-rendered (framebuffer) game instead presents its own pause frame
+    /// directly from the handler; presentation stays available while the loop is parked.
+    /// </para>
+    /// <para>
+    /// Engine input pollers do not run while paused — the resume trigger must come from the
+    /// hosting application's UI layer (window restore, a UI-level key or pointer handler).
+    /// </para>
+    /// </remarks>
+    public event Action? Paused;
+
+    /// <summary>
+    /// Raised when <see cref="Resume"/> lifts the global engine pause, on the caller's
+    /// thread, after time baselines have been shifted and suspended audio resumed but BEFORE
+    /// the engine cycle and registered game loops wake — so handlers still see quiescent game
+    /// state (the right place to tear down a pause screen).
+    /// </summary>
+    public event Action? Resumed;
 
     /// <summary>
     /// Raised when <see cref="Dispose()"/> begins the explicit disposal sequence.
@@ -434,6 +487,7 @@ public sealed class Engine : IDisposable
         }
 
         IsRunning = true;
+        _isTimerDriven = false;
 
         _startTick = HighResTimer.GetCurrentTick();
         _lastCPSSamplingTick = _startTick;
@@ -445,6 +499,13 @@ public sealed class Engine : IDisposable
 
             while (Instance.IsRunning)
             {
+                // Globally paused (possibly before Start): transition and park at zero CPU.
+                if (Instance._isPaused)
+                {
+                    Instance.PauseCycleLoop();
+                    continue;
+                }
+
                 try
                 {
                     Instance.Cycle();
@@ -515,6 +576,7 @@ public sealed class Engine : IDisposable
         EngineDispatcher.BindToCurrentThread();
 
         IsRunning = true;
+        _isTimerDriven = true;
 
         _startTick = HighResTimer.GetCurrentTick();
         _lastCPSSamplingTick = _startTick;
@@ -544,6 +606,14 @@ public sealed class Engine : IDisposable
     {
         if (!IsRunning)
             return;
+
+        if (_isPaused)
+        {
+            // Timer-driven mode cannot park a thread; the tick itself becomes the pause
+            // transition point (once per pause episode) and then a cheap no-op.
+            RunPauseTransition(renderFinalFrame: true);
+            return;
+        }
 
         Cycle();
     }
@@ -580,7 +650,362 @@ public sealed class Engine : IDisposable
             return;
 
         IsRunning = false;
+
+        // Release a cycle loop parked by the global pause so it can observe the stop.
+        lock (_parkMonitor)
+        {
+            Monitor.PulseAll(_parkMonitor);
+        }
+
         InvokeShutdownAfterCycleStops();
+    }
+
+    /// <summary>
+    /// Pauses the engine globally: all rendering and all game operation halt near-immediately,
+    /// in both engine-cycle mode (<see cref="Start()"/>/<see cref="StartTimerDriven"/>) and
+    /// software-rendered framebuffer mode (game loops with
+    /// <see cref="FixedRateGameLoop.PauseWithEngine"/> enabled). The cycle or tic in progress
+    /// completes; at most one further frame is rendered (see <see cref="Paused"/>); then the
+    /// loops park at zero CPU until <see cref="Resume"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The pause sequence: registered game loops park (waiting for the tic in progress) →
+    /// <see cref="LastFrameBeforePause"/> is captured → playing audio is suspended (unless
+    /// <see cref="EngineConfiguration.PauseSuspendsAudio"/> is off; short fire-and-forget
+    /// sound effects ring out — see
+    /// <see cref="EngineConfiguration.PauseShortSoundEffectSeconds"/>) → <see cref="Paused"/>
+    /// is raised → in engine-cycle mode, one final frame is rendered so pause-screen scene
+    /// changes become visible.
+    /// </para>
+    /// <para>
+    /// The call blocks until the engine is quiescent (bounded by roughly one cycle or tic),
+    /// EXCEPT when called from the engine thread or a game-loop thread itself (a game pausing
+    /// from inside its own update): then it returns immediately and the loop parks as soon as
+    /// the current cycle/tic completes. Pausing before the engine or loop starts is valid —
+    /// the loop then starts parked. Thread-safe and idempotent.
+    /// </para>
+    /// <para>
+    /// While paused, engine input pollers do not run: wire the resume trigger at the hosting
+    /// application's UI layer (window restore, a UI-level key or pointer handler).
+    /// </para>
+    /// </remarks>
+    /// <seealso cref="Resume"/>
+    /// <seealso cref="IsPaused"/>
+    /// <seealso cref="Paused"/>
+    /// <seealso cref="LastFrameBeforePause"/>
+    public void Pause()
+    {
+        lock (_pauseGate)
+        {
+            if (_isPaused)
+                return;
+
+            _pauseStartTick = HighResTimer.GetCurrentTick();
+            _pauseTransitionDone = false;
+            _isPaused = true;
+        }
+
+        // Park every registered engine-pausable game loop (framebuffer-style games) and wait
+        // for their tics in progress to complete, so game state is quiescent when Paused is
+        // raised. WaitUntilPaused returns immediately on a loop's own thread.
+        var loops = SnapshotEnginePausableLoops();
+        foreach (var loop in loops)
+            loop.EnginePause();
+        foreach (var loop in loops)
+            loop.WaitUntilPaused();
+
+        if (IsRunning && !_isTimerDriven)
+        {
+            // The engine cycle loop performs the pause transition (snapshot capture → audio
+            // suspend → Paused event → final frame) and parks itself; wait for the park
+            // unless this IS the engine thread (then the loop parks right after the current
+            // cycle's handler returns).
+            if (!EngineDispatcher.IsOnEngineThread)
+                WaitForCycleLoopPark();
+            return;
+        }
+
+        if (_isTimerDriven && _inCycle)
+        {
+            // Pause() called from inside a timer-driven cycle: the next Tick() runs the
+            // transition, avoiding re-entry into the rendering path.
+            return;
+        }
+
+        // Timer-driven (between ticks) or engine not running: transition inline on the
+        // caller's thread. A final frame only makes sense when the engine is cycling.
+        RunPauseTransition(renderFinalFrame: IsRunning);
+    }
+
+    /// <summary>
+    /// Lifts the global engine pause: every time baseline (timers, sprite movement,
+    /// animations, direct drawings, the engine's own cycle clocks) is shifted past the paused
+    /// interval FIRST — so nothing sees the pause as elapsed time (no sprite teleports, no
+    /// timer or animation burst) — then suspended audio resumes, <see cref="Resumed"/> is
+    /// raised, and finally the engine cycle and registered game loops wake. Thread-safe and
+    /// idempotent; safe to call from any thread except the parked loops' own (which cannot
+    /// run while parked).
+    /// </summary>
+    /// <seealso cref="Pause"/>
+    /// <seealso cref="Resumed"/>
+    public void Resume()
+    {
+        bool transitioned;
+
+        lock (_pauseGate)
+        {
+            if (!_isPaused)
+                return;
+
+            long resumeTick = HighResTimer.GetCurrentTick();
+            long pausedTicks = resumeTick - _pauseStartTick;
+            transitioned = _pauseTransitionDone;
+
+            RebaselineAfterPause(pausedTicks, resumeTick);
+
+            _isPaused = false;
+            _pauseTransitionDone = false;
+        }
+
+        // Resume exactly the voices the pause suspended (no-op when nothing was suspended).
+        try
+        {
+            AudioPauseRegistry.ResumeAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to resume suspended audio after the engine pause.");
+        }
+
+        // Raise Resumed on the caller's thread while the loops are still parked, so handlers
+        // see quiescent game state. Skipped when the pause never transitioned (a
+        // pause/resume flicker faster than the loop could react) so Paused/Resumed stay
+        // symmetric.
+        if (transitioned)
+            SafeInvoke(Resumed);
+
+        // Wake the engine cycle loop...
+        lock (_parkMonitor)
+        {
+            Monitor.PulseAll(_parkMonitor);
+        }
+
+        // ...and the registered game loops.
+        foreach (var loop in SnapshotEnginePausableLoops())
+            loop.EngineResume();
+    }
+
+    /// <summary>
+    /// Registers a game loop that pauses and resumes with the global engine pause. Called by
+    /// <see cref="FixedRateGameLoop"/> when it starts with
+    /// <see cref="FixedRateGameLoop.PauseWithEngine"/> enabled.
+    /// </summary>
+    /// <param name="loop">The loop to register.</param>
+    internal void RegisterEnginePausableLoop(FixedRateGameLoop loop)
+    {
+        lock (_enginePausableLoops)
+        {
+            if (!_enginePausableLoops.Contains(loop))
+                _enginePausableLoops.Add(loop);
+        }
+
+        // A loop registered while the engine is already paused parks immediately.
+        if (_isPaused)
+            loop.EnginePause();
+    }
+
+    /// <summary>
+    /// Unregisters a game loop from the global engine pause. Called by
+    /// <see cref="FixedRateGameLoop"/> when it stops.
+    /// </summary>
+    /// <param name="loop">The loop to unregister.</param>
+    internal void UnregisterEnginePausableLoop(FixedRateGameLoop loop)
+    {
+        lock (_enginePausableLoops)
+        {
+            _enginePausableLoops.Remove(loop);
+        }
+    }
+
+    private FixedRateGameLoop[] SnapshotEnginePausableLoops()
+    {
+        lock (_enginePausableLoops)
+        {
+            return _enginePausableLoops.ToArray();
+        }
+    }
+
+    private void WaitForCycleLoopPark()
+    {
+        lock (_parkMonitor)
+        {
+            while (_isPaused && IsRunning && !_cycleLoopParked)
+                Monitor.Wait(_parkMonitor);
+        }
+    }
+
+    /// <summary>
+    /// The engine cycle loop's pause path: runs the pause transition (idempotent per pause
+    /// episode), then parks at zero CPU until <see cref="Resume"/> or <see cref="Stop"/>.
+    /// Runs on the engine thread.
+    /// </summary>
+    private void PauseCycleLoop()
+    {
+        RunPauseTransition(renderFinalFrame: true);
+
+        lock (_parkMonitor)
+        {
+            _cycleLoopParked = true;
+            Monitor.PulseAll(_parkMonitor); // release Pause() callers waiting for the park
+
+            // Wake on any pulse and return to the outer loop, which re-checks the pause
+            // state — so a new pause episode that begins while the loop is still parked from
+            // the previous one still gets its own transition (Paused event, snapshot, audio).
+            // Spurious wakes are safe: the outer loop just re-parks.
+            if (_isPaused && IsRunning)
+                Monitor.Wait(_parkMonitor);
+
+            _cycleLoopParked = false;
+        }
+    }
+
+    /// <summary>
+    /// The once-per-pause-episode transition: capture <see cref="LastFrameBeforePause"/>,
+    /// suspend audio, raise <see cref="Paused"/>, and (in engine-cycle mode) render one final
+    /// frame so pause-screen scene changes become visible.
+    /// </summary>
+    /// <param name="renderFinalFrame">Whether to render a final frame after the Paused event.</param>
+    private void RunPauseTransition(bool renderFinalFrame)
+    {
+        lock (_pauseGate)
+        {
+            if (_pauseTransitionDone || !_isPaused)
+                return;
+
+            _pauseTransitionDone = true;
+        }
+
+        CaptureLastFramesBeforePause();
+
+        if (Configuration.PauseSuspendsAudio)
+        {
+            try
+            {
+                AudioPauseRegistry.SuspendAll(Configuration.PauseShortSoundEffectSeconds);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to suspend audio for the engine pause.");
+            }
+        }
+
+        SafeInvoke(Paused);
+
+        if (renderFinalFrame)
+        {
+            try
+            {
+                RenderPausedFrame();
+            }
+            catch (Exception ex)
+            {
+                HandleCycleException(ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Captures what the viewer is seeing on every render surface at the moment the pause
+    /// takes effect — before the <see cref="Paused"/> event, so handlers can use the images.
+    /// Scene-pipeline surfaces snapshot their backbuffers; framebuffer presenters copy their
+    /// newest presented frame. GL-thread-rendered (GPU) surfaces are skipped.
+    /// </summary>
+    private void CaptureLastFramesBeforePause()
+    {
+        SKImage? first = null;
+
+        try
+        {
+            foreach (var surface in RenderSurfaceHostRegistry.All.ToArray())
+            {
+                if (surface.Backbuffer.IsGlThreadRendered)
+                    continue;
+
+                SKImage? snapshot = null;
+                try
+                {
+                    snapshot = surface.Backbuffer.Snapshot();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to snapshot a render surface for the engine pause.");
+                }
+
+                surface.LastFrameBeforePause?.Dispose();
+                surface.LastFrameBeforePause = snapshot;
+                first ??= snapshot;
+            }
+
+            var presenterCapture = PixelFramePresenter.CaptureAllForEnginePause();
+            first ??= presenterCapture;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to capture the last frame before the engine pause.");
+        }
+
+        LastFrameBeforePause = first;
+    }
+
+    /// <summary>
+    /// Renders and presents one frame outside the normal cycle — the final frame after the
+    /// <see cref="Paused"/> event, ignoring the TargetFPS throttle. Runs on the thread that
+    /// performs the pause transition.
+    /// </summary>
+    private void RenderPausedFrame()
+    {
+        long tick = HighResTimer.GetCurrentTick();
+
+        foreach (var surface in RenderSurfaceHostRegistry.All.ToArray())
+        {
+            if (surface.Backbuffer.IsGlThreadRendered)
+                continue;
+
+            surface.RenderToBackbuffer(tick);
+            surface.PresentBackbufferToAdapter();
+        }
+    }
+
+    /// <summary>
+    /// Shifts every time baseline in the engine past the paused interval, so the first
+    /// resumed cycle sees no time jump: no giant movement delta, no timer burst, no animation
+    /// churn. Baselines captured DURING the pause (objects created by a Paused handler) are
+    /// never pushed into the future. Also shifts the engine start tick so
+    /// <see cref="TotalTicksEngineRunning"/> excludes paused time. Caller holds the pause gate.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    private void RebaselineAfterPause(long pausedTicks, long resumeTick)
+    {
+        if (pausedTicks <= 0)
+            return;
+
+        if (IsRunning)
+        {
+            _startTick += pausedTicks;
+            _lastCycleTick = HighResTimer.ShiftBaselineForResume(_lastCycleTick, pausedTicks, resumeTick);
+            _lastBackgroundTick = HighResTimer.ShiftBaselineForResume(_lastBackgroundTick, pausedTicks, resumeTick);
+            _lastForegroundTick = HighResTimer.ShiftBaselineForResume(_lastForegroundTick, pausedTicks, resumeTick);
+            _lastCPSSamplingTick = HighResTimer.ShiftBaselineForResume(_lastCPSSamplingTick, pausedTicks, resumeTick);
+        }
+
+        Timer.ShiftAllForResume(pausedTicks, resumeTick);
+        SpriteManager.Instance.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+        DirectDrawingManager.Instance.ShiftTimeBaselinesForResume(pausedTicks, resumeTick);
+
+        foreach (var tile in Tile.TilesAnimating.ToArray())
+            tile.TileAnimator?.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
     }
 
     private void InvokeShutdownAfterCycleStops()
@@ -657,19 +1082,73 @@ public sealed class Engine : IDisposable
     public bool IsRunning { get; private set; }
 
     /// <summary>
-    /// Gets the total number of high-resolution timer ticks that have elapsed since the engine started.
+    /// Gets a value indicating whether the engine is globally paused via <see cref="Pause"/>.
     /// </summary>
-    /// <value>The elapsed ticks as measured by <see cref="HighResTimer"/>.</value>
+    /// <value><c>true</c> from <see cref="Pause"/> until <see cref="Resume"/>; otherwise <c>false</c>.</value>
     /// <remarks>
-    /// This value represents elapsed time in the native resolution of the high-resolution timer.
-    /// Use <see cref="TotalSecondsEngineRunning"/> for a time value in seconds.
+    /// Paused is orthogonal to <see cref="IsRunning"/>: a paused engine is still running, just
+    /// parked. Pausing before the engine starts is valid — the loop then starts parked.
     /// </remarks>
-    public long TotalTicksEngineRunning => HighResTimer.GetCurrentTick() - _startTick;
+    public bool IsPaused => _isPaused;
 
     /// <summary>
-    /// Gets the total number of seconds that have elapsed since the engine started.
+    /// Gets the frame the viewer was seeing at the moment the global engine pause took
+    /// effect — captured by <see cref="Pause"/> before the <see cref="Paused"/> event is
+    /// raised, so both the hosting application and a pause handler can use it (for example,
+    /// to display a dimmed copy as a pause screen).
     /// </summary>
-    /// <value>The elapsed time in seconds as a floating-point value.</value>
+    /// <value>
+    /// The last pre-pause frame of the first capturable render surface (scene-pipeline
+    /// backbuffer or framebuffer presenter), or <c>null</c> before the first pause or when
+    /// nothing had been rendered. With multiple surfaces, each
+    /// <see cref="RenderSurfaceHostBase.LastFrameBeforePause"/> (and each
+    /// <see cref="PixelFramePresenter.LastFrameBeforePause"/>) holds its own capture.
+    /// </value>
+    /// <remarks>
+    /// The image is owned by the engine and remains valid through the resume, until the next
+    /// <see cref="Pause"/> capture replaces it; copy it to keep it longer.
+    /// GL-thread-rendered (GPU) surfaces are not captured.
+    /// </remarks>
+    public SKImage? LastFrameBeforePause { get; private set; }
+
+    /// <summary>
+    /// Returns <see cref="LastFrameBeforePause"/> as a raw RGBA8888 bitmap — a Skia-free
+    /// shape for hosting applications: 4 bytes per pixel in R,G,B,A memory order, row-major,
+    /// unpremultiplied alpha, <c>width * height * 4</c> bytes total.
+    /// </summary>
+    /// <remarks>
+    /// This layout loads directly into imaging libraries — for example, saving the pause
+    /// screenshot as a PNG with CodeBrix.Imaging takes no translation code:
+    /// <c>Image.LoadPixelData&lt;Rgba32&gt;(bytes, width, height)</c> followed by
+    /// <c>SaveAsPng(...)</c>. Each call converts and copies afresh; hold the result rather
+    /// than re-calling per frame.
+    /// </remarks>
+    /// <param name="width">The bitmap width in pixels; 0 when the result is <c>null</c>.</param>
+    /// <param name="height">The bitmap height in pixels; 0 when the result is <c>null</c>.</param>
+    /// <returns>
+    /// The RGBA8888 pixel bytes of the last pre-pause frame, or <c>null</c> when no frame
+    /// has been captured (see <see cref="LastFrameBeforePause"/>).
+    /// </returns>
+    public byte[]? LastFrameBeforePauseAsRgba(out int width, out int height)
+        => RgbaPixelExport.FromImage(LastFrameBeforePause, out width, out height);
+
+    /// <summary>
+    /// Gets the total number of high-resolution timer ticks that have elapsed since the engine started,
+    /// excluding time spent globally paused via <see cref="Pause"/>.
+    /// </summary>
+    /// <value>The elapsed active ticks as measured by <see cref="HighResTimer"/>.</value>
+    /// <remarks>
+    /// This value represents elapsed time in the native resolution of the high-resolution timer.
+    /// While paused, the value holds at the moment the pause began. Use
+    /// <see cref="TotalSecondsEngineRunning"/> for a time value in seconds.
+    /// </remarks>
+    public long TotalTicksEngineRunning => (_isPaused ? _pauseStartTick : HighResTimer.GetCurrentTick()) - _startTick;
+
+    /// <summary>
+    /// Gets the total number of seconds that have elapsed since the engine started, excluding
+    /// time spent globally paused via <see cref="Pause"/>.
+    /// </summary>
+    /// <value>The elapsed active time in seconds as a floating-point value.</value>
     /// <remarks>
     /// This value is derived from <see cref="TotalTicksEngineRunning"/> and provides
     /// a convenient measure of total runtime duration.
@@ -834,6 +1313,19 @@ public sealed class Engine : IDisposable
     }
 
     private void Cycle()
+    {
+        _inCycle = true;
+        try
+        {
+            CycleCore();
+        }
+        finally
+        {
+            _inCycle = false;
+        }
+    }
+
+    private void CycleCore()
     {
         EngineDispatcher.Drain();
 
@@ -1050,6 +1542,15 @@ public sealed class Engine : IDisposable
 
                 Timer.ClearAll();
                 State.Clear();
+
+                // The pause snapshots are owned by their surfaces/presenters; just drop the
+                // engine's reference.
+                LastFrameBeforePause = null;
+
+                lock (_enginePausableLoops)
+                {
+                    _enginePausableLoops.Clear();
+                }
             }
 
             // unmanaged cleanup...

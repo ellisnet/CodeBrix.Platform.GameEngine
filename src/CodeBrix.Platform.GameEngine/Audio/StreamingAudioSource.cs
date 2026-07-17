@@ -28,7 +28,7 @@ public delegate void FillAudioBuffer(Span<float> buffer);
 /// uses the provider's own declared format, which must match the device rate.
 /// </para>
 /// </remarks>
-public sealed class StreamingAudioSource : IDisposable
+public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio
 {
     private readonly WaveOutEvent _output = new();
     private readonly VolumeSampleProvider _volumeProvider;
@@ -58,6 +58,36 @@ public sealed class StreamingAudioSource : IDisposable
 
         _volumeProvider = new VolumeSampleProvider(source);
         _output.Init(_volumeProvider);
+
+        AudioPauseRegistry.Register(this);
+    }
+
+    /// <summary>
+    /// Overrides the global engine pause's suspend decision for this stream: <c>true</c> (or
+    /// <c>null</c>, the default) suspends — a stream is endless, so the automatic
+    /// short-sound-effect exemption never applies — and <c>false</c> keeps it playing
+    /// through a pause.
+    /// </summary>
+    public bool? SuspendOnEnginePause { get; set; }
+
+    bool IEnginePausableAudio.IsPlayingForEnginePause => !_isDisposed && IsPlaying;
+
+    TimeSpan? IEnginePausableAudio.KnownDurationForEnginePause => null;
+
+    void IEnginePausableAudio.EnginePause()
+    {
+        if (!_isDisposed && _output.PlaybackState == PlaybackState.Playing)
+        {
+            _output.Pause();
+        }
+    }
+
+    void IEnginePausableAudio.EngineResume()
+    {
+        if (!_isDisposed && _output.PlaybackState == PlaybackState.Paused)
+        {
+            _output.Play();
+        }
     }
 
     /// <summary>The stream volume, 0.0 (silent) to 1.0 (full). May be changed while playing.</summary>

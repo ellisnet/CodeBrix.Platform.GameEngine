@@ -23,7 +23,7 @@ namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 /// 25 ms interval. Treat "just finished" states as approximate.
 /// </para>
 /// </remarks>
-public sealed class SoundChannel : IDisposable
+public sealed class SoundChannel : IDisposable, IEnginePausableAudio
 {
     private readonly WaveOutEvent _output = new();
     private WaveStream? _reader;
@@ -47,6 +47,38 @@ public sealed class SoundChannel : IDisposable
         {
             throw new InvalidOperationException(
                 $"Call {nameof(AudioSystem)}.{nameof(AudioSystem.Initialize)}() before creating {nameof(SoundChannel)} instances; channels rate-convert to the pinned device rate.");
+        }
+
+        AudioPauseRegistry.Register(this);
+    }
+
+    /// <summary>
+    /// Overrides the global engine pause's suspend decision for this channel: <c>true</c>
+    /// always suspends, <c>false</c> never suspends, <c>null</c> (the default) applies the
+    /// automatic exemption — a playing clip no longer than
+    /// <see cref="Configuration.EngineConfiguration.PauseShortSoundEffectSeconds"/> is treated
+    /// as a fire-and-forget effect and left to ring out.
+    /// </summary>
+    public bool? SuspendOnEnginePause { get; set; }
+
+    bool IEnginePausableAudio.IsPlayingForEnginePause => !_isDisposed && State == PlaybackState.Playing;
+
+    TimeSpan? IEnginePausableAudio.KnownDurationForEnginePause
+        => Duration > TimeSpan.Zero ? Duration : null;
+
+    void IEnginePausableAudio.EnginePause()
+    {
+        if (!_isDisposed)
+        {
+            Pause();
+        }
+    }
+
+    void IEnginePausableAudio.EngineResume()
+    {
+        if (!_isDisposed)
+        {
+            Resume();
         }
     }
 

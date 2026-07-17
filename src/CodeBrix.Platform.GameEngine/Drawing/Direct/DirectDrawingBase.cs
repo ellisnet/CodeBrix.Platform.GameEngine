@@ -881,6 +881,18 @@ public abstract class DirectDrawingBase : IDirectDrawable, IComparable<DirectDra
     }
 
     /// <summary>
+    /// Shifts this drawing's update time baseline forward after a global engine pause, so the
+    /// first resumed <see cref="Update(long)"/> does not see the paused time as one giant
+    /// delta. Overrides shift any additional tick baselines they keep, then call the base.
+    /// </summary>
+    /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
+    /// <param name="resumeTick">The current tick at the moment of resume.</param>
+    internal virtual void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        _lastTick = HighResTimer.ShiftBaselineForResume(_lastTick, pausedTicks, resumeTick);
+    }
+
+    /// <summary>
     /// Compares this direct drawing to another for sorting by <see cref="ZOrder"/>.
     /// </summary>
     /// <param name="other">The other direct drawing to compare, or <see langword="null"/>.</param>
