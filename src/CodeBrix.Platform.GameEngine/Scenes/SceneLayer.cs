@@ -162,9 +162,57 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         InitValues(tileArray, width, height, parallax, coordinateSystem);
     }
 
-    [OnDeserialized]
-    private void OnDeserialized(StreamingContext context) =>
-        InitValues(_sceneLayerTileArray, _tileWidth, _tileHeight, _parallax, CoordinateSystemType);
+    // Deserialization construction: everything (including the tile grid) is populated by the
+    // serializer afterwards; RehydrateAfterDeserialization then rebuilds the runtime-only
+    // structures. InitValues must NOT run here — it would replace the deserialized tile grid
+    // with blank tiles.
+    private SceneLayer()
+    { }
+
+    /// <summary>
+    /// Creates a bare <see cref="SceneLayer"/> for the save-system deserializer; the
+    /// serializer populates its members (including the tile grid) and
+    /// <see cref="RehydrateAfterDeserialization"/> rebuilds the runtime structures.
+    /// </summary>
+    internal static SceneLayer CreateForDeserialization() => new();
+
+    /// <summary>
+    /// Rebuilds the runtime-only structures a deserialized layer is missing — collision
+    /// registry/resolver, refresh queue, tile back-references, and tile colliders — WITHOUT
+    /// touching the deserialized tile state (frames, visibility, flags).
+    /// </summary>
+    internal void RehydrateAfterDeserialization()
+    {
+        _sceneLayerTileArray ??= new SceneLayerTile[0, 0];
+
+        ColliderRegistry = new ColliderRegistry();
+        CollisionResolver = new CollisionResolver(ColliderRegistry);
+        RefreshQueue = new RefreshQueue();
+
+        for (int x = 0; x <= _sceneLayerTileArray.GetUpperBound(0); x++)
+        {
+            for (int y = 0; y <= _sceneLayerTileArray.GetUpperBound(1); y++)
+            {
+                var tile = _sceneLayerTileArray[x, y];
+                if (tile is null)
+                {
+                    // A cell the save file did not carry: recreate it blank, like layer
+                    // construction does.
+                    tile = new SceneLayerTile(this);
+                    _sceneLayerTileArray[x, y] = tile;
+                }
+
+                tile.parentSceneLayer = this;
+                tile.sceneLayerCoordinates = new Point(x, y);
+                tile.Collider ??= new TileCollider(tile, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None);
+
+                if (tile.CollisionsEnabled)
+                {
+                    ColliderRegistry.Register(tile.Collider);
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Finalizes an instance of the <see cref="SceneLayer"/> class, releasing resources if the layer

@@ -124,8 +124,13 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         Dispose();
     }
 
-    [OnDeserialized]
-    private void OnDeserialized(StreamingContext context)
+    /// <summary>
+    /// Rebuilds the live wiring a deserialized sprite is missing — animator, movement
+    /// controller, and collider — and queues its screen area for refresh. Registration with
+    /// <see cref="SpriteManager"/> is NOT done here; <see cref="EngineState"/>'s merge step
+    /// owns registry membership.
+    /// </summary>
+    internal void RehydrateAfterDeserialization()
     {
         animator = new Animator(this);
         pauseAnimation = false;
@@ -133,12 +138,7 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
         _collider = new TileCollider(this, collisionGroup: CollisionMasks.All, collidesWith: CollisionMasks.All);
 
-        if (_sceneLayer != null)
-        {
-            _sceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
-        }
-
-        SpriteManager.Instance.AddSprite(this);
+        _sceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
     }
 
     #endregion constructors / finalizer

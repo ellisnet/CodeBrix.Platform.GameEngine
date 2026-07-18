@@ -71,18 +71,28 @@ public class Cycle : ICloneable, IDisposable
     {
         Sequence = fromCycle.Sequence;
         _throttle = fromCycle._throttle;
+        _throttleTime = fromCycle._throttleTime;
         NextCycle = this;
         CycleKey = fromCycle.CycleKey;
+        HideTileOnCycleEnd = fromCycle.HideTileOnCycleEnd;
     }
 
-    [OnDeserialized()]
-    private void OnDeserialized(StreamingContext context)
+    // Deserialization construction: no registry side effect (EngineState's merge step
+    // decides registry membership); the serializer populates the members afterwards —
+    // including the readonly CycleKey/HideTileOnCycleEnd fields, via the save-contract
+    // resolver's field access.
+    private Cycle()
     {
-        if (Cycle._cycles.ContainsKey(CycleKey))
-            Cycle._cycles[CycleKey] = this;
-        else
-            Cycle._cycles.Add(CycleKey, this);
+        Sequence = new FrameSequence(new List<Frame>());
+        CycleKey = string.Empty;
+        NextCycle = this;
     }
+
+    /// <summary>
+    /// Creates a bare <see cref="Cycle"/> for the save-system deserializer: unlike the public
+    /// constructor it does NOT self-register in the global cycle registry.
+    /// </summary>
+    internal static Cycle CreateForDeserialization() => new();
 
     #endregion constructors / destructor
 

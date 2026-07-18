@@ -209,39 +209,14 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
                 return false;
             }
 
-            using (_context.MakeCurrent())
-            {
-                // WORKAROUND (SkiaSharp 4.150.1): OffscreenGLContext.CreateGrContext() builds its
-                // GRGlInterface from a managed GetProcAddress callback (the "assembled interface"
-                // path), which segfaults natively in the 4.150.1 SkiaSharp fork on Linux (regression
-                // from 4.150.0 — reproduced outside this engine with a bare GLX pbuffer context).
-                // GRGlInterface.Create() instead resolves entry points natively from the CURRENT
-                // context — our off-screen context, current right here — and works on both desktop
-                // GL and GLES, so no per-head flavor branch is needed. Revert to
-                // _context.CreateGrContext() once the platform's Graphics3DGL fix ships.
-                var glInterface = GRGlInterface.Create();
-                if (glInterface is null)
-                {
-                    Engine.Logger.LogWarning(
-                        "Tier B GPU rendering is unavailable (no GRGlInterface for the current GL context); " +
-                        "falling back to CPU rendering of the GPU backbuffer.");
-                    _context.Dispose();
-                    _context = null;
-                    return false;
-                }
-
-                _grContext = GRContext.CreateGl(glInterface);
-                if (_grContext is null)
-                {
-                    glInterface.Dispose();
-                    Engine.Logger.LogWarning(
-                        "Tier B GPU rendering is unavailable (GRContext creation failed); " +
-                        "falling back to CPU rendering of the GPU backbuffer.");
-                    _context.Dispose();
-                    _context = null;
-                    return false;
-                }
-            }
+            // OffscreenGLContext.CreateGrContext() makes this off-screen context current itself,
+            // owns the desktop-GL-vs-GLES flavor branch, and throws InvalidOperationException if
+            // neither GL flavor can build a GRContext for it (caught below → CPU fallback). Its
+            // managed GetProcAddress "assembled interface" path is safe again as of
+            // CodeBrix.Platform 1.0.199.897, which filters the egl* names that X11's
+            // glXGetProcAddress otherwise resolved to non-null garbage stubs (the SIGSEGV that
+            // previously forced the GRGlInterface.Create() native-path workaround here).
+            _grContext = _context.CreateGrContext();
 
             _gpuAvailable = true;
         }

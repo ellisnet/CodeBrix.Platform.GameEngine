@@ -15,11 +15,14 @@ namespace CodeBrix.Platform.GameEngine.Physics.Collisions; //was previously: Gon
 /// </summary>
 public sealed class CollisionGroupRegistry
 {
-    [JsonPropertyName("groups")]
     private readonly Dictionary<string, int> _groups;
-
-    [JsonPropertyName("nextBit")]
     private int _nextBit;
+
+    // Serialization is handled by CollisionGroupRegistryJsonConverter (registered in
+    // EngineState.SerializerOptions), which round-trips through the internal constructor so
+    // the case-insensitive group comparer is preserved.
+    internal IReadOnlyDictionary<string, int> GroupsForSerialization => _groups;
+    internal int NextBitForSerialization => _nextBit;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CollisionGroupRegistry"/> class with
@@ -36,11 +39,10 @@ public sealed class CollisionGroupRegistry
     }
 
     /// <summary>
-    /// JSON constructor used during deserialization to restore internal state.
+    /// Constructor used during deserialization to restore internal state.
     /// </summary>
     /// <param name="groups">The serialized group dictionary.</param>
     /// <param name="nextBit">The next available bit index.</param>
-    [JsonConstructor]
     internal CollisionGroupRegistry(Dictionary<string, int> groups, int nextBit)
     {
         _groups = new Dictionary<string, int>(groups ?? throw new ArgumentNullException(nameof(groups)),

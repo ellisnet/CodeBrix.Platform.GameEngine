@@ -21,6 +21,8 @@ public sealed class AudioResourceManager : IDisposable
 {
     private static readonly Lazy<AudioResourceManager> _instance = new(() => new AudioResourceManager());
     private readonly ConcurrentDictionary<string, (AudioResource soundResource, string? tempPath)> _soundResources = new();
+    private readonly object _sfxPoolGate = new();
+    private SfxVoicePool? _sfxPool;
     private bool _disposed = false;
 
     /// <summary>
@@ -35,6 +37,47 @@ public sealed class AudioResourceManager : IDisposable
     /// Singleton instance of the AudioResourceManager.
     /// </summary>
     public static AudioResourceManager Instance => _instance.Value;
+
+    /// <summary>
+    /// The duration ceiling, in seconds, under which a loaded container-format sound (.wav,
+    /// .mp3, ...) is preloaded — decoded ONCE to PCM in memory at load time (see
+    /// <see cref="CachedSound"/>) so plays, clones, and <see cref="SfxVoicePool"/> voices
+    /// never decode on the audio thread. Longer sounds (music, ambience) keep their
+    /// streaming reader. Defaults to 10 seconds; set 0 (or negative) to disable preloading.
+    /// Applies to loads that happen after the change.
+    /// </summary>
+    public double PreloadShortSoundEffectMaxSeconds { get; set; } = 10.0;
+
+    /// <summary>
+    /// The shared fixed-size voice pool (32 voices) that <see cref="TryPlaySfx"/> routes
+    /// sound-effect triggers through; created on first use. Configure its
+    /// <see cref="SfxVoicePool.CullPolicy"/> here, or construct dedicated
+    /// <see cref="SfxVoicePool"/> instances for games that need different sizes or several
+    /// pools.
+    /// </summary>
+    public SfxVoicePool SfxPool
+    {
+        get
+        {
+            lock (_sfxPoolGate)
+            {
+                return _sfxPool ??= new SfxVoicePool();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires a preloaded sound effect through the shared <see cref="SfxPool"/> — the
+    /// one-call trigger route for rapid-fire SFX. The resource must have been preloaded at
+    /// load time (<see cref="AudioResource.IsPreloaded"/>).
+    /// </summary>
+    /// <param name="key">The key of the loaded, preloaded audio resource.</param>
+    /// <param name="volume">The voice volume, 0.0–1.0. Defaults to 1.0.</param>
+    /// <param name="pan">The stereo pan position, -1.0 (left) to 1.0 (right). Defaults to 0.0 (center).</param>
+    /// <param name="priority">The trigger's priority for <see cref="SfxCullPolicy.CullLowestPriority"/> pools (higher wins).</param>
+    /// <returns><see langword="true"/> if the sound started; <see langword="false"/> if it was dropped.</returns>
+    public bool TryPlaySfx(string key, float volume = 1.0f, float pan = 0.0f, int priority = 0)
+        => SfxPool.TryPlay(key, volume, pan, priority);
 
     /// <summary>
     /// Loads an audio resource from a file on disk.
@@ -210,6 +253,24 @@ public sealed class AudioResourceManager : IDisposable
             return null;
         }
 
+        if (original.soundResource.CachedData is { } cachedData)
+        {
+            // Preloaded short effect: the clone shares the decoded PCM — no re-decode, no
+            // byte-buffer copy.
+            var clone = new AudioResource(
+                key: newKey,
+                audioStream: new CachedSoundWaveStream(cachedData),
+                volume: volume ?? original.soundResource.Volume,
+                pan: pan ?? original.soundResource.Pan,
+                filePathOrExt: original.soundResource.SourceExtension,
+                rawBytes: original.soundResource.OriginalBytes,
+                cachedData: cachedData);
+
+            _soundResources[newKey] = (clone, null);
+            RegisterLoadedSound(newKey, clone);
+            return clone;
+        }
+
         if (original.soundResource.OriginalBytes == null)
         {
             Engine.Logger.LogWarning("Cannot clone AudioResource '{Key}' – missing original bytes.", key);
@@ -261,6 +322,30 @@ public sealed class AudioResourceManager : IDisposable
 
         var reader = readerFactory(streamForReader);
 
+        // Preload short effects: decode ONCE to PCM in memory so plays, clones, and
+        // SfxVoicePool voices never decode (or touch a file) on the audio thread. Long
+        // material and file-bound readers keep the streaming path.
+        CachedSound? cachedData = null;
+        if (!requiresFile && PreloadShortSoundEffectMaxSeconds > 0)
+        {
+            TimeSpan estimatedTotal;
+            try
+            {
+                estimatedTotal = reader.TotalTime;
+            }
+            catch (Exception)
+            {
+                estimatedTotal = TimeSpan.MaxValue; // duration unknown -> stream it
+            }
+
+            if (estimatedTotal.TotalSeconds <= PreloadShortSoundEffectMaxSeconds)
+            {
+                cachedData = new CachedSound(reader);
+                reader.Dispose();
+                reader = new CachedSoundWaveStream(cachedData);
+            }
+        }
+
         var sound = new AudioResource(
             key,
             reader,
@@ -268,7 +353,8 @@ public sealed class AudioResourceManager : IDisposable
             pan,
             fileHint,
             bytes,
-            tempFilePath
+            tempFilePath,
+            cachedData: cachedData
         );
 
         _soundResources[key] = (sound, requiresFile ? tempFilePath : null);
@@ -374,6 +460,13 @@ public sealed class AudioResourceManager : IDisposable
         if (!_disposed)
         {
             Clear();
+
+            lock (_sfxPoolGate)
+            {
+                _sfxPool?.Dispose();
+                _sfxPool = null;
+            }
+
             _disposed = true;
         }
     }

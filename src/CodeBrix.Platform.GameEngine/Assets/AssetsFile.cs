@@ -48,11 +48,18 @@ public sealed class AssetsFile : IDisposable
 
     private bool _isLoaded;
 
+    /// <summary>
+    /// True once this instance's entries are usable (loaded from disk or newly created).
+    /// False on a raw deserialized spec, which carries only path/password metadata.
+    /// </summary>
+    internal bool IsLoaded => _isLoaded;
+
+    // No registration side effect here: deserializer-created instances are raw specs that
+    // EngineState re-loads through LoadOrCreate (which registers). Registering here would
+    // leak every raw deserialized spec into the global registry.
     [JsonConstructor]
     internal AssetsFile()
-    {
-        _allAssetsFiles.Add(this);
-    }
+    { }
 
     /// <summary>
     /// Loads an existing asset file from the specified path or creates a new one if the file does not exist.
@@ -73,6 +80,8 @@ public sealed class AssetsFile : IDisposable
             Password = password,
             UseEncryption = encrypt
         };
+
+        _allAssetsFiles.Add(assetFile);
 
         if (File.Exists(path))
             assetFile.LoadZip();

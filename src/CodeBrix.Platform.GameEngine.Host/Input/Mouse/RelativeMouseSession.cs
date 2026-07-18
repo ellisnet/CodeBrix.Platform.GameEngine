@@ -5,13 +5,6 @@ using Microsoft.Extensions.Logging;
 using Windows.Devices.Input;
 using Windows.Foundation;
 
-// The relative-mouse surface (MouseDevice.MouseMoved) is implemented by current
-// CodeBrix.Platform sources; against older platform packages the members are
-// [NotImplemented] stubs, which BeginCore already handles at runtime
-// (NotImplementedException -> session stays inactive, game runs keyboard-only). The
-// analyzer's not-implemented flag on these references is therefore expected here.
-#pragma warning disable Uno0001
-
 namespace CodeBrix.Platform.GameEngine.Host.Input.Mouse;
 
 /// <summary>

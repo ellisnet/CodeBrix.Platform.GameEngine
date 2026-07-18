@@ -568,13 +568,47 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
 AUDIO
 --------------------------------------------------------------------------------
 Two paths, matching the two modes (both from CodeBrix.Platform.GameEngine.Audio,
-device I/O via CodeBrix.Audio):
+device I/O via CodeBrix.Audio; every voice mixes into ONE shared native output
+device, so overlapping sounds are cheap):
 
   RESOURCE PATH (typical for Mode A): AudioResourceManager.Instance loads
   clips (LoadFromFile / LoadFromStream / LoadFromPcm /
   LoadFromEngineAssetsFile); each AudioResource owns a voice: Play(fromStart),
   Pause(), Resume(), Stop(), Seek(), IsLooping, Volume, Pan, Duration,
   PlaybackCompleted. Clone() gives an independent voice of the same clip.
+
+  SHORT-EFFECT PRELOAD (automatic): container-format sounds (.wav/.mp3) no
+  longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds (default
+  10 s; 0 disables) are decoded ONCE to raw float PCM in memory at load time
+  (AudioResource.IsPreloaded == true; the CachedSound type). Plays, Clone()s,
+  SoundChannel clips, and SfxVoicePool voices over a preloaded resource share
+  that single decoded buffer — no decode, file, or MP3 work ever happens on
+  the real-time audio thread. When the app pinned the device format
+  (AudioSystem.Initialize) the decode also rate-converts up front. Longer
+  material (music, ambience) keeps its streaming reader — leave it that way;
+  preloading minutes of PCM would waste memory for a single voice.
+
+  RAPID-FIRE SFX — SfxVoicePool: route sound-effect TRIGGERS (gunshots,
+  pickups, impacts) through a fixed-size voice pool instead of playing the
+  AudioResource itself per shot:
+      AudioResourceManager.Instance.TryPlaySfx("laser", volume, pan, priority);
+  That one call plays the preloaded clip on the shared pool
+  (AudioResourceManager.Instance.SfxPool, 32 pre-allocated voices) — no
+  per-play player allocation (no GC stutter), and a POLYPHONY CAP: when every
+  voice is busy, SfxVoicePool.CullPolicy decides —
+      CullOldest         (default) steal the longest-playing voice
+      CullLowestPriority steal the lowest-priority voice (oldest on a tie),
+                         unless every playing voice outranks the new trigger;
+                         map camera distance / gameplay importance onto the
+                         priority argument (higher wins)
+      RejectNew          drop the new trigger
+  Culls/drops log at Debug. Games with special needs construct their own
+  SfxVoicePool(size) instances (several pools, different sizes) and call
+  TryPlay(CachedSound|AudioResource|key, volume, pan, priority). The pool
+  refuses non-preloaded resources rather than decode on trigger. Pool voices
+  participate in the global engine pause like all engine audio (pool-wide
+  override: SfxVoicePool.SuspendOnEnginePause). A voice returns to the pool
+  when its clip ends (~25 ms sweep lag) or on StopAll()/cull.
 
   PINNED-DEVICE PATH (typical for Mode B, opt-in):
       AudioSystem.Initialize(44100, 2);      // pins the device rate — REQUIRED
@@ -589,11 +623,18 @@ device I/O via CodeBrix.Audio):
       pulled on the AUDIO CALLBACK THREAD (fast, allocation-free, never
       block); Start/Stop + Volume.
     * AudioResourceManager.LoadFromPcm(key, data, rate, bits {8u,16s},
-      channels) — headerless raw-PCM lumps, no container needed.
+      channels) — headerless raw-PCM lumps, no container needed. (Raw-PCM
+      resources are not preloaded — they are already uncompressed in memory.)
 
   PAUSE INTERACTION (both paths): the global engine pause suspends playing
   voices and resumes exactly that set; short fire-and-forget clips ring out
   (see THE GLOBAL PAUSE SYSTEM). Per-voice override: SuspendOnEnginePause.
+
+  SHUTDOWN: Engine.Dispose() shuts the shared audio output down (stopping any
+  remaining voices and releasing the native device). Mode-B games that never
+  dispose the engine call AudioSystem.Shutdown() themselves on exit (the
+  SoftRender sample shows the pattern). The shared output restarts
+  automatically if something plays later in the process.
 
 SCENES, LAYERS, AND TILES (Mode A)
 --------------------------------------------------------------------------------
@@ -799,11 +840,40 @@ SoundResources (State.ValueBag is deliberately NOT serialized).
     EngineState.MergeFromFile("patch.json", overwriteExisting: true,
         parts: EngineStateParts.Scenes | EngineStateParts.Sprites);
 
+WHAT ROUND-TRIPS: the full populated object graph — scenes with their layers
+(tile grids, per-tile frames/visibility/flags, wrap flags, origin, parallax,
+z-order, tile size, collision groups), sprites (position, layer reference,
+frame, alignment/nudge/render-size, collision flag), animation cycles
+(sequences, throttle, chained/self NextCycle references), audio specs
+(source, volume/pan/looping), asset-pack references, and tilesheets
+(re-registered by definition). SHARED REFERENCES are preserved as identities:
+a sprite's layer reference and the scene's layer entry deserialize to the SAME
+instance ($id/$ref via CodeBrix.Json.Extensions Feature A). Loaded content is
+fully REHYDRATED: layer collision registries/refresh queues, tile colliders,
+tile->layer back-references, sprite animators/movement/colliders, and
+scene<->layer event wiring are rebuilt during the load's merge step.
+
+NOT persisted (by design): State.ValueBag and the per-tile/per-scene ValueBags
+(open-ended object data), in-flight movement scripts/jiggle/pulse state
+(sprites load at rest), animation playback position, and audio playback
+position. Live wiring (devices, streams, Skia objects) is never serialized —
+audio specs re-load from their persisted source (loose file path or asset-pack
+entry) and re-apply volume/pan/looping.
+
+MECHANICS AND RULES:
   * Save writes a versioned envelope { "schema": 1, "state": {...} };
     compress = GZip. The compress/compressed flags must AGREE between save
-    and load — the loader does not sniff.
+    and load — the loader does not sniff. Pre-v1 (Newtonsoft) files are
+    rejected by design.
   * LoadFromFile CLEARS the selected parts first (overwrite semantics);
-    MergeFromFile merges (scenes matched by ID, sprites by Nickname).
+    MergeFromFile merges (scenes matched by ID, sprites by Nickname, cycles/
+    audio by key). Audio specs whose resource came from an asset pack apply
+    their saved settings to the pack-loaded resource.
+  * Loading is STAGED internally: asset packs and tilesheets are registered
+    FIRST, then the object graph deserializes (tile/sprite Frames resolve
+    tilesheets BY NAME against the live registry during that read — this is
+    why a save file's tilesheets must load with it: don't load parts:Scenes
+    alone into a process that hasn't loaded the tilesheets those scenes use).
   * EngineStateParts is a flags enum (AssetsFiles, Tilesheets, Cycles,
     Scenes, Sprites, Audio, All); Tilesheets/Audio automatically pull in
     AssetsFiles they depend on. separateGtsFiles:true writes tilesheets as
@@ -812,7 +882,25 @@ SoundResources (State.ValueBag is deliberately NOT serialized).
     Configuration.StateFiles (List<StateFileMount>): File, IsCompressed,
     OverwriteExisting, EngineStateParts.
   * The proper hook for save-on-pause: call SaveToFile from the Paused event
-    (or OnEnginePaused) — game state is quiescent there by contract.
+    (or OnEnginePaused) — game state is quiescent there by contract. Load/
+    merge likewise belongs at quiescent moments (before Start, or while
+    paused), never mid-cycle from another thread.
+  * EngineState.SerializerOptions is the options template (public, settable).
+    It carries the EngineSaveContractResolver (namespace
+    CodeBrix.Platform.GameEngine.Serialization) — the piece that makes the
+    engine's model types round-trip under System.Text.Json (object contracts
+    for the referenceable types, non-public-member access, deserialization
+    constructors) — plus leaf converters for Frame, FrameSequence, the
+    SceneLayerTile[,] grid, and CollisionGroupRegistry. If a game replaces
+    SerializerOptions, keep the resolver and those converters or save/load
+    breaks. Do NOT add the CodeBrix.Json.Extensions polymorphism fallback
+    converter factory to these options — it would take precedence over
+    reference handling.
+  * Custom Sprite/Tile SUBCLASSES are not round-trip-aware out of the box:
+    the save contracts cover the engine's own types. A game that must persist
+    a subclass should keep its persistent data in engine-visible members and
+    rebuild the subclass wiring itself after load (or serialize its own data
+    alongside the engine save).
 
 ASSETS: AssetsFile
 --------------------------------------------------------------------------------
@@ -899,6 +987,15 @@ PAUSE CORRECTNESS
   [] Long-running voices the game manages specially: set SuspendOnEnginePause
      explicitly instead of fighting the automatic rule.
 
+SOUND EFFECTS
+  [] Fire rapid SFX through AudioResourceManager.TryPlaySfx (or your own
+     SfxVoicePool) — never a fresh decode or player per shot. Short effects
+     preload automatically; check IsPreloaded if a pool play returns false.
+  [] Keep music/ambience on streaming readers (one long-lived voice each);
+     don't raise PreloadShortSoundEffectMaxSeconds to cover them.
+  [] Pick the cull policy deliberately; with CullLowestPriority, give the
+     player's critical cues the highest priorities so they are never stolen.
+
 MUTUAL-EXCLUSIVITY RULES (each throws if violated)
   [] One mode per canvas: Host XOR UsePixelFramePresenter().
   [] InputPump.PollNow() only when the engine loop is NOT running.
@@ -963,11 +1060,10 @@ ARCHITECTURE
     cadence. They park during the global pause, are captured by the pause
     snapshot via the adapter's latest presented frame, and get one adapter-
     driven paused-overlay frame after the Paused handlers run.
-    NOTE (SkiaSharp 4.150.1): the adapter builds its GRContext with
-    GRGlInterface.Create() (native resolution from the current context) rather
-    than OffscreenGLContext.CreateGrContext(), whose managed-callback
-    "assembled interface" path segfaults in the 4.150.1 fork on Linux; revert
-    when the platform fix ships.
+    The adapter builds its GRContext with OffscreenGLContext.CreateGrContext()
+    (requires CodeBrix.Platform >= 1.0.199.897, whose X11 GL wrapper filters
+    the garbage egl* stubs glvnd/Mesa returns from glXGetProcAddress — the
+    cause of the earlier assembled-interface segfault).
 
   Source is grouped into sub-folders that mirror the sub-namespaces
   (Drawing, Rendering, Scenes, Physics, Input, Audio, Assets, Timers, ...).
@@ -1005,11 +1101,23 @@ subsystems it exercises:
 
 TESTING
 --------------------------------------------------------------------------------
-  Core tests are headless unit tests (the UI-agnostic core makes this clean),
-  including round-trip save/load tests and the global pause suite
+  Core tests are headless unit tests (the UI-agnostic core makes this clean):
+  populated-graph save/load round-trips (EngineStateRoundTripTests: scenes/
+  layers/tile grids, shared sprite references, cycles, loose-file and
+  asset-pack audio, compression, merge semantics), the global pause suite
   (EnginePauseTests: park/resume semantics, no-burst time shifting, audio
-  suspend rules, snapshot capture). Host tests cover what can run without a
-  live UI head; head-dependent behavior is env-gated or skipped with a reason.
+  suspend rules, snapshot capture), and the audio SFX suites
+  (CachedSoundTests, SfxVoicePoolTests — decode-once preload and the pool's
+  cull-policy selection logic; nothing in them opens the audio device). Host
+  tests cover what can run without a live UI head; head-dependent behavior is
+  env-gated or skipped with a reason.
+
+  The core test assembly runs its collections SERIALLY
+  (CollectionBehavior(DisableTestParallelization = true) in AssemblyInfo.cs):
+  the engine under test is a process-global singleton machine (Engine.Instance
+  plus the scene/sprite/cycle/tilesheet/audio registries), so tests that
+  populate or clear that state cannot overlap. Keep new test classes
+  compatible with that assumption — clean up global state you create.
 
     dotnet test CodeBrix.Platform.GameEngine.slnx
 

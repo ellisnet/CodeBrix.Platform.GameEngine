@@ -38,11 +38,7 @@ public class EngineStateSaveTests
         }
     }
 
-    [Fact(Skip = "Save-pass follow-up: full referenceable-graph LOAD needs per-type work. STJ treats " +
-                 "types implementing IEnumerable (e.g. Scene : IEnumerable<SceneLayer>) as collections, so " +
-                 "the reference-aware converter's CreateObject is null. Referenceable types also need " +
-                 "accessible parameterless ctors + settable members. The save WRITE path and schema envelope " +
-                 "are validated by the other tests here; full round-trip is tracked for a follow-up pass.")]
+    [Fact]
     public void SaveToFile_then_LoadFromFile_roundtrips_empty_state()
     {
         //Arrange

@@ -47,19 +47,26 @@ public sealed class EngineState
 
     /// <summary>
     /// Gets or sets the JSON serializer options template used for serializing and deserializing engine
-    /// state. These options produce indented (human-readable) JSON and carry the engine's leaf
-    /// <see cref="FrameJsonConverter"/> plus the discriminator (polymorphism) converter factory.
-    /// Object-reference preservation (<c>$id</c>/<c>$ref</c>) is applied by
-    /// <c>CodeBrix.Json.Extensions.References.ReferenceJson</c>, which uses this as a settings template.
+    /// state. These options produce indented (human-readable) JSON and carry the engine's save
+    /// contracts: the <see cref="Serialization.EngineSaveContractResolver"/> (object contracts for the
+    /// engine's referenceable model types) plus the leaf converters for <see cref="Frame"/>,
+    /// <see cref="Drawing.Animation.FrameSequence"/>, and the scene-layer tile grid.
+    /// Object-reference preservation (<c>$id</c>/<c>$ref</c>) and <see cref="Tile"/> discriminator
+    /// dispatch are applied by <c>CodeBrix.Json.Extensions.References.ReferenceJson</c>, which uses
+    /// this as a settings template. (Do not add the polymorphism fallback converter factory here —
+    /// it would take precedence over reference handling for discriminated referenceable types.)
     /// </summary>
     public static JsonSerializerOptions SerializerOptions { get; set; }
         = new JsonSerializerOptions
         {
             WriteIndented = true,
+            TypeInfoResolver = new Serialization.EngineSaveContractResolver(),
             Converters =
             {
                 new FrameJsonConverter(),
-                new CodeBrix.Json.Extensions.Polymorphism.FallbackTypeConverterFactory()
+                new Serialization.FrameSequenceJsonConverter(),
+                new Serialization.SceneLayerTileArrayJsonConverter(),
+                new Serialization.CollisionGroupRegistryJsonConverter()
             }
         };
 
@@ -158,7 +165,7 @@ public sealed class EngineState
         TilesheetRegistry.Instance.Clear();
         Cycle.ClearAllAnimationCycles();
         Scene.ClearAllScenes();
-        SpriteManager.Instance.Clear();
+        SpriteManager.Instance.ClearImmediate();
         AudioResourceManager.Instance.Dispose();
         ValueBag.Clear();
     }
@@ -240,16 +247,7 @@ public sealed class EngineState
         var fullPath = Path.GetFullPath(path);
         var baseDirectory = Path.GetDirectoryName(fullPath);
 
-        string json = ReadJsonFile(fullPath, compressed);
-
-        // Important: EngineState's collections are mostly getter-only proxies over registries,
-        // so deserialize into a snapshot DTO with setters.
-        var envelope =
-            CodeBrix.Json.Extensions.References.ReferenceJson.Deserialize<SaveFileEnvelope>(json, SerializerOptions);
-        var snapshot = ReadSnapshotFromEnvelope(envelope);
-
-        // Merge into the live engine state (registries)
-        ApplySnapshot(snapshot, clearExisting: true, overwriteExisting: true, parts, baseDirectory);
+        LoadAndApply(fullPath, compressed, clearExisting: true, overwriteExisting: true, parts, baseDirectory);
     }
 
     /// <summary>
@@ -284,14 +282,7 @@ public sealed class EngineState
         var fullPath = Path.GetFullPath(path);
         var baseDirectory = Path.GetDirectoryName(fullPath);
 
-        string json = ReadJsonFile(fullPath, compressed);
-
-        var envelope =
-            CodeBrix.Json.Extensions.References.ReferenceJson.Deserialize<SaveFileEnvelope>(json, SerializerOptions);
-        var snapshot = ReadSnapshotFromEnvelope(envelope);
-
-        // Merge into the live engine state (registries)
-        ApplySnapshot(snapshot, clearExisting: false, overwriteExisting: overwriteExisting, parts, baseDirectory);
+        LoadAndApply(fullPath, compressed, clearExisting: false, overwriteExisting, parts, baseDirectory);
     }
 
     #region deserialization helpers
@@ -311,19 +302,103 @@ public sealed class EngineState
         public EngineStateSnapshot? State { get; set; }
     }
 
-    private static EngineStateSnapshot ReadSnapshotFromEnvelope(SaveFileEnvelope? envelope)
+    /// <summary>
+    /// The staged load path shared by <see cref="LoadFromFile"/> and <see cref="MergeFromFile"/>.
+    /// Stages exist because of load-order dependencies inside one save file: tilesheet images may
+    /// come from asset packs, and <see cref="FrameJsonConverter"/> resolves tilesheets BY NAME
+    /// while the object graph deserializes — so assets and tilesheets must be live in their
+    /// registries before the graph (cycles/scenes/sprites/audio) is read.
+    /// </summary>
+    private static void LoadAndApply(
+        string fullPath,
+        bool compressed,
+        bool clearExisting,
+        bool overwriteExisting,
+        EngineStateParts parts,
+        string? baseDirectory)
     {
-        if (envelope is null)
-            return new EngineStateSnapshot();
+        string json = ReadJsonFile(fullPath, compressed);
+        parts = NormalizeParts(parts);
 
-        if (envelope.Schema < 1 || envelope.Schema > CurrentSaveSchemaVersion)
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Null)
+        {
+            // A "null" envelope: nothing to apply, but Load semantics still clear.
+            if (clearExisting)
+                ClearSelected(parts);
+            return;
+        }
+
+        int schema = root.ValueKind == JsonValueKind.Object
+                     && root.TryGetProperty("schema", out var schemaElement)
+                     && schemaElement.ValueKind == JsonValueKind.Number
+            ? schemaElement.GetInt32()
+            : 0;
+
+        if (schema < 1 || schema > CurrentSaveSchemaVersion)
         {
             throw new NotSupportedException(
-                $"Unsupported engine save-file schema version {envelope.Schema}. This build supports " +
+                $"Unsupported engine save-file schema version {schema}. This build supports " +
                 $"versions 1 through {CurrentSaveSchemaVersion}. Pre-v1 (Newtonsoft) save files are not supported.");
         }
 
-        return envelope.State ?? new EngineStateSnapshot();
+        bool hasState = root.TryGetProperty("state", out var stateElement)
+                        && stateElement.ValueKind == JsonValueKind.Object;
+
+        // Clear only what we're about to load.
+        if (clearExisting)
+            ClearSelected(parts);
+
+        // STAGE 1: assets + tilesheets into their registries.
+        var loadedAssets = new List<AssetsFile>();
+        if (hasState)
+        {
+            if (parts.HasFlag(EngineStateParts.AssetsFiles)
+                && stateElement.TryGetProperty(nameof(EngineStateSnapshot.AssetsFiles), out var assetsElement)
+                && assetsElement.ValueKind == JsonValueKind.Array)
+            {
+                var rawAssets = CodeBrix.Json.Extensions.References.ReferenceJson
+                    .Deserialize<List<AssetsFile>>(assetsElement.GetRawText(), SerializerOptions);
+                loadedAssets = LoadAssetsFiles(rawAssets ?? new List<AssetsFile>(), overwriteExisting);
+            }
+
+            if (parts.HasFlag(EngineStateParts.Tilesheets)
+                && stateElement.TryGetProperty(nameof(EngineStateSnapshot.Tilesheets), out var tilesheetsElement)
+                && tilesheetsElement.ValueKind == JsonValueKind.Object)
+            {
+                var tilesheets = JsonSerializer.Deserialize<Dictionary<string, TilesheetStateEntry>>(
+                    tilesheetsElement.GetRawText(), SerializerOptions);
+                MergeTilesheets(tilesheets, overwriteExisting, baseDirectory);
+            }
+        }
+
+        // STAGE 2: the object graph (frames now resolve against the live tilesheet registry).
+        // EngineState's collections are getter-only proxies over registries, so this
+        // deserializes into the settable snapshot DTO.
+        bool needsGraph = parts.HasFlag(EngineStateParts.Cycles)
+                          || parts.HasFlag(EngineStateParts.Scenes)
+                          || parts.HasFlag(EngineStateParts.Sprites)
+                          || parts.HasFlag(EngineStateParts.Audio);
+        var snapshot = needsGraph && hasState
+            ? CodeBrix.Json.Extensions.References.ReferenceJson
+                  .Deserialize<EngineStateSnapshot>(stateElement.GetRawText(), SerializerOptions)
+              ?? new EngineStateSnapshot()
+            : new EngineStateSnapshot();
+
+        // STAGE 3: merge into the live registries in dependency order.
+        if (parts.HasFlag(EngineStateParts.Audio))
+            MergeAudio(loadedAssets, snapshot.SoundResources, overwriteExisting);
+
+        if (parts.HasFlag(EngineStateParts.Cycles))
+            MergeCycles(snapshot.Cycles, overwriteExisting);
+
+        if (parts.HasFlag(EngineStateParts.Scenes))
+            MergeScenes(snapshot.Scenes, overwriteExisting);
+
+        if (parts.HasFlag(EngineStateParts.Sprites))
+            MergeSprites(snapshot.Sprites, overwriteExisting);
     }
 
     private sealed class EngineStateSnapshot
@@ -399,42 +474,6 @@ public sealed class EngineState
         }
     }
 
-    /// <summary>
-    /// Single "apply" path used by both LoadFromFile and MergeFromFile.
-    /// DRY: reads snapshot, loads assets, then merges/rehydrates everything in a consistent order.
-    /// </summary>
-    private static void ApplySnapshot(
-        EngineStateSnapshot snapshot,
-        bool clearExisting,
-        bool overwriteExisting,
-        EngineStateParts parts,
-        string? baseDirectory)
-    {
-        parts = NormalizeParts(parts);
-
-        // clear only what we're about to load.
-        if (clearExisting)
-            ClearSelected(parts);
-
-        if (parts.HasFlag(EngineStateParts.AssetsFiles))
-            LoadAssetsFiles(snapshot.AssetsFiles ?? Enumerable.Empty<AssetsFile>(), overwriteExisting);
-
-        if (parts.HasFlag(EngineStateParts.Audio))
-            MergeAudio(snapshot.AssetsFiles, snapshot.SoundResources, overwriteExisting);
-
-        if (parts.HasFlag(EngineStateParts.Tilesheets))
-            MergeTilesheets(snapshot.Tilesheets, overwriteExisting, baseDirectory);
-
-        if (parts.HasFlag(EngineStateParts.Cycles))
-            MergeCycles(snapshot.Cycles, overwriteExisting);
-
-        if (parts.HasFlag(EngineStateParts.Scenes))
-            MergeScenes(snapshot.Scenes, overwriteExisting);
-
-        if (parts.HasFlag(EngineStateParts.Sprites))
-            MergeSprites(snapshot.Sprites, overwriteExisting);
-    }
-
     private static void ClearSelected(EngineStateParts parts)
     {
         if (parts.HasFlag(EngineStateParts.AssetsFiles))
@@ -453,38 +492,40 @@ public sealed class EngineState
             Scene.ClearAllScenes();
 
         if (parts.HasFlag(EngineStateParts.Sprites))
-            SpriteManager.Instance.Clear();
+            SpriteManager.Instance.ClearImmediate(); // deferred disposal never runs without a cycling engine
 
         if (parts.HasFlag(EngineStateParts.Audio))
-            AudioResourceManager.Instance.Dispose();
+            AudioResourceManager.Instance.Clear(); // Clear, not Dispose: disposal latches and would make later loads skip clearing
     }
 
-    private static void LoadAssetsFiles(IEnumerable<AssetsFile> resourceFiles, bool overwriteExisting)
+    private static List<AssetsFile> LoadAssetsFiles(IEnumerable<AssetsFile> resourceFiles, bool overwriteExisting)
     {
         // Replace raw deserialized resource files with proper loaded instances
-        if (resourceFiles.Any())
+        var loadedFiles = new List<AssetsFile>();
+
+        foreach (var raw in resourceFiles)
         {
-            foreach (var raw in resourceFiles)
+            try
             {
-                try
-                {
-                    var loaded = AssetsFile.LoadOrCreate(raw.FilePath, raw.Password, raw.UseEncryption);
+                var loaded = AssetsFile.LoadOrCreate(raw.FilePath, raw.Password, raw.UseEncryption);
+                loadedFiles.Add(loaded);
 
-                    if (overwriteExisting)
-                    {
-                        foreach (var entry in loaded.GetAllEntries().Where(e => e.AssetType == AssetTypes.Svg))
-                            SvgResourceManager.Instance.Unload(entry.AssetName);
-                    }
-
-                    SvgResourceManager.Instance.LoadFromEngineAssetsFile(loaded);
-                }
-                catch (Exception ex)
+                if (overwriteExisting)
                 {
-                    Engine.Logger.LogError(ex, "Failed to load resource file '{FilePath}'", raw.FilePath);
-                    throw;
+                    foreach (var entry in loaded.GetAllEntries().Where(e => e.AssetType == AssetTypes.Svg))
+                        SvgResourceManager.Instance.Unload(entry.AssetName);
                 }
+
+                SvgResourceManager.Instance.LoadFromEngineAssetsFile(loaded);
+            }
+            catch (Exception ex)
+            {
+                Engine.Logger.LogError(ex, "Failed to load resource file '{FilePath}'", raw.FilePath);
+                throw;
             }
         }
+
+        return loadedFiles;
     }
 
     private static void MergeAudio(
@@ -492,7 +533,8 @@ public sealed class EngineState
         Dictionary<string, AudioResource>? soundSpecs,
         bool overwriteExisting)
     {
-        // 1) Load from asset packs
+        // 1) Load from asset packs (the LOADED instances from stage 1 — raw deserialized
+        //    specs have no entry data)
         if (assetsFiles is not null)
         {
             foreach (var af in assetsFiles)
@@ -516,9 +558,15 @@ public sealed class EngineState
 
         foreach (var (key, spec) in soundSpecs)
         {
+            // A spec without a persisted source (e.g. audio that came from an asset pack and
+            // was just re-loaded above) cannot be rebuilt from disk — its saved settings are
+            // applied to the pack-loaded resource instead.
+            bool specHasPersistedSource = (spec.AssetIdentifier?.IsValid ?? false)
+                                          || !string.IsNullOrWhiteSpace(spec.SourceFilePath);
+
             if (AudioResourceManager.Instance.Contains(key))
             {
-                if (!overwriteExisting)
+                if (!overwriteExisting || !specHasPersistedSource)
                 {
                     var existing = AudioResourceManager.Instance.Get(key);
                     if (existing is not null)
@@ -531,6 +579,12 @@ public sealed class EngineState
                 }
 
                 AudioResourceManager.Instance.Unload(key);
+            }
+            else if (!specHasPersistedSource)
+            {
+                Engine.Logger.LogWarning(
+                    "Audio spec '{Key}' has no persisted source and no loaded resource to apply to; skipping.", key);
+                continue;
             }
 
             // Ensure the audio spec is (re)created/registered in the manager.
@@ -727,6 +781,10 @@ public sealed class EngineState
             if (incoming is null)
                 continue;
 
+            // Deserialized scenes carry state but no live wiring — rebuild layer runtime
+            // structures, tile colliders, and scene<->layer event subscriptions.
+            incoming.RehydrateAfterDeserialization();
+
             // Ensure ID exists (important if something created scenes without IDs)
             if (string.IsNullOrWhiteSpace(incoming.ID))
                 incoming.ID = Guid.NewGuid().ToString();
@@ -773,6 +831,10 @@ public sealed class EngineState
         {
             if (incoming is null)
                 continue;
+
+            // Deserialized sprites carry state but no live wiring — rebuild the animator,
+            // movement controller, and collider (registration below stays the merge's job).
+            incoming.RehydrateAfterDeserialization();
 
             if (string.IsNullOrWhiteSpace(incoming.Nickname))
                 incoming.Nickname = Guid.NewGuid().ToString();

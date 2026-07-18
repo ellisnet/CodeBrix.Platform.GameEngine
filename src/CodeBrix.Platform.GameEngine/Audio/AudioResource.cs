@@ -67,8 +67,10 @@ public class AudioResource : IDisposable, IEnginePausableAudio
         byte[]? rawBytes = null,
         string? tempFilePath = null,
         AssetsFileIdentifier? assetIdentifier = null,
-        WaveFormat? rawPcmFormat = null)
+        WaveFormat? rawPcmFormat = null,
+        CachedSound? cachedData = null)
     {
+        CachedData = cachedData;
         Key = key;
         waveStream = audioStream;
         this.rawPcmFormat = rawPcmFormat;
@@ -95,6 +97,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio
     private ISampleProvider BuildAudioGraph(WaveStream source, float volume, float pan)
     {
         _pan = Math.Clamp(pan, -1f, 1f);
+        _volume = Math.Clamp(volume, 0f, 1f); // keep the Volume property in sync with the graph's gain stage
         ISampleProvider baseProvider = source.ToSampleProvider();
 
         if (AudioSystem.IsInitialized && baseProvider.WaveFormat.SampleRate != AudioSystem.DeviceSampleRate)
@@ -177,6 +180,21 @@ public class AudioResource : IDisposable, IEnginePausableAudio
     /// </summary>
     [JsonIgnore]
     public byte[]? OriginalBytes { get; private set; }
+
+    /// <summary>
+    /// The decoded-once PCM cache when this resource qualified as a short sound effect at
+    /// load time (see <see cref="AudioResourceManager.PreloadShortSoundEffectMaxSeconds"/>);
+    /// clones and <see cref="SfxVoicePool"/> voices share it instead of re-decoding.
+    /// </summary>
+    internal CachedSound? CachedData { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether this resource's samples were preloaded (decoded once
+    /// to PCM in memory) at load time, making it eligible for <see cref="SfxVoicePool"/>
+    /// playback and decode-free cloning.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPreloaded => CachedData is not null;
 
     /// <summary>
     /// Original file path when the sound was loaded from disk (loose file).
@@ -403,6 +421,11 @@ public class AudioResource : IDisposable, IEnginePausableAudio
     /// </summary>
     internal WaveStream CreateIndependentReader()
     {
+        if (CachedData is { } cached)
+        {
+            return new CachedSoundWaveStream(cached); // shares the decoded PCM; no re-decode
+        }
+
         if (OriginalBytes is null)
         {
             throw new InvalidOperationException(
@@ -538,7 +561,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio
         }
     }
 
-    private static void ApplyStereoPan(StereoPanSampleProvider s, float pan)
+    internal static void ApplyStereoPan(StereoPanSampleProvider s, float pan)
     {
         pan = Math.Clamp(pan, -1f, 1f);
         // equal-power: map [-1..1] to [0..pi/2]

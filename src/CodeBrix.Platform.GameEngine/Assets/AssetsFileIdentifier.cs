@@ -44,7 +44,27 @@ public sealed class AssetsFileIdentifier
     /// </summary>
     /// <remarks>Returns <see langword="null"/> if the asset cannot be found in the associated <see cref="AssetsFile"/>.</remarks>
     [JsonIgnore]
-    public Stream? Data => AssetsFile?[AssetType, AssetName];
+    public Stream? Data => ResolveAssetsFile()?[AssetType, AssetName];
+
+    private AssetsFile? ResolveAssetsFile()
+    {
+        var file = AssetsFile;
+
+        // A deserialized identifier holds a raw AssetsFile spec (paths only, no entry data);
+        // resolve to the LOADED instance registered under the same path.
+        if (file is not null && !file.IsLoaded)
+        {
+            foreach (var registered in AssetsFile.AllAssetsFiles)
+            {
+                if (registered.IsLoaded && string.Equals(registered.FilePath, file.FilePath, StringComparison.Ordinal))
+                {
+                    return registered;
+                }
+            }
+        }
+
+        return file;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AssetsFileIdentifier"/> class.

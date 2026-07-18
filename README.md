@@ -21,7 +21,7 @@ Please update your C#/.NET code and projects to the latest LTS version of Micros
 * Physics: movement, easing, scripted motion, and collision detection
 * Input: keyboard, mouse, gamepad, and touch (with gestures)
 * Audio playback and mixing (via CodeBrix.Audio)
-* Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference and by-id object graphs
+* Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
 * A UI-agnostic core with a render-surface-adapter seam for headless unit testing
 
 ## Sample Code

@@ -1554,6 +1554,19 @@ public sealed class Engine : IDisposable
                 Timer.ClearAll();
                 State.Clear();
 
+                // Release the shared audio output: stops any remaining voices and frees the
+                // native device (and un-pins any AudioSystem.Initialize format). Harmless
+                // when the game never played audio; the shared output restarts automatically
+                // if something plays later in the process.
+                try
+                {
+                    Audio.AudioSystem.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Error shutting down the shared audio output during engine disposal.");
+                }
+
                 // The pause snapshots are owned by their surfaces/presenters; just drop the
                 // engine's reference.
                 LastFrameBeforePause = null;

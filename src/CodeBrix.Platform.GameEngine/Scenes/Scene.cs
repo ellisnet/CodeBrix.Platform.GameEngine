@@ -91,9 +91,39 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
         Init();
     }
 
-    // Note: no [JsonConstructor] here. System.Text.Json's reference-aware converter
-    // (CodeBrix.Json.Extensions Feature A) creates referenceable types via a parameterless
-    // constructor and then populates settable members, so it uses the public Scene() above.
+    // Deserialization construction: no self-registration in _allScenes (EngineState's merge
+    // step decides registry membership) and no layer wiring yet (layers are populated by the
+    // serializer afterwards; RehydrateAfterDeserialization wires them).
+    private Scene(bool forDeserialization)
+    {
+        _sceneLayers = new List<SceneLayer>();
+        SetSceneLayerEventDelegates();
+    }
+
+    /// <summary>
+    /// Creates a bare <see cref="Scene"/> for the save-system deserializer: unlike
+    /// <see cref="Scene()"/> it does NOT self-register in the global scene collection —
+    /// <see cref="EngineState"/>'s apply step adds it once its content is populated and
+    /// <see cref="RehydrateAfterDeserialization"/> has run.
+    /// </summary>
+    internal static Scene CreateForDeserialization() => new(forDeserialization: true);
+
+    /// <summary>
+    /// Rebuilds the live wiring a deserialized scene graph is missing: per-layer runtime
+    /// structures (collision registries, refresh queues, tile back-references and colliders)
+    /// and the scene ↔ layer event subscriptions that <see cref="AddLayer"/> normally sets up.
+    /// </summary>
+    internal void RehydrateAfterDeserialization()
+    {
+        foreach (var sceneLayer in _sceneLayers)
+        {
+            sceneLayer.RehydrateAfterDeserialization();
+            OnSceneLayerAdded(sceneLayer);
+        }
+
+        FullRefreshNeeded = true;
+    }
+
     internal Scene(List<SceneLayer>? sceneLayers,
                     string? id,
                     CollisionGroupRegistry? collisionGroups)

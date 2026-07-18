@@ -141,6 +141,24 @@ public sealed class SpriteManager : IDisposable
     }
 
     /// <summary>
+    /// Removes and disposes all sprites NOW, without waiting for the engine cycle's deferred
+    /// disposal sweep. For quiescent-engine paths only (state load/clear, engine teardown) —
+    /// the deferred path exists to keep mid-cycle removal safe.
+    /// </summary>
+    internal void ClearImmediate()
+    {
+        List<Sprite> tempSprites;
+        lock (_spriteListLock)
+        {
+            tempSprites = new List<Sprite>(_spriteList);
+            _spriteList.Clear();
+        }
+
+        foreach (Sprite sprite in tempSprites)
+            sprite.DisposeImmediate();
+    }
+
+    /// <summary>
     /// Retrieves a sprite by its ID/nickname.
     /// </summary>
     /// <param name="ID">The ID/nickname of the sprite to retrieve.</param>

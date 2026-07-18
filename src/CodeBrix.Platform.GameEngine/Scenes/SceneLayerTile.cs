@@ -41,12 +41,21 @@ public class SceneLayerTile : Tile
 
     #region constructors / finalizer
 
-    [JsonConstructor]
     internal SceneLayerTile(SceneLayer sceneLayer)
     {
         zOrder = 0;
         visible = true;
         parentSceneLayer = sceneLayer;
+    }
+
+    // Deserialization construction: the serializer populates parentSceneLayer (a $ref to the
+    // owning layer) and the rest of the tile state afterwards;
+    // SceneLayer.RehydrateAfterDeserialization rebuilds the collider.
+    internal SceneLayerTile()
+    {
+        zOrder = 0;
+        visible = true;
+        parentSceneLayer = null!;
     }
 
     /// <summary>

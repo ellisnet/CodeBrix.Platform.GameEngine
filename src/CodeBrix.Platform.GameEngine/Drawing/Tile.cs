@@ -104,7 +104,7 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         set
         {
             visible = value;
-            SceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
         }
     }
 
@@ -120,7 +120,7 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         set
         {
             zOrder = value;
-            SceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
         }
     }
 
@@ -171,9 +171,9 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         set
         {
             // animation might change Tile size, so add before and after
-            SceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
             frame = value;
-            SceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
         }
     }
 
@@ -225,7 +225,7 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         set
         {
             enableFog = value;
-            SceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
         }
     }
 
@@ -258,10 +258,15 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         {
             _collisionsEnabled = value;
 
+            // A deserialized tile has no collider yet; SceneLayer.RehydrateAfterDeserialization
+            // rebuilds it and registers per this flag.
+            if (_collider is null)
+                return;
+
             if (_collisionsEnabled)
-                SceneLayer.ColliderRegistry.Register(_collider!);
+                SceneLayer?.ColliderRegistry?.Register(_collider);
             else
-                SceneLayer.ColliderRegistry.Unregister(_collider!);
+                SceneLayer?.ColliderRegistry?.Unregister(_collider);
         }
     }
 
