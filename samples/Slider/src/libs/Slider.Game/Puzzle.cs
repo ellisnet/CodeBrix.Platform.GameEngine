@@ -37,7 +37,7 @@ namespace Slider.Game
         private Size adjustedSize;
         private Point openSpace;
 
-        private RenderSurfaceHost<BitmapBackbuffer> _renderSurfaceHost;
+        private RenderSurfaceHost<BackbufferBase> _renderSurfaceHost;
         private Tilesheet tilesheet;
         private Scene matrixes;
 
@@ -56,7 +56,7 @@ namespace Slider.Game
         /// <param name="columns">The number of puzzle columns.</param>
         /// <param name="rows">The number of puzzle rows.</param>
         /// <param name="size">The size of the render surface, in pixels.</param>
-        public Puzzle(RenderSurfaceHost<BitmapBackbuffer> renderSurfaceHost, string imgFile, int columns, int rows, Size size)
+        public Puzzle(RenderSurfaceHost<BackbufferBase> renderSurfaceHost, string imgFile, int columns, int rows, Size size)
         {
             tilesheet = TilesheetRegistry.Instance.LoadFromImageFile("picture", imgFile);
             tilesheet.ApplyPremultiplyAlpha();

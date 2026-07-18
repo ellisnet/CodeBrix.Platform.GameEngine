@@ -25,10 +25,11 @@ public class GameSurfaceCanvas : SKXamlCanvas
     private SKImage? _currentImage;
     private SKRectI _currentBufferRect;
 
-    private CodeBrixPlatformBitmapRenderSurfaceAdapter? _adapter;
-    private RenderSurfaceHost<BitmapBackbuffer>? _host;
+    private RenderSurfaceAdapterBase? _adapter;
+    private RenderSurfaceHost<BackbufferBase>? _host;
     private GameSurfaceCanvasPixelFramePresenter? _presenter;
     private bool _ensureFocusApplied;
+    private bool _useGpuRendering;
     private int _renderWidth;
     private int _renderHeight;
 
@@ -90,9 +91,11 @@ public class GameSurfaceCanvas : SKXamlCanvas
     /// <summary>
     /// Gets the engine render-surface host bound to this canvas. Create a
     /// <see cref="CodeBrix.Platform.GameEngine.Scenes.Scene"/> and call <c>Host.Bind(scene)</c>,
-    /// then start the engine, to render into this control.
+    /// then start the engine, to render into this control. The host's backbuffer is a
+    /// <see cref="BitmapBackbuffer"/> (Tier A, the default) or a <see cref="GpuBackbuffer"/>
+    /// when <see cref="UseGpuRendering"/> was set first.
     /// </summary>
-    public RenderSurfaceHost<BitmapBackbuffer> Host
+    public RenderSurfaceHost<BackbufferBase> Host
     {
         get
         {
@@ -102,14 +105,47 @@ public class GameSurfaceCanvas : SKXamlCanvas
     }
 
     /// <summary>
-    /// Gets the Tier A (CPU) render-surface adapter that feeds engine frames to this canvas.
+    /// Gets the render-surface adapter that feeds engine frames to this canvas: a
+    /// <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/> (Tier A CPU, the default) or a
+    /// <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> (Tier B GPU) when
+    /// <see cref="UseGpuRendering"/> was set first.
     /// </summary>
-    public CodeBrixPlatformBitmapRenderSurfaceAdapter RenderSurfaceAdapter
+    public RenderSurfaceAdapterBase RenderSurfaceAdapter
     {
         get
         {
             EnsureHost();
             return _adapter!;
+        }
+    }
+
+    /// <summary>
+    /// Opts this canvas into Tier B (GPU) rendering: the engine's scene is rasterised by the GPU
+    /// through an off-screen OpenGL/GLES context and read back for presentation, instead of being
+    /// rendered on the CPU (Tier A, the default). Set this before the first access to
+    /// <see cref="Host"/> — like <see cref="SetRenderResolution"/>, it configures how the
+    /// host/adapter pair is created. Letterboxing, resize behaviour, and input mapping are
+    /// identical across tiers. On a head without OpenGL support the adapter logs a warning and
+    /// falls back to CPU rendering automatically.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when changed after the scene pipeline has been created (the tier cannot change once
+    /// the engine is rendering).
+    /// </exception>
+    public bool UseGpuRendering
+    {
+        get => _useGpuRendering;
+        set
+        {
+            if (value == _useGpuRendering)
+                return;
+
+            if (_host is not null)
+                throw new InvalidOperationException(
+                    $"{nameof(UseGpuRendering)} must be set before the first access to {nameof(Host)}; " +
+                    "the render tier cannot change once the scene pipeline exists.");
+
+            _useGpuRendering = value;
         }
     }
 
@@ -142,8 +178,18 @@ public class GameSurfaceCanvas : SKXamlCanvas
             throw new InvalidOperationException(
                 $"This {nameof(GameSurfaceCanvas)} is in presenter mode ({nameof(UsePixelFramePresenter)}); its scene-pipeline {nameof(Host)} is unavailable.");
 
-        _adapter = new CodeBrixPlatformBitmapRenderSurfaceAdapter(this, _renderWidth, _renderHeight);
-        _host = new RenderSurfaceHost<BitmapBackbuffer>(_adapter);
+        if (_useGpuRendering)
+        {
+            var gpuAdapter = new CodeBrixPlatformGpuRenderSurfaceAdapter(this, _renderWidth, _renderHeight);
+            _adapter = gpuAdapter;
+            _host = new RenderSurfaceHost<BackbufferBase>(gpuAdapter, (w, h) => new GpuBackbuffer(w, h));
+            gpuAdapter.AttachHost(_host);
+        }
+        else
+        {
+            _adapter = new CodeBrixPlatformBitmapRenderSurfaceAdapter(this, _renderWidth, _renderHeight);
+            _host = new RenderSurfaceHost<BackbufferBase>(_adapter, (w, h) => new BitmapBackbuffer(w, h));
+        }
     }
 
     /// <summary>

@@ -109,7 +109,29 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// <param name="renderSurfaceAdapter">The platform-specific adapter that provides the underlying rendering surface.</param>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="renderSurfaceAdapter"/> is <c>null</c>.</exception>
     /// <exception cref="InvalidOperationException">Thrown if the adapter has non-positive dimensions.</exception>
-    public RenderSurfaceHost(RenderSurfaceAdapterBase renderSurfaceAdapter) : this()
+    public RenderSurfaceHost(RenderSurfaceAdapterBase renderSurfaceAdapter)
+        : this(renderSurfaceAdapter, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RenderSurfaceHost{TBackbuffer}"/> class with the specified
+    /// render surface adapter and a factory that creates its backbuffer.
+    /// </summary>
+    /// <remarks>
+    /// Use this overload when the concrete backbuffer type is chosen at run time — for example a
+    /// host declared as <c>RenderSurfaceHost&lt;BackbufferBase&gt;</c> whose factory returns either a
+    /// <see cref="Backbuffers.BitmapBackbuffer"/> (CPU) or a <see cref="Backbuffers.GpuBackbuffer"/> (GPU).
+    /// The factory receives the adapter's initial width and height in pixels.
+    /// </remarks>
+    /// <param name="renderSurfaceAdapter">The platform-specific adapter that provides the underlying rendering surface.</param>
+    /// <param name="backbufferFactory">
+    /// A factory invoked once with the adapter's initial pixel dimensions to create the backbuffer,
+    /// or <see langword="null"/> to create the default backbuffer for <typeparamref name="TBackbuffer"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="renderSurfaceAdapter"/> is <c>null</c>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if the adapter has non-positive dimensions.</exception>
+    public RenderSurfaceHost(RenderSurfaceAdapterBase renderSurfaceAdapter, Func<int, int, TBackbuffer>? backbufferFactory) : this()
     {
         _renderSurfaceAdapter = renderSurfaceAdapter ?? throw new ArgumentNullException(nameof(renderSurfaceAdapter));
 
@@ -122,7 +144,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         if (w <= 0 || h <= 0)
             throw new InvalidOperationException("RenderSurfaceAdapter has non-positive dimensions.");
 
-        _backbuffer = CreateBackbuffer(w, h);
+        _backbuffer = backbufferFactory is not null ? backbufferFactory(w, h) : CreateBackbuffer(w, h);
         Backbuffer.BeginFrame();
 
         Backbuffer.SizeChanged += (w, h) => Scene.FullRefreshNeeded = true;

@@ -73,4 +73,29 @@ public abstract class RenderSurfaceAdapterBase
     /// <param name="bufferRect">The rectangular region of the buffer image to present. Coordinates are in the buffer image's space.</param>
     /// <param name="destRect">The rectangular region in the destination space where the presented content will be drawn.</param>
     public abstract void Present(SKImage bufferImage, SKRectI bufferRect, SKRect destRect);
+
+    /// <summary>
+    /// Returns an independent CPU copy of the most recent frame this adapter presented, or
+    /// <see langword="null"/> when the adapter keeps no presented-frame copy (the base
+    /// implementation). The engine calls this during <see cref="Engine.Pause"/> for
+    /// GL-thread-rendered (GPU) surfaces — whose backbuffers cannot be snapshotted off the GL
+    /// thread — so <see cref="RenderSurfaceHostBase.LastFrameBeforePause"/> can be captured for
+    /// them too. The returned image's ownership transfers to the caller, which is responsible
+    /// for disposing it; implementations must therefore return a copy that stays valid after
+    /// the adapter presents its next frame.
+    /// </summary>
+    /// <returns>A caller-owned copy of the latest presented frame, or <see langword="null"/>.</returns>
+    public virtual SKImage? CaptureLatestPresentedFrame() => null;
+
+    /// <summary>
+    /// Requests that this adapter render and present one frame for a surface whose rendering it
+    /// drives itself (a GL-thread-rendered surface), while the engine is paused. The engine posts
+    /// this to the UI thread at the end of the pause transition — after the
+    /// <see cref="Engine.Paused"/> event handlers have run — so scene changes those handlers made
+    /// (for example, a pause overlay) become visible, matching the final-frame behaviour CPU
+    /// surfaces get from the engine's own pause path. The base implementation does nothing;
+    /// adapters that do not drive their own rendering never need this.
+    /// </summary>
+    /// <param name="host">The render-surface host to render the paused frame for.</param>
+    public virtual void PresentPausedFrame(RenderSurfaceHostBase host) { }
 }

@@ -919,7 +919,9 @@ public sealed class Engine : IDisposable
     /// Captures what the viewer is seeing on every render surface at the moment the pause
     /// takes effect — before the <see cref="Paused"/> event, so handlers can use the images.
     /// Scene-pipeline surfaces snapshot their backbuffers; framebuffer presenters copy their
-    /// newest presented frame. GL-thread-rendered (GPU) surfaces are skipped.
+    /// newest presented frame; GL-thread-rendered (GPU) surfaces are captured from their
+    /// adapter's copy of the most recently presented frame (their backbuffers cannot be
+    /// snapshotted off the GL thread).
     /// </summary>
     private void CaptureLastFramesBeforePause()
     {
@@ -929,13 +931,14 @@ public sealed class Engine : IDisposable
         {
             foreach (var surface in RenderSurfaceHostRegistry.All.ToArray())
             {
-                if (surface.Backbuffer.IsGlThreadRendered)
-                    continue;
-
                 SKImage? snapshot = null;
                 try
                 {
-                    snapshot = surface.Backbuffer.Snapshot();
+                    // A GPU backbuffer is only valid on the GL thread; its adapter holds a CPU
+                    // copy of the newest presented frame and hands over an independent copy.
+                    snapshot = surface.Backbuffer.IsGlThreadRendered
+                        ? surface.RenderSurfaceAdapter?.CaptureLatestPresentedFrame()
+                        : surface.Backbuffer.Snapshot();
                 }
                 catch (Exception ex)
                 {
@@ -970,7 +973,15 @@ public sealed class Engine : IDisposable
         foreach (var surface in RenderSurfaceHostRegistry.All.ToArray())
         {
             if (surface.Backbuffer.IsGlThreadRendered)
+            {
+                // GL-thread-rendered surfaces cannot be rendered from this thread. Post the
+                // paused-frame request to the UI (GL) thread instead; it runs after this pause
+                // transition completes, so the Paused handlers' scene changes are already in
+                // place — the same ordering the direct render below gives CPU surfaces.
+                var glSurface = surface;
+                UiDispatcher?.Post(() => glSurface.RenderSurfaceAdapter?.PresentPausedFrame(glSurface));
                 continue;
+            }
 
             surface.RenderToBackbuffer(tick);
             surface.PresentBackbufferToAdapter();

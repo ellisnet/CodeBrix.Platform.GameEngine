@@ -67,8 +67,11 @@ public abstract class RenderSurfaceHostBase : IDisposable
     /// (<see cref="Engine.Pause"/>) took effect: an immutable snapshot of this surface's
     /// backbuffer, captured before the <see cref="Engine.Paused"/> event is raised — so a
     /// pause handler can, for example, display a dimmed version of it as a pause screen.
-    /// <c>null</c> until the first pause, or for GL-thread-rendered (GPU) surfaces. The image
-    /// is owned by the engine and remains valid until the next <see cref="Engine.Pause"/>
+    /// For GL-thread-rendered (GPU) surfaces the capture is the adapter's copy of its most
+    /// recently presented frame (see
+    /// <see cref="RenderSurfaceAdapterBase.CaptureLatestPresentedFrame"/>). <c>null</c> until
+    /// the first pause, or when a GPU surface has not presented a frame yet. The image is
+    /// owned by the engine and remains valid until the next <see cref="Engine.Pause"/>
     /// capture; copy it to keep it longer.
     /// </summary>
     public SKImage? LastFrameBeforePause { get; internal set; }
@@ -108,18 +111,27 @@ public abstract class RenderSurfaceHostBase : IDisposable
     /// <see langword="false"/> (i.e. this is not a GPU-rendered surface).
     /// </para>
     /// </remarks>
+    /// <param name="renderWhilePaused">
+    /// <see langword="true"/> to render even while the engine is globally paused — used by the
+    /// adapter's <see cref="RenderSurfaceAdapterBase.PresentPausedFrame"/> path to produce the one
+    /// post-<see cref="Engine.Paused"/> frame that makes pause-screen scene changes visible.
+    /// The default (<see langword="false"/>) returns <see langword="null"/> while paused, so the
+    /// window keeps showing the last presented frame.
+    /// </param>
     /// <returns>
     /// A GPU-backed <see cref="SKImage"/> snapshot of the rendered frame, or
     /// <see langword="null"/> if this surface does not use GL-thread rendering.
     /// </returns>
-    public SKImage? GlRenderAndSnapshot()
+    public SKImage? GlRenderAndSnapshot(bool renderWhilePaused = false)
     {
         if (!Backbuffer.IsGlThreadRendered)
             return null;
 
         // The global engine pause halts GL-thread rendering too: no new frame is produced,
-        // so the window keeps showing the last presented one.
-        if (Engine.Instance.IsPaused)
+        // so the window keeps showing the last presented one. The single exception is the
+        // adapter-driven paused-overlay frame (renderWhilePaused), which runs after the Paused
+        // event while the engine is quiescent.
+        if (Engine.Instance.IsPaused && !renderWhilePaused)
             return null;
 
         var tick = CodeBrix.Platform.GameEngine.Timers.HighResTimer.GetCurrentTick();

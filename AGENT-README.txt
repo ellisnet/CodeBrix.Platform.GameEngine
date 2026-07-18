@@ -206,8 +206,9 @@ The last-frame-before-pause snapshot:
   Both the hosting application and the game can read it while paused — e.g. a
   Paused handler can build a dimmed "GAME PAUSED" screen from it. The image is
   owned by the engine/surface and stays valid through the resume, until the
-  NEXT Pause() replaces it; copy it to keep it longer. GPU (GL-thread) surfaces
-  are not captured.
+  NEXT Pause() replaces it; copy it to keep it longer. GPU (GL-thread, Tier B)
+  surfaces are captured too, from the adapter's copy of the most recently
+  presented frame (null only if the surface never presented a frame).
 
   Skia-free access — LastFrameBeforePauseAsRgba(out width, out height) on all
   three (Engine, RenderSurfaceHostBase, PixelFramePresenter) returns the
@@ -280,9 +281,14 @@ Key members:
                                aspect-fit letterboxed into the control. Call
                                BEFORE first access to Host. Non-positive values
                                track the control size instead.
-    Host                    -- the Tier A (CPU) RenderSurfaceHost the engine
-                               renders into (Mode A). Bind(scene) connects a
-                               scene.
+    UseGpuRendering         -- opt-in to Tier B (GPU) rendering; set BEFORE
+                               first access to Host, like SetRenderResolution.
+                               Default false = Tier A (CPU). See RENDER TIERS.
+    Host                    -- the RenderSurfaceHost the engine renders into
+                               (Mode A): a RenderSurfaceHost<BackbufferBase>
+                               whose backbuffer is a BitmapBackbuffer (Tier A)
+                               or GpuBackbuffer (Tier B). Bind(scene) connects
+                               a scene.
     UsePixelFramePresenter()-- switches the canvas to presenter mode (Mode B).
     EnsureFocus()           -- makes the canvas reliably keyboard-focusable:
                                tab stop + focus-on-load + refocus-on-press.
@@ -293,6 +299,43 @@ Key members:
 During a live window resize the canvas suppresses engine presents and re-blits
 the last frame at the new size; live presenting resumes ~500 ms after the size
 settles. Do not fight this by forcing refreshes from resize handlers.
+
+RENDER TIERS: TIER A (CPU, default) vs TIER B (GPU, opt-in) — Mode A only
+--------------------------------------------------------------------------------
+    GameCanvas.UseGpuRendering = true;      // BEFORE first access to Host
+    GameCanvas.SetRenderResolution(1280, 720);   // optional, works on both tiers
+
+  TIER A (default): the engine rasterises the scene on the CPU into a
+  BitmapBackbuffer on the engine thread; the adapter
+  (CodeBrixPlatformBitmapRenderSurfaceAdapter) blits it to the canvas.
+  Dirty-rectangle present optimisation applies. Right for most 2D tile games.
+
+  TIER B (opt-in): the scene is rasterised BY THE GPU into a GpuBackbuffer
+  through an offscreen OpenGL/GLES context (CodeBrix.Platform.Graphics3DGL),
+  then read back to CPU pixels once per frame and presented through the same
+  canvas path — letterboxing, resize behaviour, SetRenderResolution, and input
+  mapping are identical across tiers. The engine loop never touches GL-thread
+  surfaces; the adapter (CodeBrixPlatformGpuRenderSurfaceAdapter) drives one GL
+  frame on the UI thread per engine frame notification (TargetFPS cadence,
+  coalesced latest-wins). The full surface is re-rendered every frame (no
+  dirty-rectangle path on GPU).
+  * Worth it when GPU raster beats CPU raster for the scene: heavy blending,
+    scaling/rotation, full-surface shader effects (SKRuntimeEffect/SkSL runs
+    ON the GPU — the GpuRender sample's plasma runs ~60 FPS on Tier B vs
+    single-digit FPS on Tier A at 1024x640). A plain tile blit may not benefit.
+  * EngineConfiguration.MsaaSampleCount applies (surface re-init on change);
+    VSync has no effect on this adapter (no swap chain — pacing comes from
+    TargetFPS); CPSCalculated reports the actual rendered GPU FPS (GpuFps).
+  * RenderBackbufferPostScene and custom DirectDrawingBase.OnDraw run on the
+    GL (UI) thread with the GRContext current on Tier B — never marshal that
+    canvas elsewhere; keep OnDraw a pure function of engine time/game state.
+  * Pause: fully supported — rendering parks, LastFrameBeforePause is captured
+    (from the adapter's latest presented frame), and one paused-overlay frame
+    is rendered after the Paused handlers run, same as Tier A.
+  * On a head without OpenGL the adapter logs one warning and falls back to
+    CPU-rendering the GpuBackbuffer's fallback surface (the game still runs);
+    IsGpuInitialized on the adapter reports the outcome.
+  * Tier is fixed once Host is created; presenter mode (Mode B) is CPU-only.
 
 MODE A WALKTHROUGH 1: DERIVING FROM CodeBrixGameHost (recommended)
 --------------------------------------------------------------------------------
@@ -910,17 +953,25 @@ ARCHITECTURE
           CodeBrix.Platform.Graphics3DGL (GPU path), SkiaSharp,
           CodeBrix.Platform.Svg (platform-integrated SVG)
     Tier A = CPU BitmapBackbuffer adapter (default, all heads).
-    Tier B = GPU adapter via Graphics3DGL offscreen GL + readback. GL-thread
-    surfaces skip the cycle's render step (rendered via GlRenderAndSnapshot on
-    the GL thread), halt during the global pause, and are not captured by the
-    pause snapshot.
+    Tier B = GPU GpuBackbuffer adapter via Graphics3DGL offscreen GL +
+    one-copy readback (opt-in: GameSurfaceCanvas.UseGpuRendering — see RENDER
+    TIERS). GL-thread surfaces skip the cycle's render step; the adapter
+    renders them via GlRenderAndSnapshot on the UI (GL) thread at TargetFPS
+    cadence. They park during the global pause, are captured by the pause
+    snapshot via the adapter's latest presented frame, and get one adapter-
+    driven paused-overlay frame after the Paused handlers run.
+    NOTE (SkiaSharp 4.150.1): the adapter builds its GRContext with
+    GRGlInterface.Create() (native resolution from the current context) rather
+    than OffscreenGLContext.CreateGrContext(), whose managed-callback
+    "assembled interface" path segfaults in the 4.150.1 fork on Linux; revert
+    when the platform fix ships.
 
   Source is grouped into sub-folders that mirror the sub-namespaces
   (Drawing, Rendering, Scenes, Physics, Input, Audio, Assets, Timers, ...).
 
 THE SAMPLES — THE LIVING REFERENCE
 --------------------------------------------------------------------------------
-samples/ holds five complete games/demos, each with LinuxX11, Win32Skia, and
+samples/ holds six complete games/demos, each with LinuxX11, Win32Skia, and
 MacOS heads plus a shared .UI project; each is the reference consumer for the
 subsystems it exercises:
 
@@ -935,10 +986,19 @@ subsystems it exercises:
                     DirectComposite/TextBlock/DirectRectangle, movement
                     easing — plus the campfire click = global Pause()/Resume()
                     toggle (UI-level pointer input + letterbox mapping).
+                    PARTICLETEST_USE_GPU=1 runs it on Tier B.
   SoftRender     -- Mode B end-to-end: 320x200/70 Hz plasma+starfield,
                     presenter, InputPump, raw-PCM blips (SoundChannel),
                     streamed drone (StreamingAudioSource), zero-alloc frame
                     loop, loop health stats.
+  GpuRender      -- Mode A, direct Engine: the TIER B (GPU) showcase and
+                    SoftRender's GPU-first counterpart — resolution-
+                    independent SkSL plasma + starfield via a custom
+                    DirectDrawingBase subclass (PlasmaBackdrop), stats
+                    TextBlock with live GPU FPS, click-anywhere pause with a
+                    pause overlay (paused-frame + snapshot demo), window-
+                    tracking resolution with resize handling.
+                    GPURENDER_USE_CPU=1 runs the same scene on Tier A.
 
 TESTING
 --------------------------------------------------------------------------------
