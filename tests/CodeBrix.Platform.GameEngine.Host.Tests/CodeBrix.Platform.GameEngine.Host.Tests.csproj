@@ -21,6 +21,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine.Host\CodeBrix.Platform.GameEngine.Host.csproj" />
+    <!-- The Host project references the engine with PrivateAssets="all" (so the engine dll
+         is embedded into the single NuGet package rather than flowed as a dependency); that
+         also stops the engine assembly from flowing here transitively, so this test project
+         references the engine directly. -->
+    <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
   </ItemGroup>
 
 </Project>

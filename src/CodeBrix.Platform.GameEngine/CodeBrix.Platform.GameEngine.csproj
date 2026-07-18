@@ -64,31 +64,19 @@
     <FileVersion>$(BuildVersion)</FileVersion>
   </PropertyGroup>
 
+  <!--
+    This project is NOT packed as its own NuGet package. Its compiled assembly
+    (CodeBrix.Platform.GameEngine.dll) is embedded into the single
+    CodeBrix.Platform.GameEngine.MitLicenseForever package produced by the sibling
+    CodeBrix.Platform.GameEngine.Host project, which references this one and pulls this
+    dll into its package via a BuildOutputInPackage target. A consuming application adds
+    only that one package and receives both assemblies. See the Host csproj for the
+    mechanism. (The version block above still stamps this assembly's AssemblyVersion /
+    FileVersion; it just no longer produces a package.)
+  -->
   <PropertyGroup>
-    <PackageId>CodeBrix.Platform.GameEngine.MitLicenseForever</PackageId>
-    <Product>CodeBrix.Platform.GameEngine</Product>
-    <Title>CodeBrix.Platform.GameEngine</Title>
-    <Authors>Jeremy Ellis</Authors>
-    <Description>A fully managed, cross-platform 2D and 2.5D game engine for .NET, with tile maps, sprites, layered scenes, camera/view systems, animation, physics/collision, input, audio, and SkiaSharp rendering.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageIcon>icon-codebrix-128.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Copyright>Copyright (c) 2026 Jeremy Ellis and contributors</Copyright>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-    <IsPackable>true</IsPackable>
-    <PackageTags>game-engine;gamedev;2d;2.5d;tilemap;sprites;scenes;skiasharp;CodeBrix</PackageTags>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Include="..\..\icon-codebrix-128.png" Pack="true" PackagePath="" />
-    <None Include="..\..\README.md" Pack="true" PackagePath="" />
-    <None Include="..\..\AGENT-README.txt" Pack="true" PackagePath="" />
-    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Update="gameengine.json">

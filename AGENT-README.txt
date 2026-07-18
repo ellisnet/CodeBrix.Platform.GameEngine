@@ -28,13 +28,16 @@ more info.
 
 INSTALLATION
 --------------------------------------------------------------------------------
-NuGet package IDs (note the license suffix):
+NuGet package ID (note the license suffix):
 
     CodeBrix.Platform.GameEngine.MitLicenseForever
-    CodeBrix.Platform.GameEngine.Host.MitLicenseForever
 
     dotnet add package CodeBrix.Platform.GameEngine.MitLicenseForever
-    dotnet add package CodeBrix.Platform.GameEngine.Host.MitLicenseForever
+
+This single package bundles BOTH assemblies -- the engine core
+(CodeBrix.Platform.GameEngine.dll) and the host layer
+(CodeBrix.Platform.GameEngine.Host.dll) -- so one reference gives you
+everything. There is no separate .Host package.
 
 The namespaces are CodeBrix.Platform.GameEngine[.*] and
 CodeBrix.Platform.GameEngine.Host[.*] (WITHOUT the license suffix).

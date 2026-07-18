@@ -7,7 +7,7 @@ This repository ships **two** libraries:
 * **`CodeBrix.Platform.GameEngine`** — the platform-agnostic engine core. It has no UI-framework dependency and is headless-testable; its rendering seam is SkiaSharp `SKImage` plus a render-surface-adapter abstraction.
 * **`CodeBrix.Platform.GameEngine.Host`** — the host layer that runs the engine on **CodeBrix.Platform**, across all six heads (Windows Win32-Skia, Windows WPF-Skia, Linux X11, Linux Wayland, Linux Frame Buffer, macOS). It provides the CPU and GPU render-surface adapters, pointer/keyboard input adapters, and a UI dispatcher.
 
-CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and the associated `CodeBrix.Platform.GameEngine.MitLicenseForever` and `CodeBrix.Platform.GameEngine.Host.MitLicenseForever` NuGet packages.
+CodeBrix.Platform.GameEngine is provided as .NET 10 libraries, shipped as a single `CodeBrix.Platform.GameEngine.MitLicenseForever` NuGet package that bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies.
 
 CodeBrix.Platform.GameEngine supports applications and assemblies that target Microsoft .NET version 10.0 and later.
 Microsoft .NET version 10.0 is a Long-Term Supported (LTS) version of .NET, and was released on Nov 11, 2025; and will be actively supported by Microsoft until Nov 14, 2028.

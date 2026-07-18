@@ -51,12 +51,20 @@
     <FileVersion>$(BuildVersion)</FileVersion>
   </PropertyGroup>
 
+  <!--
+    This is the SINGLE published NuGet package for the game engine. It carries the
+    CodeBrix.Platform.GameEngine.MitLicenseForever id and bundles BOTH assemblies: this
+    Host dll plus the referenced CodeBrix.Platform.GameEngine.dll (embedded via the
+    _IncludeEngineInPackage target near the bottom of this file). A consuming application
+    adds only this one package reference and receives both. The engine project itself is
+    <IsPackable>false</IsPackable> and produces no package of its own.
+  -->
   <PropertyGroup>
-    <PackageId>CodeBrix.Platform.GameEngine.Host.MitLicenseForever</PackageId>
-    <Product>CodeBrix.Platform.GameEngine.Host</Product>
-    <Title>CodeBrix.Platform.GameEngine.Host</Title>
+    <PackageId>CodeBrix.Platform.GameEngine.MitLicenseForever</PackageId>
+    <Product>CodeBrix.Platform.GameEngine</Product>
+    <Title>CodeBrix.Platform.GameEngine</Title>
     <Authors>Jeremy Ellis</Authors>
-    <Description>Host layer for CodeBrix.Platform.GameEngine: A fully managed, cross-platform 2D and 2.5D game engine for .NET, with tile maps, sprites, layered scenes, camera/view systems, animation, physics/collision, input, audio, and SkiaSharp rendering.</Description>
+    <Description>A fully managed, cross-platform 2D and 2.5D game engine for .NET, with tile maps, sprites, layered scenes, camera/view systems, animation, physics/collision, input, audio, and SkiaSharp rendering. Includes the CodeBrix.Platform host layer.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
@@ -67,7 +75,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <IsPackable>true</IsPackable>
-    <PackageTags>game-engine;gamedev;codebrix-platform;rendering;skiasharp;host;CodeBrix</PackageTags>
+    <PackageTags>game-engine;gamedev;2d;2.5d;tilemap;sprites;scenes;skiasharp;CodeBrix</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -78,7 +86,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+    <!-- PrivateAssets="all": do NOT emit a package dependency on the (now non-packable)
+         engine project. Its dll is instead embedded directly into this package by the
+         _IncludeEngineInPackage target below. -->
+    <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -88,5 +99,45 @@
     <PackageReference Include="CodeBrix.Platform.Svg.ApacheLicenseForever" Version="1.0.197.800" />
     <PackageReference Include="SkiaSharp" Version="4.150.1" />
   </ItemGroup>
+
+  <!--
+    Dependencies mirrored from the embedded engine project (CodeBrix.Platform.GameEngine).
+    Because that project is packed INTO this package rather than shipped as its own
+    package, its transitive NuGet dependencies do not flow to consumers automatically -
+    they must be declared here so the single CodeBrix.Platform.GameEngine.MitLicenseForever
+    package lists the complete dependency set. KEEP THIS BLOCK IN SYNC with the engine
+    csproj's PackageReference list. (SkiaSharp is already referenced above at the same
+    version, so it is not repeated here.)
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.10" />
+    <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.196.342" />
+    <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.198.139" />
+    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.199.38" />
+    <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.196.1178" />
+  </ItemGroup>
+
+  <!--
+    Embed the referenced engine assembly (and its XML docs) directly into THIS package's
+    lib/<tfm> folder. Because the engine project is <IsPackable>false</IsPackable> and the
+    ProjectReference above uses PrivateAssets="all", NuGet would otherwise ship neither a
+    dependency nor the dll for it - so we inject the build output explicitly here.
+  -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);_IncludeEngineInPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <Target Name="_IncludeEngineInPackage">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutputPath)CodeBrix.Platform.GameEngine.dll"
+                            Condition="Exists('$(OutputPath)CodeBrix.Platform.GameEngine.dll')" />
+      <BuildOutputInPackage Include="$(OutputPath)CodeBrix.Platform.GameEngine.xml"
+                            Condition="Exists('$(OutputPath)CodeBrix.Platform.GameEngine.xml')" />
+    </ItemGroup>
+  </Target>
 
 </Project>
