@@ -69,7 +69,7 @@
     <Product>CodeBrix.Platform.GameEngine.Sdl2</Product>
     <Title>CodeBrix.Platform.GameEngine.Sdl2</Title>
     <Authors>Jeremy Ellis</Authors>
-    <Description>SDL2-based game controller (gamepad) support for CodeBrix.Platform.GameEngine. Works on every CodeBrix.Platform head - X11, Wayland, Frame Buffer, Win32-Skia, WPF-Skia and macOS - because SDL2 is initialized as a headless joystick backend with no video subsystem. Ships the SDL2 native binaries for Windows and macOS; on Linux it uses the system SDL2 runtime.</Description>
+    <Description>SDL2-based game controller (gamepad) support for CodeBrix.Platform.GameEngine.</Description>
     <PackageLicenseExpression>MIT AND Zlib</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
@@ -106,7 +106,7 @@
     this package would be built against an engine version that was never published.
   -->
   <ItemGroup>
-    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.199.1025" />
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.201.374" />
   </ItemGroup>
 
   <!--
