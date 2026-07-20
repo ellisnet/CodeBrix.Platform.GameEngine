@@ -411,7 +411,7 @@ Output SHA-256    : $dllSha
 Output size       : $dllSize bytes
 
 Built on          : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')
-Build host        : $env:COMPUTERNAME ($env:PROCESSOR_ARCHITECTURE)
+Build host arch   : $env:PROCESSOR_ARCHITECTURE
 Toolchain         : Visual Studio $vsVersion, $generator, -A ARM64
 CMake options     : SDL_SHARED=ON SDL_STATIC=OFF SDL_TEST=OFF SDL_TESTS=OFF
                     SDL_FORCE_STATIC_VCRT=ON

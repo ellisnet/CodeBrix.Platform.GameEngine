@@ -1,0 +1,30 @@
+﻿SDL2.dll -- Windows ARM64
+================================================================================
+This binary was NOT downloaded. libsdl.org publishes official prebuilt SDL2
+binaries for Windows x64, Windows x86 and macOS, but not for Windows ARM64, so
+this one is built from the official SDL2 source release by:
+
+    tools/build-sdl2-windows-arm64.ps1
+
+Re-running that script with the same SDL2 version reproduces this binary.
+
+SDL2 version      : 2.32.10
+Architecture      : ARM64 (PE machine type 0xAA64)
+Source tarball    : SDL2-2.32.10.tar.gz
+Source URL        : https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz
+Source SHA-256    : 5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165   (pinned in the build script)
+Output SHA-256    : 197d9580b1724d8a832c2f4eec031a776d1dda464266386d75b6a1eece9e3f13
+Output size       : 1530368 bytes
+
+Built on          : 2026-07-19 21:30:17 -07:00
+Build host arch   : AMD64
+Toolchain         : Visual Studio 17.14.36, Visual Studio 17 2022, -A ARM64
+CMake options     : SDL_SHARED=ON SDL_STATIC=OFF SDL_TEST=OFF SDL_TESTS=OFF
+                    SDL_FORCE_STATIC_VCRT=ON
+
+SDL_FORCE_STATIC_VCRT=ON matches how upstream builds the official x64/x86 DLLs:
+the result imports no C runtime, so no Visual C++ Redistributable is required
+on the end user's machine.
+
+SDL2 is licensed under the zlib license, Copyright (C) 1997-2025 Sam Lantinga.
+See THIRD-PARTY-NOTICES.txt in the repository root for the full license text.
