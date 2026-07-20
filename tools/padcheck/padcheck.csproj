@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A developer diagnostic tool, NOT part of any shipped package. It is intentionally left OUT of
+    CodeBrix.Platform.GameEngine.slnx so that the solution contains only product projects; build it
+    directly (see tools/README.md). Nothing here runs during a package build.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PadCheck</RootNamespace>
+    <AssemblyName>padcheck</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine.Sdl2\CodeBrix.Platform.GameEngine.Sdl2.csproj" />
+  </ItemGroup>
+
+</Project>

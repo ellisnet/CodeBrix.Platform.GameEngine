@@ -1,0 +1,139 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>CodeBrix.Platform.GameEngine.Sdl2</AssemblyName>
+    <RootNamespace>CodeBrix.Platform.GameEngine.Sdl2</RootNamespace>
+    <!-- NRT enabled to match BOTH existing projects in this repo (the engine core and the host).
+         See AGENT-README.txt. -->
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The SDL2 bindings are function-pointer based and pass byte* strings, so an unsafe context
+         is required. It is confined to the Native folder. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    Package / assembly version: date-stamped and auto-incrementing.
+
+    Format:  1.<x>.<y>.<z>   (every field is derived from UTC "now")
+
+      1  (major)     Always 1 for this library.
+      x  (minor)     Whole years since $(_VersionBaseYear).
+                     With base 2026: 2026=0, 2027=1, 2028=2, ...
+      y  (build)     Day of year, 1-based inclusive, UTC.
+                     Jan 1 = 1, Feb 1 = 32, Dec 31 = 365 (366 in a leap year).
+      z  (revision)  Minute of day, UTC, range 0 to 1439.
+                     00:00 = 0, 23:59 = 1439.
+
+    The version is always strictly increasing over time:
+      * within a day, z grows;
+      * at a day boundary, y increments and outranks z resetting to 0;
+      * at a (UTC) year boundary, x increments and outranks y and z resetting.
+
+    Notes / caveats:
+      * All fields read from System.DateTime.UtcNow, so a local dev build and a
+        UTC CI build agree on the value. Math.Floor on the minutes keeps z in
+        0..1439 (plain rounding could land on 1440 late in the day).
+      * Because the value depends on the clock, every build produces a NEW
+        version. With GeneratePackageOnBuild=true that means a fresh .nupkg on
+        each build, and two builds in the SAME UTC minute produce the SAME
+        version (so do not publish two packages from within one minute).
+      * This is date-stamp versioning, not SemVer: minor encodes the year and
+        major is pinned to 1, so major/minor do not signal API compatibility.
+      * To re-baseline the minor number, change _VersionBaseYear below.
+  -->
+  <PropertyGroup>
+    <_VersionBaseYear>2026</_VersionBaseYear>
+    <_VersionYears>$([MSBuild]::Subtract($([System.DateTime]::UtcNow.Year), $(_VersionBaseYear)))</_VersionYears>
+    <_VersionDayOfYear>$([System.DateTime]::UtcNow.DayOfYear)</_VersionDayOfYear>
+    <_VersionMinuteOfDay>$([System.Convert]::ToInt32($([System.Math]::Floor($([System.DateTime]::UtcNow.TimeOfDay.TotalMinutes)))))</_VersionMinuteOfDay>
+    <BuildVersion>1.$(_VersionYears).$(_VersionDayOfYear).$(_VersionMinuteOfDay)</BuildVersion>
+    <Version>$(BuildVersion)</Version>
+    <AssemblyVersion>$(BuildVersion)</AssemblyVersion>
+    <FileVersion>$(BuildVersion)</FileVersion>
+  </PropertyGroup>
+
+  <!--
+    This is a SEPARATE published package from CodeBrix.Platform.GameEngine.MitLicenseForever.
+    Keeping it separate means a game that does not want a native SDL2 dependency does not inherit
+    one by adding the engine.
+
+    License suffix rationale: the managed binding code in Native/ is derived from Veldrid and is
+    MIT, while the SDL2 native binaries shipped in runtimes/ are zlib. The suffix tracks the
+    incorporated code, and zlib is the more notice-demanding of the two, so .ZlibLicenseForever
+    is correct here even though most of the source is MIT. PackageLicenseExpression carries both.
+  -->
+  <PropertyGroup>
+    <PackageId>CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever</PackageId>
+    <Product>CodeBrix.Platform.GameEngine.Sdl2</Product>
+    <Title>CodeBrix.Platform.GameEngine.Sdl2</Title>
+    <Authors>Jeremy Ellis</Authors>
+    <Description>SDL2-based game controller (gamepad) support for CodeBrix.Platform.GameEngine. Works on every CodeBrix.Platform head - X11, Wayland, Frame Buffer, Win32-Skia, WPF-Skia and macOS - because SDL2 is initialized as a headless joystick backend with no video subsystem. Ships the SDL2 native binaries for Windows and macOS; on Linux it uses the system SDL2 runtime.</Description>
+    <PackageLicenseExpression>MIT AND Zlib</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>icon-codebrix-128.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2026 Jeremy Ellis and contributors</Copyright>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <IsPackable>true</IsPackable>
+    <PackageTags>game-engine;gamedev;gamepad;controller;joystick;sdl2;input;CodeBrix</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\icon-codebrix-128.png" Pack="true" PackagePath="" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Include="..\..\AGENT-README.txt" Pack="true" PackagePath="" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <!--
+    The engine core is consumed as a PUBLISHED package rather than a ProjectReference. The engine
+    project in this repo is IsPackable=false - its dll is embedded into the Host project's package -
+    so a ProjectReference would compile locally but produce a package with an unsatisfied runtime
+    dependency: NuGet emits no dependency for a non-packable ProjectReference, and the engine dll
+    would not be inside this package either.
+
+    Consequence to be aware of: this project builds against the PUBLISHED engine, not local source.
+    If a change here ever requires the engine core to expose something new, the engine package has
+    to be published first and the version below bumped to match.
+
+    Take care that no local folder is configured as a NuGet source holding a freshly-built engine
+    package. Every engine build restamps its version, so a local source could shadow nuget.org and
+    this package would be built against an engine version that was never published.
+  -->
+  <ItemGroup>
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.199.1025" />
+  </ItemGroup>
+
+  <!--
+    SDL2 native binaries, committed into this repo under native_libraries/ and packed into the
+    RID-specific folders the .NET host probes at runtime. Nothing is downloaded during a build.
+    Each binary has a .provenance.txt beside it recording its version, origin URL and SHA-256.
+
+    NO LINUX BINARY IS SHIPPED, deliberately. On Linux, SDL2's gamepad support is a thin layer over
+    evdev plus udev for hotplug, and the distribution's own build is guaranteed to match the host's
+    udev; a binary built here against this machine's glibc would fail on older distributions. The
+    loader probes for the system library instead, and reports an actionable message when it is
+    absent. libSDL2 is present on essentially every desktop Linux system.
+
+    macOS: the same universal (x86_64 + arm64) binary is packed under both macOS RIDs. .NET's real
+    macOS RIDs are osx-x64 and osx-arm64, and a single copy under runtimes/osx/native/ would depend
+    on RID-graph fallback, which .NET 8+ de-emphasized by default.
+  -->
+  <ItemGroup>
+    <!-- Forward slashes with NO trailing separator. A trailing separator here produced package
+         paths containing an empty segment ("runtimes/win-x64/native//SDL2.dll"), and NuGet matches
+         RID-specific assets on the exact "runtimes/{rid}/native/{file}" shape - an empty segment
+         risks the native never being selected, which would look like SDL2 simply being absent. -->
+    <None Include="..\..\native_libraries\win-x64\SDL2.dll" Pack="true" PackagePath="runtimes/win-x64/native" />
+    <None Include="..\..\native_libraries\win-x86\SDL2.dll" Pack="true" PackagePath="runtimes/win-x86/native" />
+    <None Include="..\..\native_libraries\win-arm64\SDL2.dll" Pack="true" PackagePath="runtimes/win-arm64/native" />
+    <None Include="..\..\native_libraries\osx-x64\libSDL2.dylib" Pack="true" PackagePath="runtimes/osx-x64/native" />
+    <None Include="..\..\native_libraries\osx-arm64\libSDL2.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native" />
+  </ItemGroup>
+
+</Project>

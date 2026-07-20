@@ -5,6 +5,11 @@ managed, cross-platform 2D / 2.5D game engine for .NET. The engine core is a
 vendored port of the open-source Gondwana game engine; the notice below records
 that incorporated source and reproduces its license as required.
 
+CodeBrix.Platform.GameEngine.Sdl2 is a separate, optional package in this same
+repository that adds game controller (gamepad) support. It incorporates managed
+SDL2 binding source from Veldrid (notice 2) and redistributes the SDL2 native
+libraries themselves (notice 3).
+
 NuGet package dependencies (SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression,
 CodeBrix.Audio, CodeBrix.Json.Extensions, System.Text.Json, and the
 Microsoft.Extensions.* packages) are NOT listed here: they are referenced as
@@ -65,6 +70,141 @@ is not incorporated into these assemblies.
    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
+   -------------------------------------------------------------------------
+
+================================================================================
+
+2. Veldrid (Veldrid.SDL2)
+   -------------------------------------------------------------------------
+   Project:    Veldrid
+   Author:     Eric Mellino and Veldrid contributors
+   Source:     https://github.com/veldrid/veldrid
+   Component:  src/Veldrid.SDL2/
+   License:    MIT
+
+   Applies to: CodeBrix.Platform.GameEngine.Sdl2
+
+   FOUR files in that library's Native/ folder are adapted from Veldrid's SDL2
+   binding project - Sdl2.cs, Sdl2.Init.cs, Sdl2.Joystick.cs and
+   Sdl2.GameController.cs - each carrying a header comment recording its
+   upstream path and every change made. Namespaces were rewritten from
+   "Veldrid.Sdl2" to "CodeBrix.Platform.GameEngine.Sdl2.Native" (each file
+   carries a "//was previously: Veldrid.Sdl2" provenance comment on its
+   namespace line).
+
+   NOTHING ELSE in that library is Veldrid-derived. Native/Sdl2Library.cs (the
+   library loader) and everything in Gamepad/ (the gamepad manager, adapter,
+   axis conversions, button table and availability reporting) are original code
+   written against the engine's own IGamepadManager / IGamepadAdapter
+   interfaces, which predate this package.
+
+   Changes of substance made during the port:
+
+     * NativeLibraryLoader -> removed. Library loading and function resolution
+       were rewritten against the in-box System.Runtime.InteropServices
+       .NativeLibrary API, so the binding layer has no NuGet dependencies.
+     * Load failures no longer throw. Upstream assigned its library handle from
+       a static field initializer that threw when SDL2 was absent, surfacing as
+       a TypeInitializationException from the first member touched. Here a
+       missing SDL2 is reported through an availability property instead, so a
+       game that is playable with keyboard and mouse keeps working.
+     * XML doc comments were completed, and a small number of entry points were
+       added (SDL_Quit, SDL_WasInit, SDL_GameControllerMapping,
+       SDL_JoystickGetDeviceInstanceID), each marked "for CodeBrix".
+
+   Veldrid's windowing, rendering, OpenGL-context, keyboard and mouse binding
+   files were deliberately NOT incorporated - CodeBrix.Platform owns all of
+   that, and SDL2 is present here purely as a headless gamepad backend.
+
+   Veldrid is licensed under the MIT License, reproduced in full below:
+
+   -------------------------------------------------------------------------
+   The MIT License (MIT)
+
+   Copyright (c) 2017 Eric Mellino and Veldrid contributors
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+   -------------------------------------------------------------------------
+
+================================================================================
+
+3. Simple DirectMedia Layer (SDL2)
+   -------------------------------------------------------------------------
+   Project:    Simple DirectMedia Layer
+   Author:     Sam Lantinga and contributors
+   Source:     https://github.com/libsdl-org/SDL
+   Version:    2.32.10
+   License:    zlib
+
+   Applies to: CodeBrix.Platform.GameEngine.Sdl2
+
+   That package REDISTRIBUTES the SDL2 native library in binary form. No SDL2
+   source code is incorporated into any CodeBrix assembly; the managed side
+   only calls into these binaries. They are committed into this repository
+   under native_libraries/ and packed into the package under
+   runtimes/<rid>/native/. Nothing is downloaded during a build.
+
+   Binaries redistributed, and where each came from:
+
+     runtimes/win-x64/native/SDL2.dll        official libsdl.org release build
+     runtimes/win-x86/native/SDL2.dll        official libsdl.org release build
+     runtimes/osx-x64/native/libSDL2.dylib   official libsdl.org release build
+                                             (universal x86_64 + arm64)
+     runtimes/osx-arm64/native/libSDL2.dylib the same universal file
+     runtimes/win-arm64/native/SDL2.dll      BUILT FROM OFFICIAL SDL2 SOURCE by
+                                             tools/build-sdl2-windows-arm64.ps1,
+                                             because upstream publishes no
+                                             prebuilt Windows ARM64 binary
+
+   Each binary has a .provenance.txt beside it in native_libraries/ recording
+   its version, origin URL and SHA-256.
+
+   No SDL2 binary is shipped for Linux. On Linux the library is loaded from the
+   system, where the distribution's own build is matched to the host's udev and
+   input stack.
+
+   Note on the zlib license's third condition, which requires that altered
+   source versions be plainly marked: the Windows ARM64 binary is built from
+   UNALTERED official SDL2 source. Only the build configuration differs (a
+   shared library for ARM64, with the C runtime linked statically to match how
+   upstream builds its own Windows binaries).
+
+   SDL2 is licensed under the zlib license, reproduced in full below:
+
+   -------------------------------------------------------------------------
+   Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+
+   This software is provided 'as-is', without any express or implied
+   warranty.  In no event will the authors be held liable for any damages
+   arising from the use of this software.
+
+   Permission is granted to anyone to use this software for any purpose,
+   including commercial applications, and to alter it and redistribute it
+   freely, subject to the following restrictions:
+
+   1. The origin of this software must not be misrepresented; you must not
+      claim that you wrote the original software. If you use this software
+      in a product, an acknowledgment in the product documentation would be
+      appreciated but is not required.
+   2. Altered source versions must be plainly marked as such, and must not be
+      misrepresented as being the original software.
+   3. This notice may not be removed or altered from any source distribution.
    -------------------------------------------------------------------------
 
 ================================================================================

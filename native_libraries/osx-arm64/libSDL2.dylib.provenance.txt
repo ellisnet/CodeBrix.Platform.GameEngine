@@ -1,0 +1,45 @@
+libSDL2.dylib -- macOS (Apple Silicon arm64 slice used at runtime)
+================================================================================
+This binary was DOWNLOADED from the official SDL release page. It was not built
+here.
+
+*** THIS IS A UNIVERSAL BINARY AND IS DELIBERATELY DUPLICATED ***
+The exact same file is committed at BOTH native_libraries/osx-x64/ and
+native_libraries/osx-arm64/. Upstream ships one universal (fat) Mach-O
+containing both the x86_64 and arm64 slices, so the two copies are byte-for-byte
+identical (same SHA-256).
+
+The duplication is intentional. .NET's real macOS RIDs are osx-x64 and
+osx-arm64. Shipping a single copy under a runtimes/osx/native/ folder would rely
+on RID-graph fallback, which .NET 8+ de-emphasized by default. Two explicit
+copies cost about 3 MB in the package and remove all ambiguity about which file
+is selected.
+
+SDL2 version      : 2.32.10   (released 2025-09-01)
+Architecture      : universal -- x86_64 + arm64 in one file
+Release page      : https://github.com/libsdl-org/SDL/releases/tag/release-2.32.10
+Download URL      : https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.dmg
+Archive SHA-256   : 4a7ac31640d70214e848f994be8a12849c0f97918a7e6c2e27a40036166d1a7f
+Archive size      : 2041846 bytes
+
+Extracted from    : SDL2.framework/Versions/A/SDL2  (inside the .dmg)
+Renamed to        : libSDL2.dylib
+Output SHA-256    : bc96277325b2e1dc75a13cf70f5ddcf63005d29e93f54a8b7adc7f5c3c017b91
+Output size       : 3106912 bytes
+
+Verified as       : Mach-O universal binary with 2 architectures
+                      [x86_64] Mach-O 64-bit dynamically linked shared library
+                      [arm64 ] Mach-O 64-bit dynamically linked shared library
+
+Vendored on       : 2026-07-19
+                    (extracted on Linux with 7z; no Mac was involved)
+
+The file is taken out of the .framework bundle and shipped as a plain .dylib so
+that it can be placed in runtimes/<rid>/native/ and resolved by name, which is
+how the managed loader probes for it.
+
+Upstream GPG-signs the SOURCE tarballs only; the prebuilt binaries are not
+signed, so the SHA-256 above is the integrity record for this file.
+
+SDL2 is licensed under the zlib license, Copyright (C) 1997-2025 Sam Lantinga.
+See THIRD-PARTY-NOTICES.txt in the repository root for the full license text.

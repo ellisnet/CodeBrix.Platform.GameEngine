@@ -10,7 +10,8 @@ engine for .NET, built on SkiaSharp. It provides tile maps, tilesheets, sprites,
 layered scenes, camera/view systems, animation, physics/collision, input, audio,
 a save/load system, and a global pause system.
 
-The repository contains TWO libraries that mirror the classic core/host split:
+The repository contains TWO libraries that mirror the classic core/host split,
+plus one optional add-on library (see GAMEPAD SUPPORT, below):
 
   * CodeBrix.Platform.GameEngine        -- the platform-agnostic engine CORE.
         No UI-framework dependency; headless-testable. Its rendering seam is a
@@ -21,6 +22,11 @@ The repository contains TWO libraries that mirror the classic core/host split:
         Frame Buffer, macOS). Contains the CPU (Tier A) and GPU (Tier B) render-
         surface adapters, pointer/keyboard input adapters, a UI dispatcher, and
         the game-host base classes games derive from.
+
+  * CodeBrix.Platform.GameEngine.Sdl2   -- OPTIONAL add-on giving the engine
+        game controller (gamepad) support on all six heads, via SDL2. Ships as
+        its OWN NuGet package so that a game which does not want a native SDL2
+        dependency does not inherit one. See the GAMEPAD SUPPORT section.
 
 The engine core is a vendored port of the open-source Gondwana game engine
 version 2.5.0 (MIT, (c) 2025 Michael Adkins). See THIRD-PARTY-NOTICES.txt for
@@ -1099,6 +1105,138 @@ subsystems it exercises:
                     tracking resolution with resize handling.
                     GPURENDER_USE_CPU=1 runs the same scene on Tier A.
 
+GAMEPAD SUPPORT (CodeBrix.Platform.GameEngine.Sdl2)
+--------------------------------------------------------------------------------
+A SEPARATE, OPTIONAL NuGet package (note the license suffix):
+
+    CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
+
+    dotnet add package CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
+
+It is a second package built from THIS repository, and it is versioned and
+published INDEPENDENTLY of CodeBrix.Platform.GameEngine.MitLicenseForever. It
+depends on that package by ordinary PackageReference, pinned to a version
+already on nuget.org. So if a change here ever needs the engine core to expose
+something new: publish the engine package FIRST, wait for it to index, bump the
+pinned version in the .Sdl2 csproj, then build and publish .Sdl2. The two
+packages do NOT share a version number, and that is intentional — .Sdl2 uses
+only PUBLIC engine API and has no InternalsVisibleTo seam into the core.
+
+WIRING IT UP -- one call, after the engine is running:
+
+    using CodeBrix.Platform.GameEngine.Sdl2;
+
+    var gamepads = Engine.Instance.InitializeSdlGamepadManager();
+
+That assigns an IGamepadManager to Engine.Instance.Input.GamepadManager, which
+the engine already polls once per cycle (step 14) and which already feeds
+GamepadEventPoller. No other engine plumbing is needed — the gamepad seam has
+been present in the core since the Gondwana port; this package supplies the
+implementation that was missing beneath it.
+
+Reading input, either style:
+
+    // Polled, per frame:
+    foreach (var pad in gamepads.ConnectedAdapters)
+    {
+        var move = pad.LeftStick?.WithDeadzone() ?? default;
+        bool firing = pad.PressedButtons.Contains(SdlGamepadButtons.A)
+                      || pad.RightTrigger > 0.5f;
+    }
+
+    // Event-driven, via the engine's existing poller:
+    Engine.Instance.Input.GamepadEventPoller.StartMonitoringButton(
+        pad.GamepadId, SdlGamepadButtons.Start);
+    Engine.Instance.Input.GamepadEventPoller.ButtonDown += args => { ... };
+
+Use the SdlGamepadButtons constants rather than string literals — a misspelled
+button name registers happily and then simply never fires.
+
+WHY ONE IMPLEMENTATION COVERS ALL SIX HEADS
+  SDL2 is initialized with the game controller subsystem ONLY, which starts no
+  video subsystem: it never creates a window, never opens an X11 or Wayland
+  display, and never touches Win32 or AppKit. It is a headless joystick backend
+  over evdev (Linux), XInput/RawInput (Windows) and IOKit (macOS). There is
+  therefore no contention with CodeBrix.Platform for the display connection,
+  and the Frame Buffer head gets controller support on the same terms as the
+  desktop heads.
+
+  This package also does NOT pump the SDL2 event queue — it polls controller
+  state directly and disables SDL2 controller events, so there is no second
+  event loop running alongside the CodeBrix.Platform one.
+
+AVAILABILITY IS INSPECTABLE, NOT JUST LOGGED
+  Nothing here throws when SDL2 or a controller is missing; gamepad support is
+  an enhancement to a game that is already playable with keyboard and mouse.
+  InitializeSdlGamepadManager ALWAYS returns a usable manager. Ask it:
+
+    gamepads.IsAvailable          // did SDL2 load and the subsystem start?
+    gamepads.UnavailableReason    // player-facing text, null when available
+    gamepads.UnavailableCause     // machine-readable enum, to branch on
+    gamepads.GetNoControllersHint()  // available, but nothing connected
+
+  Keep the manager if the game has a settings screen: when a player enables
+  gamepad support and nothing happens, UnavailableReason is the text to show.
+  The startup log and the settings screen then read the SAME property instead
+  of each working the answer out for themselves.
+
+NATIVE LIBRARY: WHAT SHIPS, AND THE ONE LINUX PREREQUISITE
+  The package carries SDL2 native binaries for Windows (x64, x86, ARM64) and
+  macOS (x86_64 + arm64), committed into this repo under native_libraries/ and
+  packed to runtimes/<rid>/native/. Nothing is downloaded during a build.
+
+  NO LINUX BINARY IS SHIPPED, deliberately. SDL2's Linux gamepad support is a
+  thin layer over evdev plus udev for hotplug, and the distribution's own build
+  is matched to the host's udev; a binary built elsewhere against a newer glibc
+  would fail on older systems. So on Linux the SYSTEM SDL2 is used, and it is
+  the one prerequisite this package has:
+
+      sudo apt install libsdl2-2.0-0
+
+  That is the RUNTIME package. The -dev package is NOT needed: it only adds
+  headers and the unversioned symlink, and the loader deliberately probes the
+  versioned soname (libSDL2-2.0.so.0) first. If it is missing, gamepad support
+  reports itself unavailable with exactly that apt command in the message
+  text — the game keeps running.
+
+  A kiosk or Frame Buffer deployment has a second failure mode worth knowing:
+  SDL2's evdev backend needs read access to /dev/input/event*, which a desktop
+  login session grants through a per-device ACL but a bare service account may
+  not have. That looks identical to "no controller plugged in", so
+  GetNoControllersHint() tests for it specifically and, when it applies, says
+  to add the account to the 'input' group.
+
+GOTCHAS WORTH KNOWING
+  * A controller that disconnects and reconnects gets a NEW GamepadId (it is
+    derived from SDL2's joystick instance ID). Anything registered against the
+    old id — button monitoring in particular — must be registered again.
+    Bluetooth controllers sleep aggressively, so this happens in normal use.
+  * Stick Y is INVERTED relative to SDL2: SDL2 reports up as negative, the
+    engine's GamepadStickState defines +1 as up. The adapter handles it; raw
+    SDL2 values do not.
+  * A resting stick does NOT read zero. Observed drift on a real pad is around
+    1500-2900 raw units. Use WithDeadzone()/IsEngaged() rather than != 0.
+  * GamepadStickState.Magnitude CAN EXCEED 1.0 — up to sqrt(2) on a diagonal.
+    X and Y are each clamped to [-1, 1] independently, so a stick held hard
+    into a corner legitimately reports e.g. (-0.34, -1.00), magnitude 1.06;
+    values up to 1.25 were measured on a real pad. This does not affect
+    Direction() or IsEngaged(), which is why it goes unnoticed easily. It DOES
+    matter if a game multiplies movement speed by Magnitude: that yields up to
+    41% extra speed on diagonals, the classic diagonal-speed-boost bug. Clamp
+    the magnitude to 1, or normalize the vector, before using it as a scalar.
+  * The FIRST poll after a controller connects is discarded on purpose. A
+    freshly connected Bluetooth pad has been observed reporting every stick
+    axis at -32768 — full deflection — until its first HID report arrives. A
+    deadzone cannot filter that, because it is a maximum reading, not a small
+    one.
+  * Do not Math.Abs() a raw axis value as a short: -32768 is a real reading and
+    negating it overflows. Widen to int first.
+  * Button/axis NUMBERING is device- and transport-specific (the same Xbox pad
+    reports a different raw layout over Bluetooth than over USB). Always go
+    through the game controller API, never raw joystick indices. The startup
+    log records each pad's SDL2 mapping string, which is the first thing to
+    look at when a controller behaves oddly.
+
 TESTING
 --------------------------------------------------------------------------------
   Core tests are headless unit tests (the UI-agnostic core makes this clean):
@@ -1118,6 +1256,16 @@ TESTING
   plus the scene/sprite/cycle/tilesheet/audio registries), so tests that
   populate or clear that state cannot overlap. Keep new test classes
   compatible with that assumption — clean up global state you create.
+
+  The Sdl2 test assembly also runs SERIALLY, for the same class of reason:
+  SDL2 keeps its initialization state and device list in process-global native
+  state, and those tests start and shut the subsystem down. Its tests are
+  written as invariants that hold WITH OR WITHOUT SDL2 installed and with or
+  without a controller attached — asserting that SDL2 loads would turn a
+  machine without it into a test failure, which is the very outcome the loader
+  exists to prevent. The conversion logic that real hardware cannot be made to
+  exercise on demand (axis inversion, the -32768 edge) is tested directly with
+  fabricated raw values.
 
     dotnet test CodeBrix.Platform.GameEngine.slnx
 

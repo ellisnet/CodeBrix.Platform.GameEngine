@@ -9,7 +9,9 @@
   <Folder Name="/Tests/">
     <Project Path="tests/CodeBrix.Platform.GameEngine.Tests/CodeBrix.Platform.GameEngine.Tests.csproj" />
     <Project Path="tests/CodeBrix.Platform.GameEngine.Host.Tests/CodeBrix.Platform.GameEngine.Host.Tests.csproj" />
+    <Project Path="tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/CodeBrix.Platform.GameEngine.Sdl2.Tests.csproj" />
   </Folder>
   <Project Path="src/CodeBrix.Platform.GameEngine/CodeBrix.Platform.GameEngine.csproj" />
   <Project Path="src/CodeBrix.Platform.GameEngine.Host/CodeBrix.Platform.GameEngine.Host.csproj" />
+  <Project Path="src/CodeBrix.Platform.GameEngine.Sdl2/CodeBrix.Platform.GameEngine.Sdl2.csproj" />
 </Solution>
