@@ -162,32 +162,12 @@ internal class SpotGame : IDisposable
         var fromCell = playerMovement.FromCell;
         var toCell = SpotGameField.GetCell(playerMovement.DestX, playerMovement.DestY);
 
-        Action<ScriptedMovement>? startHandler = null;
-        startHandler = (ScriptedMovement scriptedMovement) =>
-        {
-            sprite.Movement.ScriptedMovementStarted -= startHandler;
-            PlayerMoveStarted?.Invoke(playerMovement);
-        };
-
-        Action<ScriptedMovement>? stopHandler = null;
-        stopHandler = (ScriptedMovement scriptedMovement) =>
-        {
-            sprite.Movement.ScriptedMovementStopped -= stopHandler;
-            sprite.CurrentFrame = playerMovement.Player.DefaultFrame;
-
-            var capturedCells = SpotGameField.CaptureAdjacentCells(
-                playerMovement.DestX,
-                playerMovement.DestY,
-                playerMovement.Player);
-
-            if (capturedCells.Count > 0)
-                CellsCaptured?.Invoke(capturedCells);
-
-            if (IsGameOver)
-                GameOver?.Invoke();
-            else
-                PlayerMoveStopped?.Invoke(playerMovement);
-        };
+        // The per-move OnBeginning/OnComplete callbacks replace a pair of self-unsubscribing
+        // ScriptedMovementStarted/Stopped handlers: those fire for EVERY move on the controller,
+        // so each one had to detach itself to avoid firing for the next move too. The callbacks
+        // below belong to this move alone. Ordering is unchanged - OnBeginning runs synchronously
+        // as it is chained, exactly where the Started event used to be raised from MoveTo.
+        EasingKind easingKind;
 
         switch (playerMovement.MovementType)
         {
@@ -198,40 +178,53 @@ internal class SpotGame : IDisposable
                 sprite.CurrentFrame = playerMovement.Player.DefaultFrame;
 
                 sprite = clonedSprite;
-                sprite.Movement.ScriptedMovementStarted += startHandler;
-                sprite.Movement.ScriptedMovementStopped += stopHandler;
-                sprite.Movement.MoveTo(new(playerMovement.DestX, playerMovement.DestY),
-                                           0.4f,
-                                           EasingKind.SmootherStep,
-                                           0.1f);
-
-                toCell.OccupiedBy = playerMovement.Player;
-                toCell.Sprite = sprite;
-
-                SelectedCell = null;
+                easingKind = EasingKind.SmootherStep;
                 break;
 
             case MovementType.Jump:
                 sprite.StopPulse();
-                sprite.Movement.ScriptedMovementStarted += startHandler;
-                sprite.Movement.ScriptedMovementStopped += stopHandler;
-                sprite.Movement.MoveTo(new(playerMovement.DestX, playerMovement.DestY),
-                                       0.4f,
-                                       EasingKind.EaseInCubic,
-                                       0.1f);
-
-                fromCell.OccupiedBy = null;
-                fromCell.Sprite = null;
-
-                toCell.OccupiedBy = playerMovement.Player;
-                toCell.Sprite = sprite;
-
-                SelectedCell = null;
+                easingKind = EasingKind.EaseInCubic;
                 break;
 
             default:
                 return;
         }
+
+        sprite.Movement
+            .MoveTo(new(playerMovement.DestX, playerMovement.DestY),
+                    0.4f,
+                    easingKind,
+                    0.1f)
+            .OnBeginning(() => PlayerMoveStarted?.Invoke(playerMovement))
+            .OnComplete(() =>
+            {
+                sprite.CurrentFrame = playerMovement.Player.DefaultFrame;
+
+                var capturedCells = SpotGameField.CaptureAdjacentCells(
+                    playerMovement.DestX,
+                    playerMovement.DestY,
+                    playerMovement.Player);
+
+                if (capturedCells.Count > 0)
+                    CellsCaptured?.Invoke(capturedCells);
+
+                if (IsGameOver)
+                    GameOver?.Invoke();
+                else
+                    PlayerMoveStopped?.Invoke(playerMovement);
+            });
+
+        // A clone leaves the origin cell occupied; a jump vacates it.
+        if (playerMovement.MovementType == MovementType.Jump)
+        {
+            fromCell.OccupiedBy = null;
+            fromCell.Sprite = null;
+        }
+
+        toCell.OccupiedBy = playerMovement.Player;
+        toCell.Sprite = sprite;
+
+        SelectedCell = null;
     }
 
     internal Player NextPlayer()

@@ -2,6 +2,7 @@ using CodeBrix.Platform.GameEngine.Input.Gamepad;
 using CodeBrix.Platform.GameEngine.Input.Keyboard;
 using CodeBrix.Platform.GameEngine.Input.Mouse;
 using CodeBrix.Platform.GameEngine.Input.Touch;
+using CodeBrix.Platform.GameEngine.Timers;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -20,10 +21,19 @@ public sealed class EngineInputSystems
 
     private IGamepadManager<IGamepadAdapter>? _gamepadManager = null;
 
+    private long _lastGamepadStateUpdateTick = 0;
+
     /// <summary>
     /// Gets or sets the gamepad manager responsible for handling gamepad input.
     /// </summary>
-    /// <remarks>Setting this property attaches an update callback to the engine cycle, polling attached adapters</remarks>
+    /// <remarks>
+    /// Once assigned, the manager's state is refreshed by whichever loop is driving the game - the
+    /// engine cycle in Mode A, or <see cref="CodeBrix.Platform.GameEngine.Input.InputPump.PollNow"/>
+    /// in Mode B - immediately before the gamepad event poller runs, so events are always raised
+    /// against freshly-read device state. The refresh rate is bounded by
+    /// <see cref="Configuration.EngineConfiguration.TimeBetweenGamepadStateUpdates"/>. Games do not
+    /// call <see cref="IGamepadManager{T}.Update"/> themselves.
+    /// </remarks>
     public IGamepadManager<IGamepadAdapter>? GamepadManager
     {
         get => _gamepadManager;
@@ -31,7 +41,42 @@ public sealed class EngineInputSystems
         {
             GamepadEventPoller.Initialize(value?.ConnectedAdapters);
             _gamepadManager = value;
+
+            // A newly assigned manager has never been read; let the next poll refresh it
+            // regardless of when the previous manager was last refreshed.
+            _lastGamepadStateUpdateTick = 0;
         }
+    }
+
+    /// <summary>
+    /// Refreshes the state of the connected gamepads, subject to the
+    /// <see cref="Configuration.EngineConfiguration.TimeBetweenGamepadStateUpdates"/> throttle.
+    /// </summary>
+    /// <param name="tick">The current high-resolution tick, as the calling loop measured it.</param>
+    /// <remarks>
+    /// Called by the engine cycle and by <see cref="CodeBrix.Platform.GameEngine.Input.InputPump.PollNow"/>,
+    /// in both cases immediately before the gamepad event poller runs. Keeping the call in one place is
+    /// what makes the two hosting modes behave identically; it is internal because a game driving it
+    /// directly would defeat the throttle that <see cref="IGamepadManager{T}.Update"/> requires.
+    /// </remarks>
+    internal void UpdateGamepadState(long tick)
+    {
+        var manager = _gamepadManager;
+        if (manager is null)
+            return;
+
+        // The first refresh after a manager is assigned always runs; after that the configured
+        // interval applies. A non-positive interval means "refresh on every poll".
+        var minimumInterval = Engine.Instance.Configuration.TimeBetweenGamepadStateUpdates;
+        if (minimumInterval > 0
+            && _lastGamepadStateUpdateTick != 0
+            && HighResTimer.GetDuration(_lastGamepadStateUpdateTick, tick) < minimumInterval)
+        {
+            return;
+        }
+
+        _lastGamepadStateUpdateTick = tick;
+        manager.Update();
     }
 
     /// <summary>

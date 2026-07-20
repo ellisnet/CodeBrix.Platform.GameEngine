@@ -115,12 +115,17 @@ public sealed class MouseEventArgs : EventArgs
     /// The accumulated scroll wheel delta since the last poll. Positive values indicate upward scrolling,
     /// negative values indicate downward scrolling, and 0 indicates no scrolling occurred.
     /// </param>
+    /// <param name="tick">
+    /// The high-resolution tick at which the poll that raised this event ran. Defaults to 0 for
+    /// callers that do not track it.
+    /// </param>
     public MouseEventArgs(MouseEventConfiguration mouseEventConfiguration,
                           KeyboardModifierState currentKeyboardModifiers,
                           IReadOnlyDictionary<MouseButton, MouseButtonState> buttonStates,
                           Point previousPosition,
                           Point currentPosition,
-                          int scrollDelta)
+                          int scrollDelta,
+                          long tick = 0)
     {
         MouseEventConfiguration = mouseEventConfiguration;
         CurrentKeyboardModifiers = currentKeyboardModifiers;
@@ -128,7 +133,18 @@ public sealed class MouseEventArgs : EventArgs
         PreviousPosition = previousPosition;
         CurrentPosition = currentPosition;
         ScrollDelta = scrollDelta;
+        Tick = tick;
     }
+
+    /// <summary>
+    /// Gets the high-resolution tick at which the poll that raised this event ran.
+    /// </summary>
+    /// <remarks>
+    /// Comparable with <see cref="CodeBrix.Platform.GameEngine.Timers.HighResTimer.GetCurrentTick"/>
+    /// values, so a handler can measure the age of an event or the interval between two of them -
+    /// timing that cannot be reconstructed after the fact. 0 when the raiser did not supply one.
+    /// </remarks>
+    public long Tick { get; }
 
     /// <summary>
     /// Determines whether the specified mouse button is currently in the down (pressed) state.

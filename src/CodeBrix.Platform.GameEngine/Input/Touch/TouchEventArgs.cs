@@ -26,8 +26,22 @@ public sealed class TouchEventArgs : EventArgs
     /// <param name="touch">
     /// The touch contact point that caused this event to be raised.
     /// </param>
-    public TouchEventArgs(TouchPoint touch)
+    /// <param name="tick">
+    /// The high-resolution tick at which the poll that raised this event ran. Defaults to 0 for
+    /// callers that do not track it.
+    /// </param>
+    public TouchEventArgs(TouchPoint touch, long tick = 0)
     {
         Touch = touch;
+        Tick = tick;
     }
+
+    /// <summary>
+    /// Gets the high-resolution tick at which the poll that raised this event ran.
+    /// </summary>
+    /// <remarks>
+    /// Comparable with <see cref="CodeBrix.Platform.GameEngine.Timers.HighResTimer.GetCurrentTick"/>
+    /// values, so a handler can measure gesture timing directly. 0 when the raiser did not supply one.
+    /// </remarks>
+    public long Tick { get; }
 }

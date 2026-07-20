@@ -1,17 +1,41 @@
 // padcheck -- interactive hardware check for CodeBrix.Platform.GameEngine.Sdl2.
 //
-// Drives the REAL SdlGamepadManager, the same way the engine does (TryStart once, then Update()
-// on a frame cadence), so that what it reports is what a game would actually see. It exists
-// because the parts of gamepad support that matter most cannot be unit tested: whether each
-// physical button reports under the right name, whether up is up, and whether a controller that
-// sleeps and wakes is picked back up.
+// Drives the REAL SdlGamepadManager, so that what it reports is what a game would actually see.
+// It exists because the parts of gamepad support that matter most cannot be unit tested: whether
+// each physical button reports under the right name, whether up is up, and whether a controller
+// that sleeps and wakes is picked back up.
+//
+// TWO DRIVE MODES, because the engine has two hosting modes and a controller has to work in both:
+//
+//   (default)  DIRECT  -- calls manager.Update() itself on a frame cadence.
+//   --pump     PUMP    -- assigns the manager to the engine and calls InputPump.PollNow(), the
+//                         Mode-B path a software-rendered game (Doom.Brix, Wolfenstein.Brix)
+//                         actually runs. Nothing here calls Update() directly.
+//
+// RUN BOTH. The direct mode is the more forgiving of the two: it drove every hardware check of
+// the original gamepad implementation, and because it refreshed the manager itself it could not
+// detect that NOTHING refreshed it on the InputPump path -- which left gamepads completely dead
+// in Mode B while every hardware test passed. A check that only exercises the driver it supplies
+// itself cannot see a missing driver.
 //
 // See tools/README.md for the suggested test sequence and what to look for.
+using CodeBrix.Platform.GameEngine;
+using CodeBrix.Platform.GameEngine.Input;
 using CodeBrix.Platform.GameEngine.Sdl2.Gamepad;
 
-int seconds = args.Length > 0 && int.TryParse(args[0], out int s) ? s : 30;
+bool usePump = args.Any(a => string.Equals(a, "--pump", StringComparison.OrdinalIgnoreCase));
+int seconds = 30;
+foreach (string arg in args)
+{
+    if (int.TryParse(arg, out int parsed))
+    {
+        seconds = parsed;
+        break;
+    }
+}
 
 Console.WriteLine("=== CodeBrix.Platform.GameEngine.Sdl2 -- real controller check ===");
+Console.WriteLine($"Drive mode          : {(usePump ? "PUMP (InputPump.PollNow -- the Mode-B game path)" : "DIRECT (manager.Update)")}");
 Console.WriteLine();
 
 bool started = SdlGamepadManager.TryStart(out SdlGamepadManager manager);
@@ -34,6 +58,15 @@ Console.WriteLine($"No-controller hint  : {manager.GetNoControllersHint() ?? "(n
 Console.WriteLine();
 
 PrintControllers(manager);
+
+if (usePump)
+{
+    // Exactly what a Mode-B game does: hand the manager to the engine and never touch it again.
+    // From here on the loop only calls InputPump.PollNow().
+    Engine.Instance.Input.GamepadManager = manager;
+    Console.WriteLine("Manager assigned to Engine.Instance.Input.GamepadManager; driving with InputPump.PollNow().");
+    Console.WriteLine();
+}
 
 Console.WriteLine($"Polling for {seconds}s at ~60fps. Press buttons and move the sticks.");
 Console.WriteLine("(Only CHANGES are printed.)");
@@ -58,7 +91,15 @@ bool sawWarmUpGlitch = false;
 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 while (stopwatch.Elapsed.TotalSeconds < seconds)
 {
-    manager.Update();
+    if (usePump)
+    {
+        InputPump.PollNow();
+    }
+    else
+    {
+        manager.Update();
+    }
+
     frames++;
 
     if (manager.ConnectedAdapters.Count != previousPadCount)
@@ -146,6 +187,11 @@ if (maxLeftMagnitude > 1f || maxRightMagnitude > 1f)
     Console.WriteLine("NOTE: a stick magnitude above 1.00 is EXPECTED, not a fault. X and Y are each");
     Console.WriteLine("      clamped to [-1, 1] independently, so a corner reaches up to 1.41. Clamp or");
     Console.WriteLine("      normalize before using Magnitude as a movement-speed scalar.");
+}
+
+if (usePump)
+{
+    Engine.Instance.Input.GamepadManager = null;
 }
 
 manager.Dispose();

@@ -711,6 +711,12 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         if (disposing)
         {
+            // The host creates the backbuffer (via the factory) and is its only owner, so the
+            // host is what has to dispose it. Merely dropping the reference - which is what this
+            // did, despite the summary above always having said "releases the backbuffer" - left
+            // a BitmapBackbuffer's SKBitmap and SKSurface to be reclaimed by finalizers instead
+            // of deterministically, leaking two native Skia objects per host disposal.
+            _backbuffer?.Dispose();
             _backbuffer = null;
         }
 

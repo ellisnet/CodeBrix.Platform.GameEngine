@@ -33,6 +33,7 @@ namespace CodeBrix.Platform.GameEngine.Host.Hosting;
 /// Audio stays opt-in: override <see cref="ConfigureAudio"/> and call
 /// <see cref="Audio.AudioSystem.Initialize"/> there when the game uses
 /// <see cref="Audio.SoundChannel"/>/<see cref="Audio.StreamingAudioSource"/> voices.
+/// Gamepads are opt-in the same way, through <see cref="ConfigureGamepads"/>.
 /// </para>
 /// <para>
 /// This is a sibling of <see cref="GameHostBase"/>, not a subclass: the engine cycle never
@@ -81,9 +82,9 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
     public FixedRateGameLoop GameLoop { get; }
 
     /// <summary>
-    /// Initializes the host and starts the game loop: logging → input adapters → audio
-    /// (opt-in) → <see cref="OnLoadContent"/> → loop start. Call once, on the UI thread,
-    /// after the canvas has its first real size.
+    /// Initializes the host and starts the game loop: logging → input adapters → gamepads
+    /// (opt-in) → audio (opt-in) → <see cref="OnLoadContent"/> → loop start. Call once, on the
+    /// UI thread, after the canvas has its first real size.
     /// </summary>
     /// <param name="logLevel">The minimum engine log level. Default Warning.</param>
     public void Initialize(LogLevel logLevel = LogLevel.Warning)
@@ -97,6 +98,7 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
         EngineLogger.SetLogLevel(logLevel);
 
         ConfigureInput();
+        ConfigureGamepads();
         ConfigureAudio();
 
         OnLoadContent();
@@ -192,6 +194,26 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
         KeyboardEventPoller.Initialize(_keyboardAdapter);
         MouseEventPoller.Initialize(new CodeBrixMouseAdapter(RenderSurface));
         TouchEventPoller.Initialize(new CodeBrixTouchInputAdapter(RenderSurface));
+    }
+
+    /// <summary>
+    /// Gamepads are opt-in: override and attach a gamepad manager here when the game supports
+    /// controllers. The default does nothing.
+    /// </summary>
+    /// <remarks>
+    /// With the <c>CodeBrix.Platform.GameEngine.Sdl2</c> package referenced, that is one call:
+    /// <code>
+    /// protected override void ConfigureGamepads()
+    ///     => _gamepads = Engine.Instance.InitializeSdlGamepadManager();
+    /// </code>
+    /// Nothing further is needed - the per-tic <see cref="InputPump.PollNow"/> this host already
+    /// runs refreshes the pads and raises their events. This hook is the Mode-B counterpart to
+    /// <c>CodeBrixGameHost.OnConfigureGamepads</c>, and runs after the input adapters are wired
+    /// (so the pollers exist) and before <see cref="OnLoadContent"/> (so the game can read
+    /// controller availability while loading).
+    /// </remarks>
+    protected virtual void ConfigureGamepads()
+    {
     }
 
     /// <summary>

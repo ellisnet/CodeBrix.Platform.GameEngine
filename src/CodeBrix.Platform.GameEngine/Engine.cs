@@ -1393,6 +1393,10 @@ public sealed class Engine : IDisposable
         // check for touch events
         TouchEventPoller.Instance?.PollForEvents(tick);
 
+        // refresh gamepad state (throttled) BEFORE polling for gamepad events, so the events
+        // are raised against the state this cycle read rather than the previous cycle's
+        Input.UpdateGamepadState(tick);
+
         // check for gamepad events
         GamepadEventPoller.Instance?.PollForEvents(tick);
 
@@ -1437,8 +1441,10 @@ public sealed class Engine : IDisposable
             if (!surface.Backbuffer.IsGlThreadRendered)
                 surface.PresentBackbufferToAdapter();
 
-        // update state of gamepad(s)
-        Input.GamepadManager?.Update();
+        // NOTE: gamepad state used to be refreshed here, in the render phase. It moved to
+        // DoBackgroundTasks (the input phase, just before the gamepad event poll) so that input
+        // is not throttled to TargetFPS and does not lag the events raised from it by a cycle -
+        // and so the same call serves games that own their loop and never reach this method.
 
         // raise event
         AfterFrameRender?.Invoke();

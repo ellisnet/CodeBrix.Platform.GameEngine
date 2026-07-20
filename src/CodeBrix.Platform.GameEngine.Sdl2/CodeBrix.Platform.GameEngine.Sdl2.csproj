@@ -104,10 +104,33 @@
     Take care that no local folder is configured as a NuGet source holding a freshly-built engine
     package. Every engine build restamps its version, so a local source could shadow nuget.org and
     this package would be built against an engine version that was never published.
+
+    LOCAL VERIFICATION ESCAPE HATCH (-p:UseLocalEngineProject=true):
+    Because this project normally compiles against the PUBLISHED engine, the padcheck hardware tool
+    downstream of it cannot see engine changes that are still in the working tree - which is exactly
+    how gamepad support shipped fully hardware-verified while being completely dead on the
+    InputPump path: nothing that ran against real hardware was ever built from local engine source.
+    Passing UseLocalEngineProject=true swaps the PackageReference for a ProjectReference so a local
+    run tests THIS repo's code. It also forces GeneratePackageOnBuild off, because a package built
+    that way would carry no engine dependency at all and must never be published.
   -->
-  <ItemGroup>
+  <PropertyGroup>
+    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">false</UseLocalEngineProject>
+    <GeneratePackageOnBuild Condition="'$(UseLocalEngineProject)' == 'true'">false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseLocalEngineProject)' != 'true'">
     <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.201.374" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalEngineProject)' == 'true'">
+    <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+  </ItemGroup>
+
+  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="Pack"
+          Condition="'$(UseLocalEngineProject)' == 'true'">
+    <Error Text="UseLocalEngineProject=true is for local hardware verification only. The resulting package would have no engine dependency and no engine dll. Pack without it." />
+  </Target>
 
   <!--
     SDL2 native binaries, committed into this repo under native_libraries/ and packed into the

@@ -91,6 +91,51 @@ public sealed class EngineDispatcher : IEngineDispatcher
     }
 
     /// <summary>
+    /// Posts an asynchronous action to the engine thread and returns a task that completes when
+    /// that action has finished.
+    /// </summary>
+    /// <param name="action">
+    /// The asynchronous work to start on the engine thread. A <see langword="null"/> value is
+    /// ignored and yields an already-completed task.
+    /// </param>
+    /// <returns>
+    /// A task that completes once <paramref name="action"/> has run to completion, or that faults
+    /// carrying the exception the action threw.
+    /// </returns>
+    /// <remarks>
+    /// Only the START of the action is marshalled onto the engine thread. Whatever runs after the
+    /// action's first <see langword="await"/> resumes on whichever context that await captures -
+    /// so touching engine state after an await is NOT automatically safe. Await this from the UI
+    /// thread or a background thread; awaiting it from the engine thread itself would block the
+    /// cycle that has to drain the queue for the work to run.
+    /// </remarks>
+    public Task PostAsync(Func<Task> action)
+    {
+        if (action is null)
+            return Task.CompletedTask;
+
+        var completionSource = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Post(() => _ = ExecuteAsync());
+
+        return completionSource.Task;
+
+        async Task ExecuteAsync()
+        {
+            try
+            {
+                await action();
+                completionSource.SetResult();
+            }
+            catch (Exception ex)
+            {
+                completionSource.SetException(ex);
+            }
+        }
+    }
+
+    /// <summary>
     /// Executes all queued actions that have been posted to this dispatcher since the last
     /// call to <see cref="Drain"/>. This method should be called regularly by the engine's
     /// main update loop to process pending work items.

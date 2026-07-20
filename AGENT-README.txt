@@ -125,7 +125,8 @@ the same points — see Extensibility/IEnginePlugin):
    1. EngineDispatcher.Drain()          -- runs actions posted to the engine thread
    2. BeforeBackgroundTasksExecute event
    3. PreCycle Timer events             -- Timer.RaiseTimerEvents(TimerType.PreCycle)
-   4. Input pollers                     -- keyboard, mouse, touch, gamepad events fire HERE
+   4. Gamepad state refresh (throttled) then input pollers -- keyboard, mouse,
+      touch, gamepad events fire HERE, against state read moments earlier
    5. Animator frame advancement        -- for every Tile in Tile.TilesAnimating
    6. Sprite movement                   -- SpriteManager.MoveSprites (paths, easing)
    7. Collision resolution              -- per scene layer
@@ -135,7 +136,7 @@ the same points — see Extensibility/IEnginePlugin):
   11. BeforeFrameRender event
   12. DirectDrawingManager.UpdateAll    -- immediate-mode drawable state updates
   13. Render + present each non-GPU render surface
-  14. Gamepad state update; AfterFrameRender event
+  14. AfterFrameRender event
   15. PostCycle Timer events
   16. CPS/FPS sampling (CPSCalculated event, posted to the UI thread)
 
@@ -156,7 +157,13 @@ There are exactly three thread contexts a Mode-A game touches:
     Game-state mutation belongs here. To get onto it from elsewhere:
         Engine.Instance.EngineDispatcher.Post(() => { ...game state... });
     Posted actions run at the top of the next cycle (step 1). Posting FROM the
-    engine thread executes inline.
+    engine thread executes inline. PostAsync(Func<Task>) is the awaitable form —
+    it returns a Task that completes when the posted work does (and faults with
+    whatever it threw). Only the START is marshalled onto the engine thread:
+    continuations after the action's first await resume on whatever context that
+    await captured, so engine state is NOT automatically safe to touch after one.
+    Never await it FROM the engine thread — that blocks the very cycle that has
+    to drain the queue.
 
   UI THREAD
     Runs: XAML layout/input, GameSurfaceCanvas painting, CPSCalculated,
@@ -449,6 +456,9 @@ example — 320x200 plasma+starfield at 70 Hz with raw-PCM audio):
         protected override void ConfigureAudio()      // opt-in
             => AudioSystem.Initialize(44100, 2);
 
+        protected override void ConfigureGamepads()   // opt-in
+            => _gamepads = Engine.Instance.InitializeSdlGamepadManager();
+
         protected override void OnTic() { /* one tic of game logic */ }
 
         protected override void OnRenderFrame(Span<byte> frame)
@@ -461,6 +471,8 @@ example — 320x200 plasma+starfield at 70 Hz with raw-PCM audio):
 
 Per tic, on the dedicated game-loop thread, the base runs:
     InputPump.PollNow() -> OnTic() -> OnRenderFrame(buffer) -> present.
+PollNow refreshes gamepad state and then runs every poller, so a Mode-B game
+gets the same gamepad behavior — hotplug included — as a Mode-A one.
 
 FixedRateGameLoop semantics the game can rely on:
   * Non-drifting fixed timestep: each tic's target advances by exactly one
@@ -535,6 +547,9 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   carries KeyAction (Pressed/Released/Repeated) and modifier flags.
   MouseEventArgs has edge helpers (LeftButtonJustPressed, ...) plus polled
   properties on the poller (CurrentPosition, ButtonStates, ScrollDelta).
+  MouseEventArgs.Tick / TouchEventArgs.Tick carry the HighResTimer tick of the
+  poll that raised the event, for input timing that cannot be reconstructed
+  afterwards (0 when the raiser did not supply one).
   Touch has Began/Moved/Ended events plus built-in tap/swipe/pinch
   recognizers. Event pacing: Configuration.TimeBetweenKeyboardEvents /
   ...Mouse/Touch/GamepadEvents (default 0.03 — SECONDS, despite a few older
@@ -546,8 +561,12 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   POLLING: IKeyboardAdapter.IsDown(keyCode) (reach it via
   KeyboardEventPoller.Adapter or your own adapter reference) is lock-free and
   valid from any thread at any time — the per-tic gameplay path for held keys
-  (movement). Gamepads: IGamepadManager.Update() is throttled by the engine
-  to the frame rate — never call it unthrottled yourself.
+  (movement). Gamepads: read IGamepadAdapter (sticks, triggers, PressedButtons)
+  straight off Engine.Instance.Input.GamepadManager.ConnectedAdapters. NEVER
+  call IGamepadManager.Update() yourself — the engine refreshes gamepad state
+  in BOTH modes (engine cycle step 4, or InputPump.PollNow in Mode B), throttled
+  by Configuration.TimeBetweenGamepadStateUpdates. A game that calls it too gets
+  unthrottled native device polling on top of the engine's.
 
   Wiring adapters (Host extensions, canvas-based):
       Engine.InitializeCodeBrixKeyboardAdapter(canvas);
@@ -660,8 +679,11 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     TileHeight separately (one refresh instead of two). Nearly every layer
     property setter forces a full scene refresh — batch changes.
   * Coordinate systems per layer: Orthogonal, IsometricRhombic,
-    IsometricAxial, HexAxialFlatTop, HexAxialPointedTop (the CoordinateTest
-    sample exercises them). Conversions: layer.GridToWorldPx / WorldPxToGrid /
+    IsometricAxial, HexAxialFlatTop, HexAxialPointedTop, Oblique (a sheared
+    square lattice — columns stay horizontal while rows advance down and to
+    the right, giving a parallelogram tile footprint rather than an isometric
+    diamond; tile art fits that footprint with transparent bounding-box
+    corners). The CoordinateTest sample exercises the first five. Conversions: layer.GridToWorldPx / WorldPxToGrid /
     GetAdjacentTile(tile, CardinalDirections); tile indexers return null out
     of bounds (no auto-wrap — call WrapGrid first when wrapping).
   * SceneLayerTile: cells are created with the layer; assigning CurrentFrame
@@ -771,7 +793,18 @@ Follow > Scripted > Integrated physics.
     sprite.Movement.MoveBy(delta, 10f, EasingFunctions.EaseInOutQuad);
     sprite.Movement.MoveToward(target, speedPerSec);   // constant speed
     sprite.Movement.CancelScript(); / StopAllMovement();
-    events: ScriptedMovementStarted / ScriptedMovementStopped (arrival hook)
+    PER-MOVE CALLBACKS (preferred over the events below): the Move* methods
+    return the MovementController, so one move's hooks chain onto it —
+        sprite.Movement.MoveTo(target, 0.4f, EasingKind.SmootherStep)
+                       .OnBeginning(() => PlayASound())
+                       .OnComplete(() => ArrivedAt(target));
+    OnComplete fires when THAT move ends; OnBeginning fires SYNCHRONOUSLY as it
+    is chained (the move has already started by then) and THROWS if no scripted
+    move is active — do not chain it onto a move that may have snapped to the
+    target instantly. The Spot.Brix sample is the worked example.
+    events: ScriptedMovementStarted / ScriptedMovementStopped fire for EVERY
+    move on the controller, so a handler has to work out which move it is
+    hearing about and detach itself; prefer the per-move callbacks.
     PITFALL: MoveBy(delta, float, ...) has two meanings — with an easing
     argument the float is a DURATION (tween); without, it is a SPEED
     (constant velocity). Pass EasingKind/Func explicitly to get the tween.
@@ -941,6 +974,12 @@ Engine.Instance.Configuration (loaded by Initialize; default file
     SamplingTimeForCPS = 1.5          -- seconds between CPSCalculated events
     TimeBetweenKeyboardEvents = 0.03  -- repeat-event throttle floors (seconds)
     TimeBetweenMouseEvents / TouchEvents / GamepadEvents = 0.03
+    TimeBetweenGamepadStateUpdates = 0.008
+                                      -- how often gamepad DEVICE state is re-read
+                                         (and hotplug detected), in both modes;
+                                         0 = every poll. Distinct from
+                                         TimeBetweenGamepadEvents, which throttles
+                                         how often a HELD button re-raises its event
     LoggingMode = Asynchronous        -- Synchronous = ordered but slower
     LoggingQueueCapacity = 8192       -- async overflow drops
     FlushAsyncLogsOnShutdown = true
@@ -1122,17 +1161,28 @@ pinned version in the .Sdl2 csproj, then build and publish .Sdl2. The two
 packages do NOT share a version number, and that is intentional — .Sdl2 uses
 only PUBLIC engine API and has no InternalsVisibleTo seam into the core.
 
-WIRING IT UP -- one call, after the engine is running:
+WIRING IT UP -- one call:
 
     using CodeBrix.Platform.GameEngine.Sdl2;
 
     var gamepads = Engine.Instance.InitializeSdlGamepadManager();
 
 That assigns an IGamepadManager to Engine.Instance.Input.GamepadManager, which
-the engine already polls once per cycle (step 14) and which already feeds
-GamepadEventPoller. No other engine plumbing is needed — the gamepad seam has
-been present in the core since the Gondwana port; this package supplies the
-implementation that was missing beneath it.
+the engine refreshes and feeds to GamepadEventPoller every cycle (Mode A, step
+4) or every tic (Mode B, from InputPump.PollNow). No other engine plumbing is
+needed, and nothing differs between the two hosting modes — the game never calls
+Update() itself in either.
+
+WHERE TO PUT THAT CALL:
+  Mode A (CodeBrixGameHost)             override OnConfigureGamepads()
+  Mode B (SoftwareRenderedGameHostBase) override ConfigureGamepads()
+
+    protected override void ConfigureGamepads()
+        => _gamepads = Engine.Instance.InitializeSdlGamepadManager();
+
+  Both hooks run after the input adapters are wired and before the game's
+  content loads. Driving Engine directly (no host base) works too: call it any
+  time after the adapters exist.
 
 Reading input, either style:
 
@@ -1236,6 +1286,17 @@ GOTCHAS WORTH KNOWING
     through the game controller API, never raw joystick indices. The startup
     log records each pad's SDL2 mapping string, which is the first thing to
     look at when a controller behaves oddly.
+  * VERIFY GAMEPAD CHANGES IN BOTH HOSTING MODES. The first release of this
+    package was hardware-verified only through a harness that called
+    manager.Update() itself, so it could not notice that NOTHING called Update()
+    on the InputPump path — gamepads were completely dead in Mode B (frozen
+    state, no events, no hotplug) while every hardware check passed. padcheck
+    now has a --pump mode for exactly this; run it as well as the default mode.
+  * padcheck (and anything else downstream of this project) compiles against the
+    PUBLISHED engine package, so it cannot see engine changes still in the
+    working tree. Build it with -p:UseLocalEngineProject=true to test local
+    engine source. Without that flag a local engine fix appears to have no
+    effect, which is indistinguishable from the fix not working.
 
 TESTING
 --------------------------------------------------------------------------------

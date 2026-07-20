@@ -83,6 +83,18 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
 
     protected override void LoadAssets()
     {
+        // Pin the device format BEFORE loading any audio. These assets are a mix of rates:
+        // the music and the bubble-pop are 48 kHz, the victory/knock/lose clips 44.1 kHz (the
+        // lose clip mono), and the bump/velcro/water-drip effects 24 kHz. CodeBrix.Audio has no
+        // playback-time resampler, so without a pinned format the shared output silently adopted
+        // the rate of whichever sound played first (the 48 kHz music) and every 24 kHz and
+        // 44.1 kHz effect then threw on Play - the bump on any invalid selection, the water-drip
+        // on EVERY completed move. Pinning makes the short-effect preload rate-convert each clip
+        // once at load time instead. Channel count needs no help: the output matches mono to
+        // stereo itself. 48 kHz is the right target because the long music track streams rather
+        // than preloads, so it is the one clip that cannot be converted up front.
+        AudioSystem.Initialize(48000, 2);
+
         // load standalone audio files
         _music = Engine.Managers.AudioResources.LoadFromFile("music", GetAssetPath("sounovamusic-puzzle-amp-casual-game-music-460543.mp3"));
         _music.IsLooping = true;

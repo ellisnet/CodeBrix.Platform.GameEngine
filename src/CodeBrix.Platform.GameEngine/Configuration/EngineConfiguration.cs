@@ -167,6 +167,23 @@ public partial class EngineConfiguration
     public double TimeBetweenGamepadEvents { get; set; } = 0.03;
 
     /// <summary>
+    /// Minimum time (in seconds) allowed between refreshes of gamepad STATE - the sticks, triggers,
+    /// and pressed buttons read from the connected devices, plus hotplug detection.
+    /// Default is 0.008 seconds (125 refreshes per second); 0 refreshes on every poll.
+    /// </summary>
+    /// <remarks>
+    /// This is distinct from <see cref="TimeBetweenGamepadEvents"/>, which throttles how often a HELD
+    /// button re-raises its event. This value throttles the underlying device read, and exists because
+    /// the two things that drive it run at very different rates: the engine cycle (Mode A) spins as
+    /// fast as its thread allows, while a game-owned loop (Mode B) calls
+    /// <see cref="CodeBrix.Platform.GameEngine.Input.InputPump.PollNow"/> at its fixed tic rate. The
+    /// throttle bounds the native device polling in both, so gamepad responsiveness no longer depends
+    /// on which mode the game runs in. The default sits well above every practical tic rate (a 70 Hz
+    /// game refreshes on every tic), so it costs nothing but caps a runaway caller.
+    /// </remarks>
+    public double TimeBetweenGamepadStateUpdates { get; set; } = 0.008;
+
+    /// <summary>
     /// Minimum time (in seconds) allowed between Mouse events.
     /// Use this to prevent flooding the system with too many events at once (holding down a button, dragging, etc).
     /// Default is 0.03 seconds (30 milliseconds).

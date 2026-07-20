@@ -24,16 +24,48 @@ What they cannot cover is the part most likely to be wrong in practice:
 
 Those need a person with a controller. This tool is how that is checked.
 
-It drives the real `SdlGamepadManager` exactly as the engine does — `TryStart`
-once, then `Update()` on a frame cadence — so what it prints is what a game
-would actually see. It is not a reimplementation.
+It drives the real `SdlGamepadManager`, so what it prints is what a game would
+actually see. It is not a reimplementation.
+
+## The two drive modes — run both
+
+The engine has two hosting modes, and a controller has to work in both:
+
+| Mode | Flag | What drives the pads |
+| --- | --- | --- |
+| Direct | *(default)* | `manager.Update()`, called by this tool on a frame cadence |
+| Pump | `--pump` | `InputPump.PollNow()`, the Mode-B path a software-rendered game (Doom.Brix, Wolfenstein.Brix) actually runs |
+
+**Run both, every time.** The direct mode is the more forgiving of the two: it
+drove every hardware check of the original gamepad implementation, and because
+it supplied the refresh itself it could not detect that *nothing* refreshed the
+manager on the `InputPump` path. Gamepads were completely dead in Mode B —
+frozen state, no events, no hotplug — while every hardware test passed. A check
+that only exercises the driver it supplies itself cannot see a missing driver.
 
 ## Usage
 
 ```
 cd tools/padcheck
-dotnet run -- 45          # seconds to poll; defaults to 30
+dotnet run -- 45                  # direct mode; seconds to poll, defaults to 30
+dotnet run -- 45 --pump           # InputPump (Mode-B) path
 ```
+
+### Testing engine changes that are not published yet
+
+This tool sits downstream of `CodeBrix.Platform.GameEngine.Sdl2`, which compiles
+against the **published** engine package — so by default it cannot see engine
+changes still in the working tree, and a local engine fix will appear to do
+nothing. To test local engine source:
+
+```
+dotnet build ../../tools/padcheck/padcheck.csproj -p:UseLocalEngineProject=true
+./bin/Debug/net10.0/padcheck 10 --pump
+```
+
+That flag swaps the engine `PackageReference` for a `ProjectReference` and
+disables package generation; it is for local verification only and `Pack`
+refuses to run with it set.
 
 It prints the detected controllers and their SDL2 mapping string up front, then
 stays quiet and reports only **changes**: button presses, engaged sticks,

@@ -39,5 +39,12 @@ public enum CoordinateSystemTypes
     /// <summary>
     /// Hexagonal grid using axial coordinates with pointy-topped hexes.
     /// </summary>
-    HexAxialPointedTop = 4
+    HexAxialPointedTop = 4,
+
+    /// <summary>
+    /// Oblique projection using a right-receding, sheared square lattice: columns stay
+    /// horizontal while rows advance down and to the right, giving each tile a
+    /// parallelogram footprint rather than an isometric diamond.
+    /// </summary>
+    Oblique = 5
 }
