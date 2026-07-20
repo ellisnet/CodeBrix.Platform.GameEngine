@@ -1067,7 +1067,7 @@ ARCHITECTURE
     snapshot via the adapter's latest presented frame, and get one adapter-
     driven paused-overlay frame after the Paused handlers run.
     The adapter builds its GRContext with OffscreenGLContext.CreateGrContext()
-    (requires CodeBrix.Platform >= 1.0.199.897, whose X11 GL wrapper filters
+    (requires CodeBrix.Platform >= 1.0.201.336, whose X11 GL wrapper filters
     the garbage egl* stubs glvnd/Mesa returns from glXGetProcAddress — the
     cause of the earlier assembled-interface segfault).
 

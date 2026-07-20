@@ -213,7 +213,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
             // owns the desktop-GL-vs-GLES flavor branch, and throws InvalidOperationException if
             // neither GL flavor can build a GRContext for it (caught below → CPU fallback). Its
             // managed GetProcAddress "assembled interface" path is safe again as of
-            // CodeBrix.Platform 1.0.199.897, which filters the egl* names that X11's
+            // CodeBrix.Platform 1.0.201.336, which filters the egl* names that X11's
             // glXGetProcAddress otherwise resolved to non-null garbage stubs (the SIGSEGV that
             // previously forced the GRGlInterface.Create() native-path workaround here).
             _grContext = _context.CreateGrContext();
