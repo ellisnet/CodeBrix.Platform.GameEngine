@@ -33,8 +33,9 @@
          Redistributable on the end user's machine.
       4. Builds Release, then verifies the output really is an ARM64 PE image
          and really has no CRT imports.
-      5. Copies SDL2.dll to the repository natives folder and writes a
-         provenance record next to it (versions, URLs, hashes, toolchain).
+      5. Copies SDL2.dll to native_libraries/win-arm64/ in the repository and
+         writes a provenance record next to it (versions, URLs, hashes,
+         toolchain).
 
 .PARAMETER SdlVersion
     SDL2 version to build. Must have a pinned hash below, or supply
@@ -45,7 +46,7 @@
 
 .PARAMETER OutputPath
     Folder to place SDL2.dll into. Defaults to the repository's
-    natives/win-arm64 folder, resolved relative to this script.
+    native_libraries/win-arm64 folder, resolved relative to this script.
 
 .PARAMETER WorkPath
     Scratch folder for download/extract/build. Defaults to a temp folder.
@@ -56,7 +57,8 @@
 .EXAMPLE
     .\build-sdl2-windows-arm64.ps1
 
-    Builds the default SDL2 version and writes natives\win-arm64\SDL2.dll.
+    Builds the default SDL2 version and writes
+    native_libraries\win-arm64\SDL2.dll.
 
 .EXAMPLE
     .\build-sdl2-windows-arm64.ps1 -SdlVersion 2.32.12 -ExpectedSha256 abc123...
@@ -113,7 +115,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Split-Path -Parent $ScriptDir
 
 if (-not $OutputPath) {
-    $OutputPath = Join-Path $RepoRoot 'natives\win-arm64'
+    $OutputPath = Join-Path $RepoRoot 'native_libraries\win-arm64'
 }
 if (-not $WorkPath) {
     $WorkPath = Join-Path ([System.IO.Path]::GetTempPath()) "sdl2-arm64-build-$SdlVersion"

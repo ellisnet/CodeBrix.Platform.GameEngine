@@ -74,9 +74,9 @@ Full help, including every parameter:
 Get-Help .\build-sdl2-windows-arm64.ps1 -Full
 ```
 
-Useful switches: `-OutputPath` to write somewhere other than the default
-natives folder, `-WorkPath` to control the scratch folder, and `-KeepWorkDir`
-to leave the build tree behind for troubleshooting.
+Useful switches: `-OutputPath` to write somewhere other than
+`native_libraries/win-arm64/`, `-WorkPath` to control the scratch folder, and
+`-KeepWorkDir` to leave the build tree behind for troubleshooting.
 
 ### What it does
 
@@ -89,7 +89,7 @@ to leave the build tree behind for troubleshooting.
    `SDL_FORCE_STATIC_VCRT=ON`.
 4. Builds Release.
 5. Verifies the artifact — see below.
-6. Copies `SDL2.dll` into the natives folder and writes
+6. Copies `SDL2.dll` into `native_libraries/win-arm64/` and writes
    `SDL2.dll.provenance.txt` beside it, recording the SDL2 version, source URL,
    source and output hashes, build host, toolchain, and CMake options.
 

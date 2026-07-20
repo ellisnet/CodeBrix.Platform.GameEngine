@@ -1,0 +1,53 @@
+PLACEHOLDER -- delete this file once SDL2.dll is in place.
+
+This folder holds the Windows-on-ARM64 build of SDL2:
+
+    native_libraries/win-arm64/SDL2.dll
+    native_libraries/win-arm64/SDL2.dll.provenance.txt
+
+It is empty for now only because git does not track empty directories.
+
+WHY THIS ONE IS BUILT RATHER THAN DOWNLOADED
+--------------------------------------------------------------------------------
+libsdl.org publishes official prebuilt SDL2 binaries for Windows x64, Windows
+x86 and macOS, but has never published one for Windows ARM64. So the other
+native libraries in this tree are official downloads, and this one is the single
+binary we compile ourselves -- from the official SDL2 source release, which is
+GPG-signed by upstream (the prebuilt binaries are not).
+
+HOW TO PRODUCE IT
+--------------------------------------------------------------------------------
+Run, from a Windows machine:
+
+    cd tools
+    .\build-sdl2-windows-arm64.ps1
+
+The script CROSS-COMPILES, so an ordinary Windows x64 box with Visual Studio
+2022 and the ARM64 build tools is all that is needed. An ARM64 device is only
+useful for testing the result. The script writes SDL2.dll and its provenance
+record straight into this folder.
+
+See tools/README.md for prerequisites (the exact Visual Studio component ids)
+and the full procedure.
+
+WHAT A CORRECT ARTIFACT LOOKS LIKE
+--------------------------------------------------------------------------------
+The build script verifies both of these automatically and will tell you if
+either is wrong:
+
+  * PE machine type is 0xAA64 (ARM64). A misconfigured cross-compile can
+    silently emit an x64 image, which would not surface until the DLL failed to
+    load on a real ARM64 device.
+
+  * NO C runtime imports -- no vcruntime, ucrtbase, msvcp or api-ms-win-crt
+    entries. The official x64/x86 SDL2.dll binaries import only OS libraries,
+    which is why they need no Visual C++ Redistributable. This build must match,
+    or it becomes the one native in the package that demands the ARM64
+    redistributable on an end user's machine.
+
+Test on an actual ARM64 device before shipping: cross-compiled output that
+builds and verifies cleanly can still fail at runtime.
+
+--------------------------------------------------------------------------------
+SDL2 is licensed under the zlib license, Copyright (C) 1997-2025 Sam Lantinga.
+See THIRD-PARTY-NOTICES.txt in the repository root.
