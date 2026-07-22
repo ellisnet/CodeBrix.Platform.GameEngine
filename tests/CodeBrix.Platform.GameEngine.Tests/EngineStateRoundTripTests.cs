@@ -1,9 +1,3 @@
-using System;
-using System.Drawing;
-using System.IO;
-using System.Linq;
-using System.Numerics;
-using CodeBrix.Platform.GameEngine;
 using CodeBrix.Platform.GameEngine.Audio;
 using CodeBrix.Platform.GameEngine.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Animation;
@@ -12,7 +6,15 @@ using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using CodeBrix.Platform.GameEngine.Scenes;
 using SilverAssertions;
 using SkiaSharp;
+using System;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Numerics;
 using Xunit;
+
+// ReSharper disable RedundantSuppressNullableWarningExpression
+// ReSharper disable UnusedVariable
 
 namespace CodeBrix.Platform.GameEngine.Tests;
 
@@ -99,8 +101,8 @@ public class EngineStateRoundTripTests : IDisposable
         loadedScene.Should().NotBeNull();
         loadedScene!.Count().Should().Be(2);
 
-        var loadedGround = loadedScene.First(layer => layer.ZOrder == 0);
-        var loadedSky = loadedScene.First(layer => layer.ZOrder == -1);
+        var loadedGround = loadedScene!.First(layer => layer.ZOrder == 0);
+        var loadedSky = loadedScene!.First(layer => layer.ZOrder == -1);
         loadedGround.WrapHorizontally.Should().BeTrue();
         loadedGround.OriginPx.Should().Be(new Point(8, 4));
         loadedGround.TileWidth.Should().Be(16);
@@ -221,10 +223,8 @@ public class EngineStateRoundTripTests : IDisposable
             {
                 for (int y = 0; y < rows; y++)
                 {
-                    using var paint = new SKPaint
-                    {
-                        Color = new SKColor((byte)(40 * x + 40), (byte)(40 * y + 40), 200),
-                    };
+                    using var paint = new SKPaint();
+                    paint.Color = new SKColor((byte)(40 * x + 40), (byte)(40 * y + 40), 200);
                     canvas.DrawRect(x * tileSize, y * tileSize, tileSize, tileSize, paint);
                 }
             }
