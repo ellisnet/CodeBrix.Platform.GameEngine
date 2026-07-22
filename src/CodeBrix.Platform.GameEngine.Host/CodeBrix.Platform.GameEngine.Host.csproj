@@ -93,10 +93,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" Version="1.0.201.336" />
+    <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" Version="1.0.203.162" />
     <PackageReference Include="CodeBrix.Platform.SkiaSharp.Views.MitLicenseForever" Version="4.150.1" />
-    <PackageReference Include="CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever" Version="1.0.201.336" />
-    <PackageReference Include="CodeBrix.Platform.Svg.ApacheLicenseForever" Version="1.0.201.336" />
+    <PackageReference Include="CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever" Version="1.0.203.162" />
+    <PackageReference Include="CodeBrix.Platform.Svg.ApacheLicenseForever" Version="1.0.203.162" />
     <PackageReference Include="SkiaSharp" Version="4.150.1" />
   </ItemGroup>
 
