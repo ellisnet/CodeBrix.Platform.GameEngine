@@ -181,6 +181,28 @@ public class GpuBackbuffer : BackbufferBase
     }
 
     /// <summary>
+    /// Releases the GPU render-target surface and reverts to a temporary CPU raster surface,
+    /// returning the backbuffer to its pre-<see cref="Initialize"/> state so a later
+    /// <see cref="Initialize"/> call can rebuild it on a new <see cref="GRContext"/>.
+    /// </summary>
+    /// <remarks>
+    /// Called by the GPU render-surface adapter when its canvas leaves the visual tree (window
+    /// close or page navigation): the GPU surface must be disposed while the context it was
+    /// created on can still be made current, BEFORE that context is destroyed.  Call on the GL
+    /// thread with the <see cref="GRContext"/> current.  No-op after <see cref="Dispose"/>.
+    /// </remarks>
+    internal void ReleaseGpuSurface()
+    {
+        if (_disposed) return;
+
+        DisposeSurface();
+        CreateCpuSurface(Width, Height);
+
+        // Set canvas into a known state, mirroring Initialize().
+        BeginFrame();
+    }
+
+    /// <summary>
     /// No-op for <see cref="GpuBackbuffer"/>: resize is driven by <see cref="Initialize"/> which is
     /// called from the GL thread via the adapter's <c>ResizeRequested</c> event.
     /// </summary>

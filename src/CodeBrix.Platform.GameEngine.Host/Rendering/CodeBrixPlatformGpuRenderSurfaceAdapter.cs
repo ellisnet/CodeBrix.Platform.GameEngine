@@ -72,6 +72,11 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     private int _tickScheduled;
     private bool _disposed;
 
+    // True while the canvas is off the visual tree (window closing or page navigated away).
+    // Set on the UI thread; read from the UI thread (RunGpuFrame) and the engine thread, so
+    // volatile. While detached the adapter drives no frames and holds no GPU context.
+    private volatile bool _detached;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> class.
     /// </summary>
@@ -95,6 +100,12 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         // resolution is letterboxed to fit by the canvas each paint.
         if (!_fixedResolution)
             _canvas.SizeChanged += OnSizeChanged;
+
+        // Stop driving frames (and tear the GPU context down while its window is still alive)
+        // whenever the canvas leaves the visual tree, and resume when it returns; see
+        // OnCanvasUnloaded for why this cannot wait until Dispose.
+        _canvas.Unloaded += OnCanvasUnloaded;
+        _canvas.Loaded += OnCanvasLoaded;
     }
 
     /// <summary>
@@ -113,7 +124,11 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     internal void AttachHost(RenderSurfaceHostBase host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        Engine.Instance.AfterFrameRender += OnAfterFrameRender;
+
+        // Frame notifications only flow while the canvas is in the visual tree; if the host is
+        // (unusually) created while the canvas is unloaded, OnCanvasLoaded arms them later.
+        if (!_detached)
+            Engine.Instance.AfterFrameRender += OnAfterFrameRender;
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
@@ -125,6 +140,43 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         var h = (int)_canvas.ActualHeight;
         if (w > 0 && h > 0)
             SetDestinationSize(w, h);
+    }
+
+    // UI thread. The canvas left the visual tree: the window is closing or the page navigated
+    // away. Two things must happen NOW rather than at Dispose time:
+    //  * Frame driving must stop. The engine may well keep cycling (stopping it is the
+    //    application's call, not this adapter's), and every AfterFrameRender would keep posting
+    //    a GPU tick to the dispatcher — after the last window closes, that continuous posting
+    //    can keep a head's message loop from ever draining its queue and exiting (observed as a
+    //    zombie process on the Win32-Skia head).
+    //  * The GPU surface and context must be torn down while the window they were created
+    //    against is still alive — on WGL the off-screen context is built on the window's own
+    //    device context, so once the window is destroyed every MakeCurrent fails ("The handle
+    //    is invalid") and the GPU resources can no longer be released at all. Unloaded fires
+    //    before the native window is destroyed, so this is the last reliable moment.
+    // The canvas coming back (OnCanvasLoaded) re-arms frame driving, and EnsureGpu lazily
+    // rebuilds the context on the next frame notification.
+    private void OnCanvasUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _detached)
+            return;
+
+        _detached = true; // RunGpuFrame's guard: an already-queued GpuTick becomes a no-op
+        Engine.Instance.AfterFrameRender -= OnAfterFrameRender;
+        ReleaseGpu();
+    }
+
+    // UI thread. The canvas re-entered the visual tree after a detach: resume frame driving.
+    // The GPU context is deliberately NOT rebuilt here — EnsureGpu re-creates it on the next
+    // frame notification, once the canvas has a live XamlRoot again.
+    private void OnCanvasLoaded(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || !_detached)
+            return;
+
+        _detached = false;
+        if (_host is not null)
+            Engine.Instance.AfterFrameRender += OnAfterFrameRender;
     }
 
     // Engine thread, once per rendered frame (TargetFPS cadence). Coalesce to a single queued
@@ -146,9 +198,12 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     }
 
     // UI thread. Renders one engine frame into the GPU backbuffer and presents the readback.
+    // The _detached guard covers every frame driver — a GpuTick that was already queued when
+    // the canvas unloaded, and the engine-posted PresentPausedFrame — so no GPU work (and no
+    // context re-creation) can happen against a window that is going away.
     private void RunGpuFrame(bool renderWhilePaused)
     {
-        if (_disposed || _host is null || _host.Backbuffer is not GpuBackbuffer gpuBackbuffer)
+        if (_disposed || _detached || _host is null || _host.Backbuffer is not GpuBackbuffer gpuBackbuffer)
             return;
 
         try
@@ -358,10 +413,42 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         RunGpuFrame(renderWhilePaused: true);
     }
 
+    // UI thread. Tears the GPU state down in the order GL requires: first the backbuffer's
+    // GPU surface, inside a frame scope (disposing it needs its GRContext current), then the
+    // context itself (SkiaGpuContext.Dispose runs its own frame scope; both scopes are no-ops
+    // on Metal). Resets the init latch so EnsureGpu can rebuild everything on a later frame.
+    private void ReleaseGpu()
+    {
+        if (_gpuAvailable && _context is not null)
+        {
+            try
+            {
+                using (_context.BeginFrame())
+                {
+                    (_host?.Backbuffer as GpuBackbuffer)?.ReleaseGpuSurface();
+                }
+            }
+            catch (Exception ex)
+            {
+                Engine.Logger.LogWarning(ex, "GPU backbuffer surface teardown failed.");
+            }
+        }
+
+        // The SkiaGpuContext owns the GRContext and disposes it inside a frame scope; we only hold a
+        // cached reference to it, so just drop that and dispose the context.
+        _grContext = null;
+        _context?.Dispose();
+        _context = null;
+
+        _gpuInitAttempted = false;
+        _gpuAvailable = false;
+        _surfaceInitialized = false;
+    }
+
     /// <summary>
     /// Releases the adapter's resources: unhooks the engine and canvas events and disposes the
-    /// readback buffers, the presented image, and the GPU context (which in turn disposes the
-    /// <see cref="GRContext"/> inside a frame scope, as GL teardown requires; a no-op scope on Metal).
+    /// readback buffers, the presented image, and the GPU surface and context (each inside a
+    /// frame scope, as GL teardown requires; no-op scopes on Metal).
     /// </summary>
     public void Dispose()
     {
@@ -372,6 +459,8 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
         Engine.Instance.AfterFrameRender -= OnAfterFrameRender;
         _canvas.SizeChanged -= OnSizeChanged;
+        _canvas.Unloaded -= OnCanvasUnloaded;
+        _canvas.Loaded -= OnCanvasLoaded;
 
         lock (_presentGate)
         {
@@ -379,11 +468,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
             _currentImage = null;
         }
 
-        // The SkiaGpuContext owns the GRContext and disposes it inside a frame scope; we only hold a
-        // cached reference to it, so just drop that and dispose the context.
-        _grContext = null;
-        _context?.Dispose();
-        _context = null;
+        ReleaseGpu();
 
         _readbackA?.Dispose();
         _readbackA = null;

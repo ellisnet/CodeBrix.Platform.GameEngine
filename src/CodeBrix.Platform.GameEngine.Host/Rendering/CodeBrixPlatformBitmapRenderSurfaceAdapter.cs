@@ -22,6 +22,10 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
     private int _paintScheduled;
     private SKRectI _latestBufferRect;
 
+    // True while the canvas is off the visual tree (window closing or page navigated away).
+    // Set on the UI thread; read from the engine thread in Present, so volatile.
+    private volatile bool _canvasUnloaded;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/> class.
     /// </summary>
@@ -45,7 +49,16 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
         // resolution is letterboxed to fit by the canvas each paint.
         if (!_fixedResolution)
             _canvas.SizeChanged += OnSizeChanged;
+
+        // Track whether the canvas is in the visual tree; Present stops scheduling paints
+        // while it is not (see the comment there).
+        _canvas.Unloaded += OnCanvasUnloaded;
+        _canvas.Loaded += OnCanvasLoaded;
     }
+
+    private void OnCanvasUnloaded(object sender, RoutedEventArgs e) => _canvasUnloaded = true;
+
+    private void OnCanvasLoaded(object sender, RoutedEventArgs e) => _canvasUnloaded = false;
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -75,6 +88,14 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
         if (old is not null && !ReferenceEquals(old, bufferImage))
             _toDispose.Enqueue(old);
         _latestBufferRect = bufferRect;
+
+        // While the canvas is off the visual tree (window closing or page navigated away), keep
+        // caching the newest frame (the pause snapshot still reads it) but schedule no paints:
+        // the engine may well keep presenting, and continuously posting to the dispatcher after
+        // the last window closes can keep a head's message loop from ever draining its queue
+        // and exiting (observed as a zombie process on the Win32-Skia head).
+        if (_canvasUnloaded)
+            return;
 
         // Coalesce to a single in-flight present: if one is already scheduled it will pick up
         // whatever is newest when it runs, so we never enqueue more than one paint at a time.
@@ -109,6 +130,8 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
 
         _disposed = true;
         _canvas.SizeChanged -= OnSizeChanged;
+        _canvas.Unloaded -= OnCanvasUnloaded;
+        _canvas.Loaded -= OnCanvasLoaded;
         _currentImage?.Dispose();
         while (_toDispose.TryDequeue(out var image))
             image.Dispose();

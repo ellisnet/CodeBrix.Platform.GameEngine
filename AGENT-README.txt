@@ -356,6 +356,18 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     CPU-rendering the GpuBackbuffer's fallback surface (the game still runs);
     IsGpuInitialized on the adapter reports the outcome, and the init log records
     the chosen backend ("GPU rendering initialized (backend: Metal)").
+  * Unload/reload aware: when the canvas leaves the visual tree (window close or
+    page navigation) the adapter stops driving frames and tears the GPU surface
+    and context down while the owning window is still alive — on WGL the
+    off-screen context is built on the window's own device context, so Unloaded
+    is the last moment teardown can work. When the canvas returns, the context
+    is rebuilt lazily on the next frame notification. The CpuRendering adapter
+    and the Mode-B presenter likewise stop scheduling canvas paints while
+    unloaded. Without this, an engine still cycling after the last window
+    closed kept posting to the dispatcher and kept the process alive (a zombie
+    process with no window, observed on the Win32-Skia head; stopping the
+    engine on close remains the application's job, but exit no longer depends
+    on it).
   * The mode is fixed once Host is created; presenter mode (Mode B) is CPU-only.
 
 MODE A WALKTHROUGH 1: DERIVING FROM CodeBrixGameHost (recommended)
@@ -1110,6 +1122,10 @@ ARCHITECTURE
     on the UI thread at TargetFPS cadence. They park during the global pause, are
     captured by the pause snapshot via the adapter's latest presented frame, and
     get one adapter-driven paused-overlay frame after the Paused handlers run.
+    All three frame drivers (both adapters and the Mode-B presenter) stop posting
+    to the dispatcher while their canvas is unloaded, and the GPU adapter
+    releases its surface and context while the window is still alive, rebuilding
+    them lazily if the canvas reloads (see RENDER MODES).
     The adapter builds its GRContext through SkiaGpuContext.TryCreate, which
     resolves the head's GPU backend behind one API — OpenGL/GLES on the Windows,
     X11, Wayland and Frame Buffer heads (via OffscreenGLContext), Skia-on-Metal on
