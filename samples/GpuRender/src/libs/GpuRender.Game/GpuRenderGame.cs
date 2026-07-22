@@ -13,13 +13,13 @@ using static CodeBrix.Platform.GameEngine.Drawing.Direct.TextBlock;
 namespace GpuRender.Game;
 
 /// <summary>
-/// The GpuRender demo: the Tier B (GPU) showcase and the GPU-first counterpart to the SoftRender
+/// The GpuRender demo: the GpuRendering-OpenGL (GPU) showcase and the GPU-first counterpart to the SoftRender
 /// sample. Where SoftRender computes every pixel on the CPU into a fixed 320x200 framebuffer,
 /// GpuRender draws a resolution-independent shader scene — the <see cref="PlasmaBackdrop"/>
 /// (SkSL plasma + starfield) — that the GPU rasterises at the full window size through the
 /// engine's <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> (offscreen OpenGL/GLES + one
 /// readback per frame). A stats overlay shows the live cycle and GPU frame rates; clicking
-/// anywhere toggles the global engine pause, which also demonstrates the Tier B pause-overlay
+/// anywhere toggles the global engine pause, which also demonstrates the GpuRendering-OpenGL pause-overlay
 /// frame and <see cref="Engine.LastFrameBeforePause"/> capture.
 /// </summary>
 public sealed class GpuRenderGame
@@ -130,8 +130,8 @@ public sealed class GpuRenderGame
     }
 
     // Engine thread, after the pause snapshot was captured and the loops are quiescent — the
-    // sanctioned place to build a pause screen. The engine renders (Tier A) or requests from the
-    // adapter (Tier B) one final frame after this handler returns, which makes the overlay visible.
+    // sanctioned place to build a pause screen. The engine renders (CpuRendering) or requests from the
+    // adapter (GpuRendering-OpenGL) one final frame after this handler returns, which makes the overlay visible.
     private void OnEnginePaused()
     {
         var adapter = _renderSurface.RenderSurfaceAdapter;
@@ -152,7 +152,7 @@ public sealed class GpuRenderGame
         _pausedText.SetText("PAUSED — click to resume");
         _pausedText.ZOrder = 100;
 
-        // Log the pause capture so the Tier B snapshot path is verifiable from the console alone
+        // Log the pause capture so the GpuRendering-OpenGL snapshot path is verifiable from the console alone
         // (the capture happens before this event, per the engine's pause contract).
         var snapshot = Engine.Instance.LastFrameBeforePause;
         Console.WriteLine(snapshot is null

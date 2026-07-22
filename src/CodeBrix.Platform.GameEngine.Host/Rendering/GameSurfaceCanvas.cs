@@ -10,7 +10,7 @@ namespace CodeBrix.Platform.GameEngine.Host.Rendering;
 
 /// <summary>
 /// A CodeBrix.Platform SkiaSharp canvas control that displays the game engine's rendered frames.
-/// It owns the Tier A (CPU) <see cref="RenderSurfaceHost{TBackbuffer}"/> that the engine renders into
+/// It owns the CpuRendering (CPU) <see cref="RenderSurfaceHost{TBackbuffer}"/> that the engine renders into
 /// (exposed via <see cref="Host"/>); the paired <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/>
 /// feeds it the latest backbuffer image, which this control blits onto its Skia surface each paint.
 /// </summary>
@@ -92,7 +92,7 @@ public class GameSurfaceCanvas : SKXamlCanvas
     /// Gets the engine render-surface host bound to this canvas. Create a
     /// <see cref="CodeBrix.Platform.GameEngine.Scenes.Scene"/> and call <c>Host.Bind(scene)</c>,
     /// then start the engine, to render into this control. The host's backbuffer is a
-    /// <see cref="BitmapBackbuffer"/> (Tier A, the default) or a <see cref="GpuBackbuffer"/>
+    /// <see cref="BitmapBackbuffer"/> (CpuRendering, the default) or a <see cref="GpuBackbuffer"/>
     /// when <see cref="UseGpuRendering"/> was set first.
     /// </summary>
     public RenderSurfaceHost<BackbufferBase> Host
@@ -106,8 +106,8 @@ public class GameSurfaceCanvas : SKXamlCanvas
 
     /// <summary>
     /// Gets the render-surface adapter that feeds engine frames to this canvas: a
-    /// <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/> (Tier A CPU, the default) or a
-    /// <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> (Tier B GPU) when
+    /// <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/> (CpuRendering CPU, the default) or a
+    /// <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> (GpuRendering-OpenGL GPU) when
     /// <see cref="UseGpuRendering"/> was set first.
     /// </summary>
     public RenderSurfaceAdapterBase RenderSurfaceAdapter
@@ -120,9 +120,9 @@ public class GameSurfaceCanvas : SKXamlCanvas
     }
 
     /// <summary>
-    /// Opts this canvas into Tier B (GPU) rendering: the engine's scene is rasterised by the GPU
+    /// Opts this canvas into GpuRendering-OpenGL (GPU) rendering: the engine's scene is rasterised by the GPU
     /// through an off-screen OpenGL/GLES context and read back for presentation, instead of being
-    /// rendered on the CPU (Tier A, the default). Set this before the first access to
+    /// rendered on the CPU (CpuRendering, the default). Set this before the first access to
     /// <see cref="Host"/> — like <see cref="SetRenderResolution"/>, it configures how the
     /// host/adapter pair is created. Letterboxing, resize behaviour, and input mapping are
     /// identical across tiers. On a head without OpenGL support the adapter logs a warning and

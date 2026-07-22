@@ -8,7 +8,7 @@ using SkiaSharp;
 namespace CodeBrix.Platform.GameEngine.Host.Rendering;
 
 /// <summary>
-/// Tier A (CPU) render-surface adapter: presents each engine frame by handing the latest
+/// CpuRendering (CPU) render-surface adapter: presents each engine frame by handing the latest
 /// <see cref="SKImage"/> to a <see cref="GameSurfaceCanvas"/> and invalidating it on the UI thread.
 /// This is the default, works on all CodeBrix.Platform heads, and requires no GPU interop.
 /// </summary>

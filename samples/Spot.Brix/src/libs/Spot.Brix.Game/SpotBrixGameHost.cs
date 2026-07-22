@@ -25,7 +25,7 @@ namespace Spot.Brix;
 
 /// <summary>
 /// Game host for the Spot.Brix sample: a 2&#8211;4 player Ataxx-style board game. Uses
-/// <see cref="CodeBrixGameHost"/> with the <see cref="GameSurfaceCanvas"/> Tier A (CPU) render surface.
+/// <see cref="CodeBrixGameHost"/> with the <see cref="GameSurfaceCanvas"/> CpuRendering (CPU) render surface.
 /// </summary>
 public sealed class SpotBrixGameHost : CodeBrixGameHost
 {

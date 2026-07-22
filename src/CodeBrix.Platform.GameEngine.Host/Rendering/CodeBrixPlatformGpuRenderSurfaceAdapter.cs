@@ -10,27 +10,30 @@ using SkiaSharp;
 namespace CodeBrix.Platform.GameEngine.Host.Rendering;
 
 /// <summary>
-/// Tier B (GPU) render-surface adapter: rasterises each engine frame on the GPU through an
-/// off-screen OpenGL/GLES context from the CodeBrix.Platform Graphics3DGL add-in, reads the
-/// result back to CPU pixels in a single copy, and presents it through the same
-/// <see cref="GameSurfaceCanvas"/> path the Tier A (CPU) adapter uses — so letterboxing,
-/// resize behaviour, and <see cref="GameSurfaceCanvas.SetRenderResolution"/> are identical
-/// across tiers. Opt in with <see cref="GameSurfaceCanvas.UseGpuRendering"/>.
+/// GPU (GpuRendering) render-surface adapter: rasterises each engine frame on the GPU through a
+/// <b>backend-neutral</b> off-screen Skia GPU context from the CodeBrix.Platform Graphics3DGL add-in
+/// (<see cref="SkiaGpuContext"/> — OpenGL/GLES on the Windows, X11, Wayland and Frame Buffer heads;
+/// Metal on macOS), reads the result back to CPU pixels in a single copy, and presents it through
+/// the same <see cref="GameSurfaceCanvas"/> path the CpuRendering (CPU) adapter uses — so
+/// letterboxing, resize behaviour, and <see cref="GameSurfaceCanvas.SetRenderResolution"/> are
+/// identical across tiers. Opt in with <see cref="GameSurfaceCanvas.UseGpuRendering"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The engine's background loop never touches GL-thread-rendered surfaces (see
 /// <see cref="BackbufferBase.IsGlThreadRendered"/>), so this adapter is the frame driver: it
 /// listens to <see cref="Engine.AfterFrameRender"/> — which the engine raises at the
-/// <see cref="Configuration.EngineConfiguration.TargetFPS"/> cadence — and runs one GL frame
-/// on the UI thread per notification (coalesced, latest-wins). All OpenGL and
-/// <see cref="GRContext"/> work stays on the UI thread; <see cref="OffscreenGLContext.MakeCurrent"/>
-/// saves and restores the head's own context around each frame.
+/// <see cref="Configuration.EngineConfiguration.TargetFPS"/> cadence — and runs one GPU frame
+/// on the UI thread per notification (coalesced, latest-wins). All GPU and
+/// <see cref="GRContext"/> work stays on the UI thread; <see cref="SkiaGpuContext.BeginFrame"/>
+/// saves and restores the head's own context around each frame (a no-op on Metal, which has no
+/// thread-current context).
 /// </para>
 /// <para>
-/// When the running head cannot provide an OpenGL context (no driver, no GL support), the
-/// adapter logs one warning and keeps rendering on the <see cref="GpuBackbuffer"/>'s built-in
-/// CPU fallback surface, so a Tier B game degrades to CPU rendering instead of a black screen.
+/// When the running head cannot provide a GPU context (no driver, no GPU support, or macOS in
+/// software-rendering mode), the adapter logs one warning and keeps rendering on the
+/// <see cref="GpuBackbuffer"/>'s built-in CPU fallback surface, so a GpuRendering game degrades to
+/// CPU rendering instead of a black screen.
 /// </para>
 /// <para>
 /// <see cref="GpuBackbuffer.VSync"/> has no effect on this adapter: the off-screen context has
@@ -45,8 +48,8 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     private readonly bool _fixedResolution;
 
     private RenderSurfaceHostBase? _host;
-    private OffscreenGLContext? _context;
-    private GRContext? _grContext;
+    private SkiaGpuContext? _context;
+    private GRContext? _grContext; // cached from _context.GrContext; owned/disposed by _context
     private bool _gpuInitAttempted;
     private bool _gpuAvailable;
 
@@ -56,7 +59,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     private int _surfaceMsaa;
     private bool _surfaceInitialized;
 
-    // Double-buffered CPU readback targets: the GL frame reads back into one bitmap while the
+    // Double-buffered CPU readback targets: the GPU frame reads back into one bitmap while the
     // canvas may still be painting the wrapper image over the other. All access is UI-thread.
     private SKBitmap? _readbackA;
     private SKBitmap? _readbackB;
@@ -95,7 +98,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     }
 
     /// <summary>
-    /// Whether the off-screen OpenGL context and its <see cref="GRContext"/> were created
+    /// Whether the off-screen GPU context and its <see cref="GRContext"/> were created
     /// successfully. <see langword="null"/> until the first frame attempts initialization;
     /// <see langword="false"/> means the adapter is running on the CPU fallback surface.
     /// </summary>
@@ -125,25 +128,25 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     }
 
     // Engine thread, once per rendered frame (TargetFPS cadence). Coalesce to a single queued
-    // GL tick so a slow UI thread never accumulates a backlog of frames.
+    // GPU tick so a slow UI thread never accumulates a backlog of frames.
     private void OnAfterFrameRender()
     {
         if (_disposed || Interlocked.CompareExchange(ref _tickScheduled, 1, 0) != 0)
             return;
 
         var dispatcherQueue = _canvas.DispatcherQueue;
-        if (dispatcherQueue is null || !dispatcherQueue.TryEnqueue(GlTick))
+        if (dispatcherQueue is null || !dispatcherQueue.TryEnqueue(GpuTick))
             Interlocked.Exchange(ref _tickScheduled, 0);
     }
 
-    private void GlTick()
+    private void GpuTick()
     {
         Interlocked.Exchange(ref _tickScheduled, 0);
-        RunGlFrame(renderWhilePaused: false);
+        RunGpuFrame(renderWhilePaused: false);
     }
 
     // UI thread. Renders one engine frame into the GPU backbuffer and presents the readback.
-    private void RunGlFrame(bool renderWhilePaused)
+    private void RunGpuFrame(bool renderWhilePaused)
     {
         if (_disposed || _host is null || _host.Backbuffer is not GpuBackbuffer gpuBackbuffer)
             return;
@@ -152,7 +155,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         {
             if (EnsureGpu())
             {
-                using (_context!.MakeCurrent())
+                using (_context!.BeginFrame())
                 {
                     EnsureBackbufferSurface(gpuBackbuffer);
 
@@ -160,7 +163,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
                     if (gpuImage is null)
                         return;
 
-                    // One GPU→CPU copy per frame; needs the context current.
+                    // One GPU→CPU copy per frame; needs the context current (a no-op on Metal).
                     ReadbackAndPresent(gpuImage);
                 }
             }
@@ -169,8 +172,8 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
                 if (!_gpuInitAttempted)
                     return; // canvas not loaded yet — try again on the next frame notification
 
-                // GL unavailable on this head: the GpuBackbuffer is still rendering on its CPU
-                // fallback surface, so drive the same frame path without a context.
+                // GPU context unavailable on this head: the GpuBackbuffer is still rendering on its
+                // CPU fallback surface, so drive the same frame path without a context.
                 using var image = _host.GlRenderAndSnapshot(renderWhilePaused);
                 if (image is null)
                     return;
@@ -182,11 +185,12 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         }
         catch (Exception ex)
         {
-            Engine.Logger.LogError(ex, "Tier B GPU frame failed.");
+            Engine.Logger.LogError(ex, "GPU rendering frame failed.");
         }
     }
 
-    // UI thread. Creates the off-screen GL context and GRContext once the canvas is loaded.
+    // UI thread. Creates the backend-neutral off-screen GPU context and its GRContext once the
+    // canvas is loaded (OpenGL/GLES on the Windows/Linux heads, Metal on macOS).
     private bool EnsureGpu()
     {
         if (_gpuInitAttempted)
@@ -201,29 +205,32 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
         try
         {
-            if (!OffscreenGLContext.TryCreate(_canvas.XamlRoot, out _context))
+            // SkiaGpuContext resolves the head's GPU backend behind one API: on macOS the head's
+            // Skia-on-Metal provider (a separate GRContext on its own command queue, on the
+            // compositor's device); on every other head an off-screen OpenGL/GLES context. It
+            // returns false when no GPU context is available (for example macOS in software mode),
+            // in which case we fall back to CPU rendering of the GPU backbuffer.
+            if (!SkiaGpuContext.TryCreate(_canvas.XamlRoot, out _context))
             {
                 Engine.Logger.LogWarning(
-                    "Tier B GPU rendering is unavailable on this head (no off-screen OpenGL context); " +
+                    "GPU rendering is unavailable on this head (no off-screen GPU context); " +
                     "falling back to CPU rendering of the GPU backbuffer.");
                 return false;
             }
 
-            // OffscreenGLContext.CreateGrContext() makes this off-screen context current itself,
-            // owns the desktop-GL-vs-GLES flavor branch, and throws InvalidOperationException if
-            // neither GL flavor can build a GRContext for it (caught below → CPU fallback). Its
-            // managed GetProcAddress "assembled interface" path is safe again as of
-            // CodeBrix.Platform 1.0.201.336, which filters the egl* names that X11's
-            // glXGetProcAddress otherwise resolved to non-null garbage stubs (the SIGSEGV that
-            // previously forced the GRGlInterface.Create() native-path workaround here).
-            _grContext = _context.CreateGrContext();
-
+            // The facade owns the GRContext lifetime (it disposes it inside a frame scope); this is
+            // just a cached reference for EnsureBackbufferSurface.
+            _grContext = _context.GrContext;
             _gpuAvailable = true;
+
+            // Record the chosen backend once, so which API is actually in use (OpenGL vs Metal) is
+            // obvious from the log alone.
+            Engine.Logger.LogInformation("GPU rendering initialized (backend: {Backend}).", _context.Backend);
         }
         catch (Exception ex)
         {
             Engine.Logger.LogWarning(ex,
-                "Tier B GPU initialization failed; falling back to CPU rendering of the GPU backbuffer.");
+                "GPU rendering initialization failed; falling back to CPU rendering of the GPU backbuffer.");
             _context?.Dispose();
             _context = null;
             _grContext = null;
@@ -272,7 +279,7 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
         if (!image.ReadPixels(info, target.GetPixels(), target.RowBytes, 0, 0))
         {
-            Engine.Logger.LogWarning("Tier B GPU frame readback failed.");
+            Engine.Logger.LogWarning("GPU rendering frame readback failed.");
             return;
         }
 
@@ -338,9 +345,9 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
     /// <inheritdoc />
     /// <remarks>
-    /// Runs one GL frame with the engine's pause guard bypassed, so scene changes made by
+    /// Runs one GPU frame with the engine's pause guard bypassed, so scene changes made by
     /// <see cref="Engine.Paused"/> handlers (a pause overlay, for example) reach the screen —
-    /// the Tier B equivalent of the final frame the engine renders for CPU surfaces after the
+    /// the GPU-rendering equivalent of the final frame the engine renders for CPU surfaces after the
     /// pause transition. Posted to the UI thread by the engine.
     /// </remarks>
     public override void PresentPausedFrame(RenderSurfaceHostBase host)
@@ -348,13 +355,13 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         if (_disposed || !ReferenceEquals(host, _host))
             return;
 
-        RunGlFrame(renderWhilePaused: true);
+        RunGpuFrame(renderWhilePaused: true);
     }
 
     /// <summary>
     /// Releases the adapter's resources: unhooks the engine and canvas events and disposes the
-    /// readback buffers, the presented image, the <see cref="GRContext"/>, and the off-screen
-    /// GL context (with the context current, as GL teardown requires).
+    /// readback buffers, the presented image, and the GPU context (which in turn disposes the
+    /// <see cref="GRContext"/> inside a frame scope, as GL teardown requires; a no-op scope on Metal).
     /// </summary>
     public void Dispose()
     {
@@ -372,14 +379,8 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
             _currentImage = null;
         }
 
-        if (_context is not null && _grContext is not null)
-        {
-            using (_context.MakeCurrent())
-            {
-                _grContext.Dispose();
-            }
-        }
-
+        // The SkiaGpuContext owns the GRContext and disposes it inside a frame scope; we only hold a
+        // cached reference to it, so just drop that and dispose the context.
         _grContext = null;
         _context?.Dispose();
         _context = null;

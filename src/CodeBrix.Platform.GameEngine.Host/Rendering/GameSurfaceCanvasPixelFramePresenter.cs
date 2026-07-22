@@ -25,7 +25,7 @@ internal sealed class GameSurfaceCanvasPixelFramePresenter : PixelFramePresenter
     /// <inheritdoc />
     protected override void RequestPaint()
     {
-        // Coalesce to a single in-flight invalidation, the same pattern as the Tier A
+        // Coalesce to a single in-flight invalidation, the same pattern as the CpuRendering
         // render-surface adapter.
         if (Interlocked.CompareExchange(ref _paintScheduled, 1, 0) != 0)
         {
