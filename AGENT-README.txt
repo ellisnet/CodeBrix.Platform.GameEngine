@@ -356,11 +356,19 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     CPU-rendering the GpuBackbuffer's fallback surface (the game still runs);
     IsGpuInitialized on the adapter reports the outcome, and the init log records
     the chosen backend ("GPU rendering initialized (backend: Metal)").
+  * WINDOWS: GpuRendering needs a real OpenGL driver (ICD). Most x64 machines
+    have one from their GPU vendor; many Windows-on-ARM devices do NOT, and get
+    OpenGL only from Microsoft's free "OpenCL and OpenGL Compatibility Pack"
+    (Microsoft Store: https://apps.microsoft.com/detail/9NQPSL29BFFF). Without
+    it the head cannot create a GPU context and GpuRendering silently uses the
+    CPU fallback above — the warning it logs points the user at that pack
+    (Windows only). Installing it is a one-time, per-device end-user step.
   * Unload/reload aware: when the canvas leaves the visual tree (window close or
     page navigation) the adapter stops driving frames and tears the GPU surface
     and context down while the owning window is still alive — on WGL the
-    off-screen context is built on the window's own device context, so Unloaded
-    is the last moment teardown can work. When the canvas returns, the context
+    off-screen context is bound to a window's device context (the head's own
+    window, or a private context-host window the GL wrapper owns on drivers that
+    require one), so Unloaded is the last moment teardown can reliably run. When the canvas returns, the context
     is rebuilt lazily on the next frame notification. The CpuRendering adapter
     and the Mode-B presenter likewise stop scheduling canvas paints while
     unloaded. Without this, an engine still cycling after the last window

@@ -267,9 +267,20 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
             // in which case we fall back to CPU rendering of the GPU backbuffer.
             if (!SkiaGpuContext.TryCreate(_canvas.XamlRoot, out _context))
             {
-                Engine.Logger.LogWarning(
+                var warning =
                     "GPU rendering is unavailable on this head (no off-screen GPU context); " +
-                    "falling back to CPU rendering of the GPU backbuffer.");
+                    "falling back to CPU rendering of the GPU backbuffer.";
+
+                // On Windows the usual cause is a missing OpenGL driver; Microsoft's free "OpenCL and
+                // OpenGL Compatibility Pack" can supply one, so hint at it (Windows only).
+                if (OperatingSystem.IsWindows())
+                {
+                    warning +=
+                        " On Windows, installing the free Microsoft \"OpenCL and OpenGL Compatibility " +
+                        "Pack\" (https://apps.microsoft.com/detail/9NQPSL29BFFF) might enable GPU rendering.";
+                }
+
+                Engine.Logger.LogWarning(warning);
                 return false;
             }
 
