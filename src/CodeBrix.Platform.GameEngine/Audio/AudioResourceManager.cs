@@ -40,7 +40,7 @@ public sealed class AudioResourceManager : IDisposable
 
     /// <summary>
     /// The duration ceiling, in seconds, under which a loaded container-format sound (.wav,
-    /// .mp3, ...) is preloaded — decoded ONCE to PCM in memory at load time (see
+    /// .mp3, .ogg, .flac) is preloaded — decoded ONCE to PCM in memory at load time (see
     /// <see cref="CachedSound"/>) so plays, clones, and <see cref="SfxVoicePool"/> voices
     /// never decode on the audio thread. Longer sounds (music, ambience) keep their
     /// streaming reader. Defaults to 10 seconds; set 0 (or negative) to disable preloading.
@@ -107,7 +107,7 @@ public sealed class AudioResourceManager : IDisposable
     /// The audio format is determined by the specified file extension.</remarks>
     /// <param name="key">A unique identifier for the audio resource.</param>
     /// <param name="input">The stream containing the audio data.</param>
-    /// <param name="fileExt">The file extension indicating the audio format (e.g., ".wav", ".mp3").</param>
+    /// <param name="fileExt">The file extension indicating the audio format (e.g., ".wav", ".mp3", ".ogg", ".flac").</param>
     /// <param name="volume">The initial volume level for the audio resource, ranging from 0.0 (silent) to 1.0 (full volume). Defaults to 1.0.</param>
     /// <param name="pan">The initial stereo pan position, ranging from -1.0 (full left) to 1.0 (full right). Defaults to 0.0 (center).</param>
     /// <returns>The loaded <see cref="AudioResource"/> instance.</returns>

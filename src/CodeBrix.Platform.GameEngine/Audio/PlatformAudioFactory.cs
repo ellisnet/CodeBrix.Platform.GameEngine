@@ -14,16 +14,23 @@ namespace CodeBrix.Platform.GameEngine.Audio; //was previously: Gondwana.Audio;
 /// </summary>
 /// <remarks>This static class maintains a registry of supported audio formats and their corresponding
 /// reader implementations. Platform-specific implementations can register additional format support
-/// by providing reader factories. By default, WAV and MP3 formats are supported.</remarks>
+/// by providing reader factories. By default, WAV, MP3, Ogg Vorbis and FLAC formats are supported.</remarks>
 public static class PlatformAudioFactory
 {
     private static readonly Dictionary<string, (Func<Stream, WaveStream> readerFactory, bool requiresFile)> _readers = new(StringComparer.OrdinalIgnoreCase);
 
     static PlatformAudioFactory()
     {
-        // Core format support
+        // Core format support. All four readers are fully managed and decode identically on every
+        // platform, so a game's assets never need converting for a particular target.
+        //
+        // Ogg Vorbis matters for game assets specifically: free asset packs ship .ogg almost
+        // exclusively (the Kenney All-in-1 bundle, for one, is 1,342 .ogg files and nothing else),
+        // so without it those packs cannot be loaded at all.
         Register(".wav", stream => new WaveFileReader(stream));
         Register(".mp3", stream => new Mp3FileReader(stream));
+        Register(".ogg", stream => new OggVorbisFileReader(stream));
+        Register(".flac", stream => new FlacFileReader(stream));
     }
 
     /// <summary>

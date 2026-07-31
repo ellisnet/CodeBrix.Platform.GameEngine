@@ -627,13 +627,16 @@ device, so overlapping sounds are cheap):
   Pause(), Resume(), Stop(), Seek(), IsLooping, Volume, Pan, Duration,
   PlaybackCompleted. Clone() gives an independent voice of the same clip.
 
-  SHORT-EFFECT PRELOAD (automatic): container-format sounds (.wav/.mp3) no
+  SHORT-EFFECT PRELOAD (automatic): container-format sounds (.wav/.mp3/.ogg/
+  .flac) no
   longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds (default
   10 s; 0 disables) are decoded ONCE to raw float PCM in memory at load time
   (AudioResource.IsPreloaded == true; the CachedSound type). Plays, Clone()s,
   SoundChannel clips, and SfxVoicePool voices over a preloaded resource share
   that single decoded buffer — no decode, file, or MP3 work ever happens on
-  the real-time audio thread. When the app pinned the device format
+  the real-time audio thread. Ogg Vorbis and FLAC decode through the same
+  managed path as WAV and MP3, which matters because free asset packs ship
+  .ogg almost exclusively. When the app pinned the device format
   (AudioSystem.Initialize) the decode also rate-converts up front. Longer
   material (music, ambience) keeps its streaming reader — leave it that way;
   preloading minutes of PCM would waste memory for a single voice.
