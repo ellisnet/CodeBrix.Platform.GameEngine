@@ -15,13 +15,13 @@
     <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.164.180" />
     <!-- The base SkiaSharp package carries Windows/macOS natives; Linux needs this explicit
          native-assets package for the PixelFramePresenter draw tests. -->
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.150.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.151.0" />
     <!-- TEST PROJECT ONLY, and deliberately so. Opus is BSD-3-Clause; the engine ships as
          CodeBrix.Platform.GameEngine.MitLicenseForever and must NOT depend on it, or that package id
          stops being true. This project ships nothing, so it can reference the real codec and prove
          that a separately licensed format registered with CodeBrix.Audio becomes a first-class
          engine format (PlatformAudioFactoryTests). Do not move this reference into src/. -->
-    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.212.830" />
+    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.214.925" />
   </ItemGroup>
 
   <ItemGroup>

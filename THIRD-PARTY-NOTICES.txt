@@ -37,7 +37,7 @@ is not incorporated into these assemblies.
      * SharpZipLib         -> CodeBrix.Compression
      * NAudio              -> CodeBrix.Audio
      * Newtonsoft.Json     -> System.Text.Json + CodeBrix.Json.Extensions
-     * SkiaSharp 3.119.2   -> SkiaSharp 4.150.1 (SKFilterQuality -> SKSamplingOptions,
+     * SkiaSharp 3.119.2   -> SkiaSharp 4.151.0 (SKFilterQuality -> SKSamplingOptions,
                               SKPaint text API -> SKFont)
      * SkiaSharp.HarfBuzz  -> removed (unused by the core)
 
