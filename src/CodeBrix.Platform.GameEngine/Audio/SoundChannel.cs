@@ -23,7 +23,7 @@ namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 /// 25 ms interval. Treat "just finished" states as approximate.
 /// </para>
 /// </remarks>
-public sealed class SoundChannel : IDisposable, IEnginePausableAudio
+public sealed class SoundChannel : IDisposable, IEnginePausableAudio, IMixerVoice
 {
     private readonly WaveOutEvent _output = new();
     private WaveStream? _reader;
@@ -33,6 +33,7 @@ public sealed class SoundChannel : IDisposable, IEnginePausableAudio
     private VolumeSampleProvider? _volumeProvider;
 
     private float _volume = 1f;
+    private AudioBus _bus = AudioBus.Sfx;
     private float _pan;
     private float _pitch = 1f;
     private bool _isDisposed;
@@ -50,6 +51,7 @@ public sealed class SoundChannel : IDisposable, IEnginePausableAudio
         }
 
         AudioPauseRegistry.Register(this);
+        AudioMixer.Register(this);
     }
 
     /// <summary>
@@ -108,10 +110,32 @@ public sealed class SoundChannel : IDisposable, IEnginePausableAudio
         set
         {
             _volume = Math.Clamp(value, 0f, 1f);
-            if (_volumeProvider is not null)
-            {
-                _volumeProvider.Volume = _volume;
-            }
+            ApplyMixerVolume();
+        }
+    }
+
+    /// <summary>
+    /// The mixer bus this channel's <see cref="Volume"/> is scaled by. Defaults to
+    /// <see cref="AudioBus.Sfx"/>.
+    /// </summary>
+    public AudioBus Bus
+    {
+        get => _bus;
+        set
+        {
+            _bus = value;
+            ApplyMixerVolume();
+        }
+    }
+
+    /// <inheritdoc cref="IMixerVoice.ApplyMixerVolume"/>
+    void IMixerVoice.ApplyMixerVolume() => ApplyMixerVolume();
+
+    private void ApplyMixerVolume()
+    {
+        if (_volumeProvider is not null)
+        {
+            _volumeProvider.Volume = AudioMixer.EffectiveVolume(_volume, _bus);
         }
     }
 
@@ -188,7 +212,7 @@ public sealed class SoundChannel : IDisposable, IEnginePausableAudio
 
         _volumeProvider = new VolumeSampleProvider(provider)
         {
-            Volume = _volume,
+            Volume = AudioMixer.EffectiveVolume(_volume, _bus),
         };
 
         _output.Init(_volumeProvider);

@@ -28,10 +28,12 @@ public delegate void FillAudioBuffer(Span<float> buffer);
 /// uses the provider's own declared format, which must match the device rate.
 /// </para>
 /// </remarks>
-public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio
+public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio, IMixerVoice
 {
     private readonly WaveOutEvent _output = new();
     private readonly VolumeSampleProvider _volumeProvider;
+    private float _volume = 1f;
+    private AudioBus _bus = AudioBus.Music;
     private bool _isDisposed;
 
     /// <summary>
@@ -60,6 +62,7 @@ public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio
         _output.Init(_volumeProvider);
 
         AudioPauseRegistry.Register(this);
+        AudioMixer.Register(this);
     }
 
     /// <summary>
@@ -93,9 +96,34 @@ public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio
     /// <summary>The stream volume, 0.0 (silent) to 1.0 (full). May be changed while playing.</summary>
     public float Volume
     {
-        get => _volumeProvider.Volume;
-        set => _volumeProvider.Volume = Math.Clamp(value, 0f, 1f);
+        get => _volume;
+        set
+        {
+            _volume = Math.Clamp(value, 0f, 1f);
+            ApplyMixerVolume();
+        }
     }
+
+    /// <summary>
+    /// The mixer bus this source's <see cref="Volume"/> is scaled by. Defaults to
+    /// <see cref="AudioBus.Music"/>, because an endless stream is usually music or an emulated
+    /// sound chip's music output. A game streaming sound EFFECTS through this type should set
+    /// <see cref="AudioBus.Sfx"/> so the player's two sliders behave as they expect.
+    /// </summary>
+    public AudioBus Bus
+    {
+        get => _bus;
+        set
+        {
+            _bus = value;
+            ApplyMixerVolume();
+        }
+    }
+
+    /// <inheritdoc cref="IMixerVoice.ApplyMixerVolume"/>
+    void IMixerVoice.ApplyMixerVolume() => ApplyMixerVolume();
+
+    private void ApplyMixerVolume() => _volumeProvider.Volume = AudioMixer.EffectiveVolume(_volume, _bus);
 
     /// <summary>True while the stream voice is playing.</summary>
     public bool IsPlaying => _output.PlaybackState == PlaybackState.Playing;

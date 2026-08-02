@@ -1,0 +1,290 @@
+using System;
+using System.IO;
+using CodeBrix.Audio.Midi;
+using CodeBrix.Platform.GameEngine.Audio;
+using SilverAssertions;
+using Xunit;
+
+namespace CodeBrix.Platform.GameEngine.Tests;
+
+/// <summary>
+/// Covers <see cref="MusicTimeline"/> — the beat grid, and reading one out of a MIDI file. The MIDI
+/// files here are built in code and written to a temp path, so the tempo map, the time signature and
+/// the markers are all genuinely round-tripped through the standard file format rather than asserted
+/// against a hand-made object. No committed binary fixture, and no audio device.
+/// </summary>
+public class MusicTimelineTests : IDisposable
+{
+    private const int TicksPerQuarter = 96;
+
+    private readonly string _directory =
+        Path.Combine(Path.GetTempPath(), "codebrix-gameengine-timeline-" + Guid.NewGuid().ToString("N"));
+
+    /// <summary>Creates a scratch directory for the MIDI files a test writes.</summary>
+    public MusicTimelineTests() => Directory.CreateDirectory(_directory);
+
+    /// <summary>Removes the scratch directory.</summary>
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_directory, true);
+        }
+        catch (IOException)
+        {
+            // A leftover temp directory is not worth failing a test over.
+        }
+    }
+
+    // ----- the grid arithmetic -----
+
+    [Fact]
+    public void A_timeline_reports_its_beat_and_bar_lengths()
+    {
+        //Arrange & Act
+        var timeline = new MusicTimeline(beatsPerMinute: 120, beatsPerBar: 4);
+
+        //Assert
+        timeline.SecondsPerBeat.Should().BeApproximately(0.5, 0.0001);
+        timeline.SecondsPerBar.Should().BeApproximately(2.0, 0.0001);
+    }
+
+    [Fact]
+    public void Immediate_never_waits()
+    {
+        //Arrange
+        var timeline = new MusicTimeline(120, 4);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(0.3), MusicTransitionQuantize.Immediate);
+
+        //Assert
+        wait.Should().Be(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void The_wait_for_the_next_beat_is_the_remainder_of_the_current_one()
+    {
+        //Arrange - 120 BPM, so a beat is half a second.
+        var timeline = new MusicTimeline(120, 4);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(0.3), MusicTransitionQuantize.Beat);
+
+        //Assert
+        wait.TotalSeconds.Should().BeApproximately(0.2, 0.0001);
+    }
+
+    [Fact]
+    public void The_wait_for_the_next_bar_is_the_remainder_of_the_current_one()
+    {
+        //Arrange - a bar is two seconds.
+        var timeline = new MusicTimeline(120, 4);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(2.5), MusicTransitionQuantize.Bar);
+
+        //Assert
+        wait.TotalSeconds.Should().BeApproximately(1.5, 0.0001);
+    }
+
+    [Fact]
+    public void Landing_exactly_on_a_boundary_goes_now_rather_than_waiting_a_whole_bar()
+    {
+        //Arrange
+        var timeline = new MusicTimeline(120, 4);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(4.0), MusicTransitionQuantize.Bar);
+
+        //Assert
+        wait.Should().Be(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void An_offset_shifts_the_whole_grid()
+    {
+        //Arrange - a recording with a quarter-second of silence before the first beat.
+        var timeline = new MusicTimeline(120, 4, offsetSeconds: 0.25);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(0.25), MusicTransitionQuantize.Beat);
+        var midBeat = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(0.5), MusicTransitionQuantize.Beat);
+
+        //Assert
+        wait.Should().Be(TimeSpan.Zero);
+        midBeat.TotalSeconds.Should().BeApproximately(0.25, 0.0001);
+    }
+
+    [Fact]
+    public void Inside_the_lead_in_the_next_boundary_is_the_first_beat_itself()
+    {
+        //Arrange
+        var timeline = new MusicTimeline(120, 4, offsetSeconds: 1.0);
+
+        //Act
+        var wait = timeline.TimeToNextBoundary(TimeSpan.FromSeconds(0.4), MusicTransitionQuantize.Bar);
+
+        //Assert
+        wait.TotalSeconds.Should().BeApproximately(0.6, 0.0001);
+    }
+
+    [Fact]
+    public void A_non_positive_tempo_is_rejected()
+    {
+        //Arrange & Act
+        var act = () => new MusicTimeline(0, 4);
+
+        //Assert
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    // ----- reading a MIDI file -----
+
+    [Fact]
+    public void A_timeline_read_from_a_midi_file_carries_its_tempo_and_time_signature()
+    {
+        //Arrange
+        var path = WriteMidi("basic.mid", bpm: 120, numerator: 4, denominatorExponent: 2);
+
+        //Act
+        var timeline = MusicTimeline.FromMidiFile(path);
+
+        //Assert
+        timeline.Should().NotBeNull();
+        timeline!.BeatsPerMinute.Should().BeApproximately(120, 0.001);
+        timeline.BeatsPerBar.Should().BeApproximately(4, 0.001);
+        timeline.HasTempoChanges.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_six_eight_bar_is_three_quarter_note_beats_long()
+    {
+        //Arrange - the tempo's unit is a quarter note, so 6/8 is three beats to the bar, not six.
+        //Getting this wrong would put every quantised transition in 6/8 at double the bar length.
+        var path = WriteMidi("six-eight.mid", bpm: 120, numerator: 6, denominatorExponent: 3);
+
+        //Act
+        var timeline = MusicTimeline.FromMidiFile(path);
+
+        //Assert
+        timeline.Should().NotBeNull();
+        timeline!.BeatsPerBar.Should().BeApproximately(3, 0.001);
+        timeline.SecondsPerBar.Should().BeApproximately(1.5, 0.001);
+    }
+
+    [Fact]
+    public void Markers_become_jump_points_at_the_right_times()
+    {
+        //Arrange - a bar is 4 quarters at 96 ticks each; at 120 BPM that is 2 seconds.
+        var path = WriteMidi("markers.mid", bpm: 120, numerator: 4, denominatorExponent: 2,
+            markers: new[] { ("chorus", 2 * 4 * TicksPerQuarter), ("bridge", 4 * 4 * TicksPerQuarter) });
+
+        //Act
+        var timeline = MusicTimeline.FromMidiFile(path);
+
+        //Assert
+        timeline.Should().NotBeNull();
+        timeline!.Markers.Count.Should().Be(2);
+
+        timeline.TryGetMarker("chorus", out var chorus).Should().BeTrue();
+        chorus.TotalSeconds.Should().BeApproximately(4.0, 0.001);
+
+        timeline.TryGetMarker("BRIDGE", out var bridge).Should().BeTrue();
+        bridge.TotalSeconds.Should().BeApproximately(8.0, 0.001);
+
+        timeline.TryGetMarker("nope", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_tempo_change_is_reported_and_markers_after_it_are_still_placed_correctly()
+    {
+        //Arrange - 120 BPM for two bars (8 quarters at 0.5s = 4.0s), then 240 BPM for two more
+        //(8 quarters at 0.25s = 2.0s). The marker therefore belongs at 6.0s, which only comes out
+        //right if the tempo MAP is walked; using the first tempo throughout would put it at 8.0s.
+        var path = WriteMidi("tempo-change.mid", bpm: 120, numerator: 4, denominatorExponent: 2,
+            markers: new[] { ("after", 4 * 4 * TicksPerQuarter) },
+            secondTempo: (240, 2 * 4 * TicksPerQuarter));
+
+        //Act
+        var timeline = MusicTimeline.FromMidiFile(path);
+
+        //Assert
+        timeline.Should().NotBeNull();
+        timeline!.HasTempoChanges.Should().BeTrue();
+        timeline.BeatsPerMinute.Should().BeApproximately(120, 0.001);
+
+        timeline.TryGetMarker("after", out var after).Should().BeTrue();
+        after.TotalSeconds.Should().BeApproximately(6.0, 0.01);
+    }
+
+    [Fact]
+    public void An_unreadable_file_yields_null_rather_than_throwing()
+    {
+        //Arrange - a game must not fail to start because a music asset is missing or malformed.
+        var path = Path.Combine(_directory, "not-a-midi-file.mid");
+        File.WriteAllText(path, "this is not a MIDI file");
+
+        //Act
+        var timeline = MusicTimeline.FromMidiFile(path);
+
+        //Assert
+        timeline.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_missing_file_yields_null()
+    {
+        //Arrange & Act
+        var timeline = MusicTimeline.FromMidiFile(Path.Combine(_directory, "absent.mid"));
+
+        //Assert
+        timeline.Should().BeNull();
+    }
+
+    // ----- helpers -----
+
+    private string WriteMidi(
+        string fileName,
+        double bpm,
+        int numerator,
+        int denominatorExponent,
+        (string Name, int Tick)[]? markers = null,
+        (double Bpm, int Tick)? secondTempo = null)
+    {
+        var events = new MidiEventCollection(1, TicksPerQuarter);
+
+        var tempoTrack = events.AddTrack();
+        tempoTrack.Add(new TempoEvent(MicrosecondsPerQuarter(bpm), 0));
+        tempoTrack.Add(new TimeSignatureEvent(0, numerator, denominatorExponent, 24, 8));
+
+        if (secondTempo is not null)
+        {
+            tempoTrack.Add(new TempoEvent(MicrosecondsPerQuarter(secondTempo.Value.Bpm), secondTempo.Value.Tick));
+        }
+
+        if (markers is not null)
+        {
+            foreach (var (name, tick) in markers)
+            {
+                tempoTrack.Add(new TextEvent(name, MetaEventType.Marker, tick));
+            }
+        }
+
+        tempoTrack.Add(new MetaEvent(MetaEventType.EndTrack, 0, 16 * TicksPerQuarter));
+
+        // A second track with an actual note, so the file is a plausible piece of music rather than
+        // a bare tempo map.
+        var noteTrack = events.AddTrack();
+        noteTrack.Add(new NoteOnEvent(0, 1, 60, 100, TicksPerQuarter));
+        noteTrack.Add(new MetaEvent(MetaEventType.EndTrack, 0, 16 * TicksPerQuarter));
+
+        events.PrepareForExport();
+
+        var path = Path.Combine(_directory, fileName);
+        MidiFile.Export(path, events);
+        return path;
+    }
+
+    private static int MicrosecondsPerQuarter(double bpm) => (int)Math.Round(60_000_000.0 / bpm);
+}

@@ -21,7 +21,8 @@ Please update your C#/.NET code and projects to the latest LTS version of Micros
 * Direct drawing primitives (images, rectangles, SVG, text, particles)
 * Physics: movement, easing, scripted motion, and collision detection
 * Input: keyboard, mouse, gamepad, and touch (with gestures)
-* Audio playback and mixing (via CodeBrix.Audio)
+* Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
+* A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems, and transitions quantised to the next beat or bar
 * Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
 * A UI-agnostic core with a render-surface-adapter seam for headless unit testing
 

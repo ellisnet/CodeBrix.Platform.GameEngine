@@ -1,0 +1,94 @@
+<Page
+    x:Class="MusicDemo.Views.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicDemo.ViewModels"
+    xmlns:game="using:CodeBrix.Platform.GameEngine.Host.Rendering"
+    FontFamily="{StaticResource OpenSansFont}"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.DataContext>
+        <vm:MainViewModel />
+    </Page.DataContext>
+
+    <Grid Background="Black">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="360" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The engine is genuinely running and drawing the music system's state, so the pause
+             control below demonstrates the real contract rather than a simulation of it. -->
+        <game:GameSurfaceCanvas x:Name="GameCanvas" Grid.Column="0" />
+
+        <ScrollViewer Grid.Column="1" Padding="12" Background="#101828">
+            <StackPanel Spacing="6">
+
+                <TextBlock Text="VOLUME BUSES" FontWeight="Bold" Foreground="#93C5FD" />
+                <TextBlock Text="Master" Foreground="Gainsboro" />
+                <Slider x:Name="MasterSlider" Minimum="0" Maximum="100" Value="100"
+                        ValueChanged="OnMasterVolumeChanged" />
+                <TextBlock Text="Music" Foreground="Gainsboro" />
+                <Slider x:Name="MusicSlider" Minimum="0" Maximum="100" Value="100"
+                        ValueChanged="OnMusicVolumeChanged" />
+                <TextBlock Text="Sound effects" Foreground="Gainsboro" />
+                <Slider x:Name="SfxSlider" Minimum="0" Maximum="100" Value="100"
+                        ValueChanged="OnSfxVolumeChanged" />
+
+                <TextBlock Text="TRANSPORT" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <Button Content="Play Track A (fade in)" HorizontalAlignment="Stretch" Click="OnPlayTrackA" />
+                <Button Content="Play adaptive stems" HorizontalAlignment="Stretch" Click="OnPlayStems" />
+                <Button Content="Play MIDI theme (SFZ)" HorizontalAlignment="Stretch" Click="OnPlayMidi" />
+                <Button Content="Play playlist (A then B)" HorizontalAlignment="Stretch" Click="OnPlayPlaylist" />
+                <Button Content="Next in playlist" HorizontalAlignment="Stretch" Click="OnNextInPlaylist" />
+                <Button Content="Stop (fade out)" HorizontalAlignment="Stretch" Click="OnStop" />
+
+                <TextBlock Text="QUANTISED TRANSITIONS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="Compare the two: one cuts in wherever you clicked, the other waits for the downbeat."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <Button Content="Crossfade to B - immediately" HorizontalAlignment="Stretch" Click="OnCrossfadeNow" />
+                <Button Content="Crossfade to B - on the next bar" HorizontalAlignment="Stretch" Click="OnCrossfadeOnBar" />
+                <Button Content="Crossfade back to A - on the next bar" HorizontalAlignment="Stretch" Click="OnCrossfadeBackOnBar" />
+                <Button Content="Cancel the queued transition" HorizontalAlignment="Stretch" Click="OnCancelQueued" />
+
+                <TextBlock Text="ADAPTIVE STEMS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="Three layers in one sample-locked voice. Play the stems above first."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <TextBlock Text="pad" Foreground="Gainsboro" />
+                <Slider x:Name="PadSlider" Minimum="0" Maximum="100" Value="100" ValueChanged="OnPadGainChanged" />
+                <TextBlock Text="bass" Foreground="Gainsboro" />
+                <Slider x:Name="BassSlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnBassGainChanged" />
+                <TextBlock Text="lead" Foreground="Gainsboro" />
+                <Slider x:Name="LeadSlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnLeadGainChanged" />
+                <Button Content="Fade the lead in over 2s" HorizontalAlignment="Stretch" Click="OnFadeLeadIn" />
+                <Button Content="Fade the lead out over 2s" HorizontalAlignment="Stretch" Click="OnFadeLeadOut" />
+
+                <TextBlock Text="MIDI LAYERS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="The same idea, per MIDI channel. Play the MIDI theme above first."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <Button Content="Fade the harmony channel out" HorizontalAlignment="Stretch" Click="OnMidiHarmonyOut" />
+                <Button Content="Fade the harmony channel in" HorizontalAlignment="Stretch" Click="OnMidiHarmonyIn" />
+                <TextBlock Text="Tempo (no pitch change)" Foreground="Gainsboro" />
+                <Slider x:Name="SpeedSlider" Minimum="25" Maximum="200" Value="100" ValueChanged="OnSpeedChanged" />
+
+                <TextBlock Text="DUCKING AND STINGERS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <Button Content="Stinger (ducks the music)" HorizontalAlignment="Stretch" Click="OnStinger" />
+                <Button Content="Dialogue line (ducks for its length)" HorizontalAlignment="Stretch" Click="OnDialogue" />
+                <Button Content="Hold a duck open" HorizontalAlignment="Stretch" Click="OnHoldDuck" />
+                <Button Content="Release the held duck" HorizontalAlignment="Stretch" Click="OnReleaseDuck" />
+
+                <TextBlock Text="JUMP POINTS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="Markers read out of the MIDI file. Play the MIDI theme first."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <Button Content="Jump to 'verse'" HorizontalAlignment="Stretch" Click="OnJumpToVerse" />
+                <Button Content="Jump to 'chorus'" HorizontalAlignment="Stretch" Click="OnJumpToChorus" />
+
+                <TextBlock Text="GLOBAL PAUSE" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="Suspends the music AND freezes fades - queue a transition for the next bar, then pause."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <Button Content="Pause / Resume the engine" HorizontalAlignment="Stretch" Click="OnTogglePause" />
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

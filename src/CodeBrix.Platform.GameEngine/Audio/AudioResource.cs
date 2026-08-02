@@ -19,7 +19,7 @@ namespace CodeBrix.Platform.GameEngine.Audio; //was previously: Gondwana.Audio;
 /// Represents a audio resource that can be played, paused, resumed, and disposed.
 /// </summary>
 [JsonReferenceable]
-public class AudioResource : IDisposable, IEnginePausableAudio
+public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
 {
     private readonly IWavePlayer outputDevice;
     private readonly WaveStream waveStream;
@@ -56,7 +56,13 @@ public class AudioResource : IDisposable, IEnginePausableAudio
 
     [JsonConstructor]
     internal AudioResource()
-    { }
+    {
+        // A deserialized AudioResource is a SPEC, not a voice: it carries the source, volume, pan
+        // and looping to rehydrate from (see ReloadIntoManager) and owns no device, stream or
+        // unmanaged resource at all. So it must not be finalized - the finalizer exists for the
+        // real thing, and running it here would call Dispose(false) against null fields.
+        GC.SuppressFinalize(this);
+    }
 
     internal AudioResource(
         string key,
@@ -79,6 +85,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio
         outputDevice.PlaybackStopped += OnPlaybackStopped;
 
         AudioPauseRegistry.Register(this);
+        AudioMixer.Register(this);
 
         // Persisted rehydration info
         AssetIdentifier = assetIdentifier;
@@ -117,7 +124,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio
             // just pass through, no pan stage
             volumeProvider = new VolumeSampleProvider(baseProvider)
             {
-                Volume = Math.Clamp(volume, 0f, 1f)
+                Volume = AudioMixer.EffectiveVolume(volume, _bus)
             };
 
             return volumeProvider;
@@ -157,10 +164,10 @@ public class AudioResource : IDisposable, IEnginePausableAudio
                 break;
         }
 
-        // final stage: master volume
+        // final stage: this voice's volume, scaled by its mixer bus and the master volume
         volumeProvider = new VolumeSampleProvider(baseProvider)
         {
-            Volume = Math.Clamp(volume, 0f, 1f)
+            Volume = AudioMixer.EffectiveVolume(volume, _bus)
         };
 
         return volumeProvider;
@@ -274,9 +281,39 @@ public class AudioResource : IDisposable, IEnginePausableAudio
         set
         {
             _volume = Math.Clamp(value, 0f, 1f);
-            if (volumeProvider != null)
-                volumeProvider.Volume = _volume;
+            ApplyMixerVolume();
         }
+    }
+
+    [JsonInclude]
+    private AudioBus _bus = AudioBus.Sfx;
+
+    /// <summary>
+    /// The mixer bus this resource's <see cref="Volume"/> is scaled by. Defaults to
+    /// <see cref="AudioBus.Sfx"/>; set <see cref="AudioBus.Music"/> for a track the player's music
+    /// slider should control, or <see cref="AudioBus.None"/> to answer to the master volume alone.
+    /// </summary>
+    public AudioBus Bus
+    {
+        get => _bus;
+        set
+        {
+            _bus = value;
+            ApplyMixerVolume();
+        }
+    }
+
+    /// <summary>
+    /// Applies this resource's own volume scaled by its bus and the master volume. Called by
+    /// <see cref="AudioMixer"/> whenever a bus volume changes, and whenever <see cref="Volume"/> or
+    /// <see cref="Bus"/> is set.
+    /// </summary>
+    void IMixerVoice.ApplyMixerVolume() => ApplyMixerVolume();
+
+    private void ApplyMixerVolume()
+    {
+        if (volumeProvider != null)
+            volumeProvider.Volume = AudioMixer.EffectiveVolume(_volume, _bus);
     }
 
     [JsonInclude]
@@ -599,22 +636,30 @@ public class AudioResource : IDisposable, IEnginePausableAudio
         if (disposed)
             return;
 
+        // Every field below can legitimately be null: the [JsonConstructor] overload builds a
+        // rehydration spec that owns no voice (see that constructor). Disposing one of those - or
+        // finalizing it, before SuppressFinalize was added there - otherwise threw a
+        // NullReferenceException, and from the finalizer thread that takes the whole process down
+        // rather than failing anything visible.
         if (disposing)
         {
-            try
+            if (outputDevice is not null)
             {
-                outputDevice.PlaybackStopped -= OnPlaybackStopped;
-            }
-            catch
-            {
-                /* noop */
-            }
+                try
+                {
+                    outputDevice.PlaybackStopped -= OnPlaybackStopped;
+                }
+                catch
+                {
+                    /* noop */
+                }
 
-            Stop();
+                Stop();
+            }
         }
 
-        outputDevice.Dispose();
-        waveStream.Dispose();
+        outputDevice?.Dispose();
+        waveStream?.Dispose();
 
         if (TempFilePath is not null)
         {

@@ -67,6 +67,10 @@ internal static class AudioPauseRegistry
     /// <param name="shortSoundEffectSeconds">The short-sound-effect exemption threshold, in seconds.</param>
     internal static void SuspendAll(double shortSoundEffectSeconds)
     {
+        // Music fades freeze with the voices they are fading, and from the same call, so a
+        // crossfade cannot keep advancing against tracks that are no longer playing.
+        MusicManager.FreezeFades();
+
         lock (_gate)
         {
             foreach (var reference in _voices.ToArray())
@@ -108,6 +112,8 @@ internal static class AudioPauseRegistry
     /// <summary>Resumes exactly the voices <see cref="SuspendAll"/> suspended.</summary>
     internal static void ResumeAll()
     {
+        MusicManager.UnfreezeFades();
+
         lock (_gate)
         {
             foreach (var voice in _suspended)

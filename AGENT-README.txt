@@ -689,6 +689,189 @@ device, so overlapping sounds are cheap):
   SoftRender sample shows the pattern). The shared output restarts
   automatically if something plays later in the process.
 
+  FORMATS: .wav, .mp3, .ogg (Vorbis) and .flac are built in, all fully
+  managed, so assets never need converting for a particular target. ANY OTHER
+  format registered with CodeBrix.Audio works too, with no engine change:
+  PlatformAudioFactory resolves an extension against its OWN table first and
+  then CodeBrix.Audio's AudioFileReaderRegistry. That is how .opus works —
+  Opus is BSD-3-Clause and this engine is MIT, so it ships as the separate
+  CodeBrix.Audio.Opus.BsdLicenseForever package; the APPLICATION references it
+  and calls CodeBrixAudioOpus.Register() once at start-up, BEFORE anything
+  loads a .opus asset, and from then on .opus is first-class on every path a
+  built-in format reaches (including CachedSound preload and the SFX pool).
+  Miss the call and the load throws a NotSupportedException that names the
+  package and the method. PlatformAudioFactory.Register(ext, factory,
+  requiresFile) adds an engine-only reader, or overrides a built-in one.
+
+  THE MIXER AND ITS BUSES — AudioMixer (static): MasterVolume, MusicVolume and
+  SfxVolume, the three sliders a settings screen expects. A voice's audible
+  gain is its own Volume x its bus x MasterVolume. Changing a bus reaches
+  everything already playing on it — there is no walking of live voices, and
+  nothing to re-apply after a slider moves. All three default to 1.0, so a
+  game that never touches AudioMixer sounds exactly as it did before buses
+  existed. Bus defaults: AudioResource, SoundChannel and pool voices are Sfx;
+  StreamingAudioSource is Music (it is the endless-material path); everything
+  MusicManager plays is Music. Each exposes a Bus property to override.
+  MusicDuckMultiplier is read-only here and owned by MusicManager's ducking —
+  duck through that, never by writing MusicVolume, so the player's own setting
+  survives and can be restored.
+
+MUSIC (MusicManager)
+--------------------------------------------------------------------------------
+MusicManager.Instance is to music what SfxVoicePool is to sound effects: the
+place the policy lives, so a game does not reimplement fade timing and
+"which track is current" bookkeeping. Everything it plays is on AudioBus.Music.
+
+  WHAT DRIVES THE FADES: ONE background thread (MusicFadeTicker, 20 ms). A
+  thread rather than engine Timers because fades must behave identically in
+  both hosting modes and MODE B NEVER RUNS THE ENGINE CYCLE. It is not started
+  until the first fade, parks on a wait handle when idle rather than spinning,
+  and allocates nothing per tick. It FREEZES with the global engine pause, so a
+  two-second crossfade spanning a ten-minute pause is still two seconds.
+
+  TRACKS — a track is a HANDLE, not a transport. Read its state and set its
+  Volume; play/stop/crossfade/seek through the manager, which owns the fades.
+  Two kinds:
+    * FileMusicTrack   — wraps an AudioResource, so it STREAMS from the loaded
+                         data. The right choice for long linear music.
+    * MidiMusicTrack   — a MIDI sequence rendered live through a SoundFont
+                         (.sf2) or SFZ instrument (.sfz). Kilobytes on disk
+                         instead of megabytes, and the arrangement can change
+                         while it plays. SHARE THE INSTRUMENT via
+                         SoundFontCache / SfzInstrumentCache. NOTE a .sf2 is
+                         one file and loads from a Stream; a .sfz is text that
+                         REFERENCES sample files beside it on disk, so an SFZ
+                         packed into an AssetsFile must be extracted first.
+
+  TRANSPORT: Play(track, fadeIn), CrossfadeTo(track, duration), Stop(fadeOut),
+  Pause(), Resume(), Seek(), NowPlaying, IsPlaying, ActiveFadeCount.
+  A CROSSFADE USES ONE FADE FOR BOTH SIDES — two independent fades could drift
+  a tick apart and leave a hole or a bump in the middle; complementary values
+  from a single progress cannot. CrossfadeCurve is EqualPower by default
+  (a linear crossfade sits at 0.5/0.5 halfway, ~6 dB down, and audibly dips);
+  choose Linear for CORRELATED material (a stem swap, a loop splice), where it
+  is the correct law.
+
+  DUCKING: PushDuck(depth, attack, release) returns a handle; dispose it to
+  release. Overlapping ducks are reference-counted and the DEEPEST wins, so two
+  dialogue lines that overlap do not fight and the music returns only when the
+  last one ends. Duck(depth, attack, hold, release) is the fire-and-forget
+  form, and its hold runs on the same ticker, so a duck cannot outlive its cue
+  just because the game was paused. Ducking is a SEPARATE multiplier from
+  MusicVolume, so the player's slider survives. ClearDucks() is the escape
+  hatch for a leaked handle — without it, a lost handle quietens the music for
+  the rest of the process with nothing to point at. A scene change is a
+  reasonable place to call it.
+
+  STINGERS: PlayStinger(key, volume, duckMusic) plays a one-shot musical hit on
+  its OWN voice on the music bus. Deliberately NOT through SfxVoicePool: the
+  pool has a polyphony cap, and a level-complete fanfare culled by a busy
+  combat scene is exactly the wrong outcome.
+
+  PLAYLISTS: MusicPlaylist with MusicRepeatMode None/One/All, seeded shuffle,
+  Add/Remove/Clear/Reset/MoveNext/MovePrevious. MusicManager.Play(playlist,
+  crossfade) advances on each track's Ended; Next(crossfade) skips. Shuffle
+  avoids replaying the track that just finished when it reshuffles at the wrap.
+
+  THREADING: every method is safe to call from any thread. Track Ended events
+  and playlist advances arrive on a BACKGROUND OR AUDIO THREAD — marshal to the
+  engine thread with Engine.Instance.EngineDispatcher.Post before touching game
+  state.
+
+  SHUTDOWN: Engine.Dispose() tears the music system down with the rest of the
+  audio. A Mode-B game that never disposes the engine calls
+  MusicManager.Instance.Dispose() alongside AudioSystem.Shutdown().
+
+  NOT PERSISTED: music is deliberately absent from EngineState. A saved "now
+  playing at 1:23.4" is a promise the engine cannot keep across a soundfont
+  reload, and audio playback position does not round-trip anyway. A game that
+  wants it saves the track key itself. This is a decision, not an oversight.
+
+  ADAPTIVE STEMS — TWO ROUTES, PICK DELIBERATELY:
+
+    (a) MIDI, via per-channel volume. The cheap one, and the default answer for
+        synthesized music:
+            track.SetLayerVolume(channel, 0f);          // 0-15
+            track.FadeLayerTo(channel, 1f, TimeSpan.FromSeconds(2));
+        No second copy of anything, no shared-format requirement, and the
+        layers CANNOT drift because there is only one sequence. Also
+        SetLayerPan and Speed (a tempo multiplier that does not change pitch —
+        slow-motion music, which a mixed-down file cannot do).
+        CAVEAT: it is sent as MIDI control change 7, so a track that automates
+        its own volume will overwrite the game's value the next time it does.
+        Reserve the channels the game means to drive and leave their CC7 alone
+        in the arrangement.
+
+    (b) Audio files, via MusicStemSet. For recorded stems:
+            var stems = new MusicStemSet("battle", "explore.ogg", "combat.ogg");
+            MusicManager.Instance.Play(stems);
+            stems["combat"].FadeTo(1.0f, TimeSpan.FromSeconds(2));
+        A MusicStemSet IS a MusicTrack, so the manager plays, crossfades, ducks
+        and stops it like any other music. Layers are summed into ONE voice, not
+        N — independent voices start at slightly different times and drift, and
+        layers that drift phase against each other. One voice, one clock, exact
+        lock by construction.
+        REQUIREMENTS AND COSTS:
+          - Every stem must share a SAMPLE RATE and CHANNEL COUNT. A mismatch
+            throws, naming the stem and both formats; it is not mixed anyway,
+            because that would play a layer at the wrong speed. Calling
+            AudioSystem.Initialize(...) makes this a non-issue — stems then
+            rate-convert to the pinned device rate as they decode.
+          - Stems SHOULD share a length. If they do not, the set loops as one at
+            the LONGEST, a shorter stem is silent until then, and the mismatch
+            is logged once.
+          - Stems are DECODED TO MEMORY (~10 MB per stereo minute at 44.1 kHz,
+            per layer). That buys exact lock and an audio thread that never
+            decodes. Layered music is normally a short loop, which is what this
+            suits; a long linear piece is a FileMusicTrack, which streams.
+          - Only the FIRST stem starts audible; the rest start at 0 and are
+            brought in deliberately.
+        Gain changes RAMP across an audio block rather than stepping, because a
+        step change in gain is a click. Summing is NOT limited: N stems at full
+        sum to N, and stems are expected to be mixed so the combinations the
+        game actually uses do not clip.
+
+  QUANTISED TRANSITIONS (bar / beat) — the difference between music that
+  changes when the game says so and music that changes when the MUSIC says so:
+      MusicManager.Instance.CrossfadeTo(combat, TimeSpan.FromSeconds(2),
+                                        MusicTransitionQuantize.Bar);
+  Play, CrossfadeTo and Stop all take a MusicTransitionQuantize
+  (Immediate / Beat / Bar). The wait rides on the fade ticker, so it freezes
+  with the global pause: a transition queued for the next bar cannot fire while
+  the game is paused. HasPendingTransition reports one in flight;
+  CancelPendingTransition() drops it (the enemy died before the bar arrived),
+  and starting any transition outright cancels a queued one so a stale change
+  cannot land after the game changed its mind.
+
+  WHERE THE GRID COMES FROM — MusicTrack.Timeline (a MusicTimeline):
+    * MIDI loaded FROM A PATH fills it in automatically. The MidiMusicTrack
+      (key, instrumentPath, midiFilePath) overload parses the file a SECOND
+      time as CodeBrix.Audio.Midi.MidiFile to read the tempo, time signature and
+      markers. That second parse is necessary, not lazy: MidiSequence — the
+      thing that PLAYS — bakes the tempo map into absolute times and keeps no
+      meta events, so the grid genuinely is not in it any more. A MIDI file is
+      kilobytes and this happens once at load. The other MidiMusicTrack
+      overloads take a MidiSequence and so have no file to read: set Timeline
+      by hand there.
+    * DECODED AUDIO: the game supplies it —
+          track.Timeline = new MusicTimeline(beatsPerMinute: 128, beatsPerBar: 4);
+      There is NO inference from a decoded stream on offer. Beat detection is a
+      guess, and a guess here produces transitions that are subtly and
+      unfixably late. The composer knows the tempo.
+    * No timeline + a Beat/Bar request = it happens immediately and says so in
+      the log. It is never silently dropped.
+  A beat is the tempo's own unit (a quarter note, for MIDI), so BeatsPerBar is
+  fractional where the time signature's beat unit differs: 6/8 read from a MIDI
+  file is 3 quarter-note beats to the bar, not 6. The grid is CONSTANT — one
+  tempo throughout. A file that changes tempo sets HasTempoChanges and is
+  quantised against its FIRST tempo, so bars drift after the change. Markers
+  are exempt: they are converted through the whole tempo map.
+
+  JUMP POINTS: a MIDI file's markers (and cue points) become
+  MusicTimeline.Markers, and MusicManager.JumpToMarker("chorus") seeks the
+  current track to one (case-insensitive; returns false rather than seeking
+  somewhere arbitrary if there is no such marker).
+
 SCENES, LAYERS, AND TILES (Mode A)
 --------------------------------------------------------------------------------
 The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
@@ -1151,7 +1334,7 @@ ARCHITECTURE
 
 THE SAMPLES — THE LIVING REFERENCE
 --------------------------------------------------------------------------------
-samples/ holds six complete games/demos, each with LinuxX11, Win32Skia, and
+samples/ holds seven complete games/demos, each with LinuxX11, Win32Skia, and
 MacOS heads plus a shared .UI project; each is the reference consumer for the
 subsystems it exercises:
 
@@ -1179,6 +1362,16 @@ subsystems it exercises:
                     pause overlay (paused-frame + snapshot demo), window-
                     tracking resolution with resize handling.
                     GPURENDER_USE_CPU=1 runs the same scene on CpuRendering.
+  MusicDemo      -- the MUSIC SYSTEM reference: volume buses, fades and
+                    equal-power crossfades, ducking (fire-and-forget and the
+                    held-handle form), stingers, playlists, layered adaptive
+                    stems (MusicStemSet) AND the MIDI per-channel route,
+                    transitions quantised to the next bar, marker jump points,
+                    and the global pause freezing music and fades together.
+                    It GENERATES every asset it plays on first run
+                    (MusicAssetFactory: stems, two tracks, a stinger, an SFZ
+                    instrument and a MIDI file with markers), so the repo
+                    carries no binary music and the sample runs anywhere.
 
 GAMEPAD SUPPORT (CodeBrix.Platform.GameEngine.Sdl2)
 --------------------------------------------------------------------------------
@@ -1343,7 +1536,14 @@ TESTING
   (EnginePauseTests: park/resume semantics, no-burst time shifting, audio
   suspend rules, snapshot capture), and the audio SFX suites
   (CachedSoundTests, SfxVoicePoolTests — decode-once preload and the pool's
-  cull-policy selection logic; nothing in them opens the audio device). Host
+  cull-policy selection logic; nothing in them opens the audio device), and the
+  music suites (AudioMixerTests, MusicManagerTests, MusicStemSetTests,
+  MusicTimelineTests, MusicQuantizedTransitionTests, MidiMusicTrackLayerTests —
+  fades advanced by hand through MusicFadeTicker.ManualTickingForTests rather
+  than slept through, so the assertions are exact instead of racy; the stem
+  mixer's actual output samples are read and summed; and the MIDI fixtures are
+  BUILT IN CODE — a MidiEventCollection exported through MidiFile.Export, and a
+  one-region SFZ over a generated tone — so there is no committed binary). Host
   tests cover what can run without a live UI head; head-dependent behavior is
   env-gated or skipped with a reason.
 
@@ -1353,6 +1553,20 @@ TESTING
   plus the scene/sprite/cycle/tilesheet/audio registries), so tests that
   populate or clear that state cannot overlap. Keep new test classes
   compatible with that assumption — clean up global state you create.
+
+  THE SHARED AUDIO OUTPUT IS PART OF THAT GLOBAL STATE, and it is the easiest
+  one to leak. The shared output ADOPTS A SAMPLE RATE from the first thing that
+  plays, and it keeps it. So a test that loads anything with its own rate — a
+  MidiMusicTrack builds a synthesizer and an output voice merely by LOADING,
+  without ever being played — leaves every later test whose source has a
+  different rate failing at WaveOutEvent.Init with "this source is N Hz but the
+  shared audio output runs at M Hz". The symptom is nasty: a VARYING number of
+  unrelated failures depending on the order the suite happened to run in, and
+  nothing at all when the offending class is run on its own. Any test class
+  that causes a rate to be adopted must call AudioSystem.Shutdown() in its
+  Dispose to hand the output back unclaimed (MidiMusicTrackLayerTests is the
+  worked example). Tests that only build CachedSounds or drive a
+  StemMixSampleProvider directly never touch the device and need none of this.
 
   The Sdl2 test assembly also runs SERIALLY, for the same class of reason:
   SDL2 keeps its initialization state and device list in process-global native

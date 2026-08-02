@@ -33,6 +33,7 @@ public sealed class SfxVoicePool : IDisposable
 {
     private readonly object _gate = new();
     private readonly Voice[] _voices;
+    private AudioBus _bus = AudioBus.Sfx;
     private long _playSequence;
     private bool _disposed;
 
@@ -92,6 +93,23 @@ public sealed class SfxVoicePool : IDisposable
     /// applies the automatic short-sound-effect exemption.
     /// </summary>
     public bool? SuspendOnEnginePause { get; set; }
+
+    /// <summary>
+    /// The mixer bus every voice in this pool plays on. Defaults to <see cref="AudioBus.Sfx"/>, so
+    /// the player's effects slider controls it. Changing it applies to voices already playing.
+    /// </summary>
+    public AudioBus Bus
+    {
+        get => _bus;
+        set
+        {
+            _bus = value;
+            foreach (var voice in _voices)
+            {
+                ((IMixerVoice)voice).ApplyMixerVolume();
+            }
+        }
+    }
 
     /// <summary>
     /// Plays a preloaded sound on a pool voice. When the pool is full, <see cref="CullPolicy"/>
@@ -291,11 +309,12 @@ public sealed class SfxVoicePool : IDisposable
     /// <see cref="CachedSoundSampleProvider"/> plus a pan stage (the same mono/stereo/mux
     /// handling as <see cref="AudioResource"/>); volume rides the player's own master gain.
     /// </summary>
-    private sealed class Voice : IEnginePausableAudio, IDisposable
+    private sealed class Voice : IEnginePausableAudio, IMixerVoice, IDisposable
     {
         private readonly SfxVoicePool _pool;
         private readonly WaveOutEvent _player = new();
         private TimeSpan _duration;
+        private float _volume = 1f;
 
         internal bool Busy;
         internal long Sequence;
@@ -305,6 +324,7 @@ public sealed class SfxVoicePool : IDisposable
         {
             _pool = pool;
             _player.PlaybackStopped += OnPlaybackStopped;
+            AudioMixer.Register(this);
         }
 
         internal void Start(CachedSound sound, float volume, float pan, int priority, long sequence)
@@ -340,7 +360,8 @@ public sealed class SfxVoicePool : IDisposable
             }
 
             _player.Init(graph);
-            _player.Volume = Math.Clamp(volume, 0f, 1f);
+            _volume = Math.Clamp(volume, 0f, 1f);
+            _player.Volume = AudioMixer.EffectiveVolume(_volume, _pool.Bus);
             _player.Play();
 
             Busy = true;
@@ -374,6 +395,15 @@ public sealed class SfxVoicePool : IDisposable
         TimeSpan? IEnginePausableAudio.KnownDurationForEnginePause => _duration;
 
         bool? IEnginePausableAudio.SuspendOnEnginePause => _pool.SuspendOnEnginePause;
+
+        // A bus volume can change mid-play, so a pooled voice recomputes its gain like any other.
+        void IMixerVoice.ApplyMixerVolume()
+        {
+            if (Busy)
+            {
+                _player.Volume = AudioMixer.EffectiveVolume(_volume, _pool.Bus);
+            }
+        }
 
         void IEnginePausableAudio.EnginePause() => _player.Pause();
 
