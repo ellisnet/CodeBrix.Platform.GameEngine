@@ -1,39 +1,43 @@
 ================================================================================
 AGENT-README: CodeBrix.Platform.GameEngine
-A Comprehensive Guide for AI Coding Agents (and human developers)
+A Guide for AI Coding Agents — CONSUMING the CodeBrix.Platform.GameEngine.MitLicenseForever NuGet package
 ================================================================================
 
 OVERVIEW
---------------------------------------------------------------------------------
+========
 CodeBrix.Platform.GameEngine is a fully managed, cross-platform 2D / 2.5D game
 engine for .NET, built on SkiaSharp. It provides tile maps, tilesheets, sprites,
 layered scenes, camera/view systems, animation, physics/collision, input, audio,
-a save/load system, and a global pause system.
+a save/load system, and a global pause system. Target: .NET 10 or later.
 
-The repository contains TWO libraries that mirror the classic core/host split,
-plus one optional add-on library (see GAMEPAD SUPPORT, below):
+The package carries TWO assemblies that mirror the classic core/host split:
 
   * CodeBrix.Platform.GameEngine        -- the platform-agnostic engine CORE.
-        No UI-framework dependency; headless-testable. Its rendering seam is a
+        No UI-framework dependency; headless-usable. Its rendering seam is a
         SkiaSharp SKImage plus the RenderSurfaceAdapterBase abstraction.
 
   * CodeBrix.Platform.GameEngine.Host   -- the HOST layer that runs the engine
         on CodeBrix.Platform (all six heads: Win32-Skia, WPF-Skia, X11, Wayland,
         Frame Buffer, macOS). Contains the CpuRendering (CPU) and GpuRendering
-        (GPU) render-surface adapters, pointer/keyboard input adapters, a UI dispatcher, and
-        the game-host base classes games derive from.
-
-  * CodeBrix.Platform.GameEngine.Sdl2   -- OPTIONAL add-on giving the engine
-        game controller (gamepad) support on all six heads, via SDL2. Ships as
-        its OWN NuGet package so that a game which does not want a native SDL2
-        dependency does not inherit one. See the GAMEPAD SUPPORT section.
+        (GPU) render-surface adapters, keyboard/mouse/touch input adapters, a
+        UI dispatcher, and the game-host base classes games derive from.
 
 The engine core is a vendored port of the open-source Gondwana game engine
-version 2.5.0 (MIT, (c) 2025 Michael Adkins). See THIRD-PARTY-NOTICES.txt for
-more info.
+version 2.5.0 (MIT, (c) 2025 Michael Adkins). Its namespaces are
+CodeBrix.Platform.GameEngine[.*]; do not use the upstream namespaces. See
+THIRD-PARTY-NOTICES.txt (shipped in the package) for the notices.
+
+OTHER PACKAGES FROM THE SAME REPOSITORY
+---------------------------------------
+  CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever — gamepads (SDL2 game
+  controller support, optional add-on); see
+  src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt. This engine package
+  has NO gamepad backend of its own: it defines the IGamepadManager<T> /
+  IGamepadAdapter seam and the GamepadEventPoller, and the Sdl2 package fills
+  the seam.
 
 INSTALLATION
---------------------------------------------------------------------------------
+============
 NuGet package ID (note the license suffix):
 
     CodeBrix.Platform.GameEngine.MitLicenseForever
@@ -48,32 +52,83 @@ everything. There is no separate .Host package.
 The namespaces are CodeBrix.Platform.GameEngine[.*] and
 CodeBrix.Platform.GameEngine.Host[.*] (WITHOUT the license suffix).
 
-Target framework: .NET 10.0 or higher.
+License: MIT.
 
-KEY NAMESPACES
---------------------------------------------------------------------------------
-    using CodeBrix.Platform.GameEngine;                 // Engine, EngineState, dispatchers
+NuGet dependencies (pulled in automatically, listed by id):
+    CodeBrix.Platform.ApacheLicenseForever                 -- the UI platform
+    CodeBrix.Platform.SkiaSharp.Views.MitLicenseForever    -- SKXamlCanvas base
+    CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever    -- GPU render path
+    CodeBrix.Platform.Svg.ApacheLicenseForever
+    SkiaSharp
+    CodeBrix.SkiaSvg.MitLicenseForever
+    CodeBrix.Compression.MitLicenseForever
+    CodeBrix.Audio.MitLicenseForever                       -- device audio I/O
+    CodeBrix.Json.Extensions.MitLicenseForever             -- save/load refs
+    Microsoft.Extensions.Configuration (+ .Binder, .Json)
+    Microsoft.Extensions.Logging.Console, Microsoft.Extensions.Logging.Debug
+
+Requirements:
+  * A CodeBrix.Platform application with exactly ONE head package per
+    executable project (for example CodeBrix.Platform.Runtime.Skia.X11.
+    ApacheLicenseForever for Linux X11, CodeBrix.Platform.Runtime.Skia.Win32.
+    ApacheLicenseForever for Windows, CodeBrix.Platform.Runtime.Skia.MacOS.
+    ApacheLicenseForever for macOS). The engine renders into a XAML control.
+  * The head application supplies the SkiaSharp native libraries. A HEADLESS
+    consumer on Linux (a test project driving the core directly) must add
+    SkiaSharp.NativeAssets.Linux itself; the base SkiaSharp package carries
+    Windows/macOS natives only.
+  * GpuRendering on Windows needs a real OpenGL driver (see RENDER MODES).
+  * Optional: CodeBrix.Audio.Opus.BsdLicenseForever for .opus assets (see
+    AUDIO / FORMATS).
+
+KEY NAMESPACES / USINGS
+=======================
+    using CodeBrix.Platform.GameEngine;                 // Engine, EngineState, dispatchers,
+                                                        //   TypedValueBag, ValueKey<T>
     using CodeBrix.Platform.GameEngine.Assets;          // AssetsFile
-    using CodeBrix.Platform.GameEngine.Audio;           // AudioSystem, SoundChannel, streams
+    using CodeBrix.Platform.GameEngine.Audio;           // AudioSystem, SoundChannel, streams,
+                                                        //   MusicManager, SfxVoicePool
     using CodeBrix.Platform.GameEngine.Configuration;   // EngineConfiguration[File]
     using CodeBrix.Platform.GameEngine.Drawing;         // Tile, ImageFilterQuality, SvgResource
-    using CodeBrix.Platform.GameEngine.Drawing.Sprites; // Sprite, CompositeSprite
+    using CodeBrix.Platform.GameEngine.Drawing.Sprites; // Sprite, CompositeSprite, SpriteManager
     using CodeBrix.Platform.GameEngine.Drawing.Direct;  // DirectImage, TextBlock, particles...
-    using CodeBrix.Platform.GameEngine.Drawing.Tilesheets; // Tilesheet, TilesheetRegistry
-    using CodeBrix.Platform.GameEngine.Drawing.Animation;  // Cycle, FrameSequence
+    using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;     // Tilesheet, TilesheetRegistry
+    using CodeBrix.Platform.GameEngine.Drawing.Tilesheets.GTS; // TilesheetDefinition (.gts)
+    using CodeBrix.Platform.GameEngine.Drawing.Animation;      // Cycle, FrameSequence, Animator
+    using CodeBrix.Platform.GameEngine.Drawing.Collisions;     // TileCollider
     using CodeBrix.Platform.GameEngine.Rendering;       // render-surface hosts, backbuffers,
                                                         //   PixelFramePresenter
     using CodeBrix.Platform.GameEngine.Rendering.Views; // ViewManager, View, Camera, Viewport
+    using CodeBrix.Platform.GameEngine.Rendering.Text;  // FontManager
     using CodeBrix.Platform.GameEngine.Scenes;          // Scene, SceneLayer, SceneLayerTile
-    using CodeBrix.Platform.GameEngine.Physics;         // movement, easing, collisions
-    using CodeBrix.Platform.GameEngine.Input;           // pollers, InputPump
+    using CodeBrix.Platform.GameEngine.Physics.Movement;       // MovementController, easing
+    using CodeBrix.Platform.GameEngine.Physics.Movement.Easing; // EasingFunctions, EasingKind
+    using CodeBrix.Platform.GameEngine.Physics.Collisions;     // ICollider, Aabb, registries
+    using CodeBrix.Platform.GameEngine.Input;           // InputPump, InputEventConfigurationBase
+    using CodeBrix.Platform.GameEngine.Input.Keyboard;  // KeyboardEventPoller, KeyAction
+    using CodeBrix.Platform.GameEngine.Input.Mouse;     // MouseEventPoller, MouseButton
+    using CodeBrix.Platform.GameEngine.Input.Touch;     // TouchEventPoller, TouchPoint
+    using CodeBrix.Platform.GameEngine.Input.Touch.Gestures;   // Tap/Swipe/Pinch recognizers
+    using CodeBrix.Platform.GameEngine.Input.Gamepad;   // IGamepadAdapter, GamepadStickState
     using CodeBrix.Platform.GameEngine.Timers;          // Timer, HighResTimer, FixedRateGameLoop
-    using CodeBrix.Platform.GameEngine.Extensibility;   // IEnginePlugin
+    using CodeBrix.Platform.GameEngine.Extensibility;   // IEnginePlugin, EnginePluginRegistry
+    using CodeBrix.Platform.GameEngine.Logging;         // EngineLogger, EngineLoggingMode
+    using CodeBrix.Platform.GameEngine.Serialization;   // EngineSaveContractResolver
     using CodeBrix.Platform.GameEngine.Host;            // EngineExtensions (adapter wiring)
     using CodeBrix.Platform.GameEngine.Host.Hosting;    // CodeBrixGameHost,
                                                         //   SoftwareRenderedGameHostBase
     using CodeBrix.Platform.GameEngine.Host.Rendering;  // GameSurfaceCanvas
-    using CodeBrix.Platform.GameEngine.Host.Input.*;    // CodeBrix input adapters
+    using CodeBrix.Platform.GameEngine.Host.Input.Keyboard; // CodeBrixKeyboardAdapter
+    using CodeBrix.Platform.GameEngine.Host.Input.Mouse;    // CodeBrixMouseAdapter,
+                                                            //   RelativeMouseSession
+    using CodeBrix.Platform.GameEngine.Host.Input.Touch;    // CodeBrixTouchInputAdapter
+    using CodeBrix.Platform.GameEngine.Host.Threading;      // CodeBrixPlatformUiDispatcher
+
+CORE API REFERENCE
+==================
+The sub-sections below walk the engine subsystem by subsystem, in the order a
+game meets them. Member names and signatures are inline; the QUICK REFERENCE
+CARD at the end collects the most-used signatures in one place.
 
 THE TWO HOSTING MODES (choose one — they are mutually exclusive)
 --------------------------------------------------------------------------------
@@ -114,17 +169,38 @@ The Engine is a thread-safe singleton: Engine.Instance. Lifecycle:
     Engine.Instance.Stop();             // halts the loop; engine reusable
     Engine.Instance.Dispose();          // full teardown; engine NOT reusable
 
+    void Initialize(string? configFileName = null, bool? autoSaveConfig = null,
+                    IKeyboardAdapter? keyboardAdapter = null,
+                    IMouseAdapter? mouseAdapter = null,
+                    ITouchAdapter? touchAdapter = null,
+                    IGamepadManager<IGamepadAdapter>? gamepadManager = null)
+    void Start()                                   // captures SynchronizationContext.Current
+    void Start(SynchronizationContext uiContext)
+    void StartTimerDriven(SynchronizationContext uiContext)   // + Tick() per timer tick
+    void Tick()
+
 Start() must receive the UI thread's SynchronizationContext (the parameterless
 overload captures SynchronizationContext.Current, so call it ON the UI thread).
-For single-threaded runtimes (WASM), StartTimerDriven(uiContext) + a platform
-timer calling Engine.Instance.Tick() replaces the background thread.
+For single-threaded runtimes, StartTimerDriven(uiContext) + a platform timer
+calling Engine.Instance.Tick() replaces the background thread.
 
-One cycle executes, in order (engine plugins get InvokePreCycle /
-InvokePreFrameRender / InvokePostFrameRender / InvokePostCycle hooks around
-the same points — see Extensibility/IEnginePlugin):
+State and metrics on Engine.Instance: IsInitialized, IsInitializing, IsRunning,
+IsPaused, IsDisposed, IsDisposing, CyclesPerSecond, FramesPerSecond,
+TotalTicksEngineRunning, TotalSecondsEngineRunning, Configuration, State,
+Managers, Input, UiDispatcher, EngineDispatcher, LastFrameBeforePause; static
+Engine.Logger (an ILogger<Engine>).
+
+Engine events (all Action unless noted): PreInitialization, PostInitialization,
+InitializationComplete, BeforeBackgroundTasksExecute, AfterBackgroundTasksExecute,
+BeforeFrameRender, AfterFrameRender, CPSCalculated
+(Action<CyclesPerSecondCalculatedEventArgs>), Paused, Resumed, Disposing,
+Disposed.
+
+One cycle executes, in order (engine plugins get OnPreCycle / OnPreFrameRender /
+OnPostFrameRender / OnPostCycle hooks around the same points — see PLUGINS):
    1. EngineDispatcher.Drain()          -- runs actions posted to the engine thread
    2. BeforeBackgroundTasksExecute event
-   3. PreCycle Timer events             -- Timer.RaiseTimerEvents(TimerType.PreCycle)
+   3. PreCycle Timer events
    4. Gamepad state refresh (throttled) then input pollers -- keyboard, mouse,
       touch, gamepad events fire HERE, against state read moments earlier
    5. Animator frame advancement        -- for every Tile in Tile.TilesAnimating
@@ -164,6 +240,8 @@ There are exactly three thread contexts a Mode-A game touches:
     await captured, so engine state is NOT automatically safe to touch after one.
     Never await it FROM the engine thread — that blocks the very cycle that has
     to drain the queue.
+    IEngineDispatcher: IsOnEngineThread, Post(Action), PostAsync(Func<Task>),
+    Drain(), BindToCurrentThread().
 
   UI THREAD
     Runs: XAML layout/input, GameSurfaceCanvas painting, CPSCalculated,
@@ -172,6 +250,10 @@ There are exactly three thread contexts a Mode-A game touches:
     it from the engine thread:
         Engine.Instance.UiDispatcher?.Post(() => { ...UI... });
     NEVER touch XAML elements from the engine thread directly.
+    IUiDispatcher: IsOnUIThread, Post(Action) (async, preferred), Send(Action)
+    (synchronous). The Host implementation is CodeBrixPlatformUiDispatcher
+    (DispatcherQueue) with static ForCurrentThread() (null when the calling
+    thread has no dispatcher queue).
 
   AUDIO CALLBACK THREAD (only if the game uses streaming audio)
     Runs: StreamingAudioSource fill callbacks. Must be fast, allocation-free,
@@ -226,8 +308,8 @@ The last-frame-before-pause snapshot:
   surfaces are captured too, from the adapter's copy of the most recently
   presented frame (null only if the surface never presented a frame).
 
-  Skia-free access — LastFrameBeforePauseAsRgba(out width, out height) on all
-  three (Engine, RenderSurfaceHostBase, PixelFramePresenter) returns the
+  Skia-free access — LastFrameBeforePauseAsRgba(out int width, out int height)
+  on all three (Engine, RenderSurfaceHostBase, PixelFramePresenter) returns the
   snapshot as a raw RGBA8888 byte[] (4 bytes/pixel in R,G,B,A memory order,
   row-major, unpremultiplied, width*height*4 bytes), or null when nothing was
   captured. That layout loads straight into imaging libraries — saving the
@@ -267,10 +349,10 @@ The one rule games must respect:
   Engine input pollers DO NOT RUN while paused, so a game cannot un-pause
   itself through engine input. Wire the resume trigger at the hosting
   application's UI layer — the window's restore/visibility event, a UI-level
-  KeyDown, or a UI-level PointerPressed (see the ParticleTest campfire toggle
-  for a worked example: samples/ParticleTest/src/libs/ParticleTest.Game/
-  ParticleTestGame.cs, OnCanvasPointerPressed). The obvious application wiring:
-  minimize -> Engine.Instance.Pause(), restore -> Engine.Instance.Resume().
+  KeyDown, or a UI-level PointerPressed (the ParticleTest sample's campfire
+  toggle, OnCanvasPointerPressed, is the worked example — see WORKING EXAMPLES
+  ON GITHUB). The obvious application wiring: minimize ->
+  Engine.Instance.Pause(), restore -> Engine.Instance.Resume().
 
 Also of note:
   * Pausing BEFORE Start() is valid: the loop starts parked (minimized-at-
@@ -284,33 +366,40 @@ Also of note:
 
 GETTING ON SCREEN: GameSurfaceCanvas (both modes)
 --------------------------------------------------------------------------------
-The one control games render into is GameSurfaceCanvas (Host library), placed
-in a XAML page:
+The one control games render into is GameSurfaceCanvas (a SKXamlCanvas
+subclass in the Host assembly), placed in a XAML page:
 
+    xmlns:game="using:CodeBrix.Platform.GameEngine.Host.Rendering"
     <game:GameSurfaceCanvas x:Name="GameCanvas" />
 
 Key members:
-    FirstStarted            -- fires ONCE, at the first non-zero layout size.
+    FirstStarted            -- FirstStartedEventHandler(object sender,
+                               FirstStartedEventArgs e); e.NewSize is the
+                               first non-zero layout size. Fires ONCE.
                                START YOUR GAME FROM THIS EVENT; before it, the
                                surface has no real size.
-    SetRenderResolution(w,h)-- pins the engine render resolution; frames are
+    SetRenderResolution(int width, int height)
+                            -- pins the engine render resolution; frames are
                                aspect-fit letterboxed into the control. Call
                                BEFORE first access to Host. Non-positive values
                                track the control size instead.
     UseGpuRendering         -- opt-in to GpuRendering (GPU); set BEFORE
                                first access to Host, like SetRenderResolution.
                                Default false = CpuRendering (CPU). See RENDER MODES.
-    Host                    -- the RenderSurfaceHost the engine renders into
-                               (Mode A): a RenderSurfaceHost<BackbufferBase>
-                               whose backbuffer is a BitmapBackbuffer (CpuRendering)
-                               or GpuBackbuffer (GpuRendering). Bind(scene) connects
-                               a scene.
-    UsePixelFramePresenter()-- switches the canvas to presenter mode (Mode B).
+    Host                    -- the RenderSurfaceHost<BackbufferBase> the engine
+                               renders into (Mode A); its backbuffer is a
+                               BitmapBackbuffer (CpuRendering) or GpuBackbuffer
+                               (GpuRendering). Host.Bind(Scene newScene, bool
+                               limitCameraToWorldBoundPx = true) connects a scene.
+    RenderSurfaceAdapter    -- the RenderSurfaceAdapterBase in use (CPU or GPU).
+    UsePixelFramePresenter()-- switches the canvas to presenter mode (Mode B);
+                               returns the PixelFramePresenter.
     EnsureFocus()           -- makes the canvas reliably keyboard-focusable:
                                tab stop + focus-on-load + refocus-on-press.
-    WindowToBuffer/BufferToWindow -- pointer coordinate mapping across the
-                               letterbox (presenter mode).
-    SetPointerCursorHidden(b)-- hide/restore the cursor over the canvas.
+    WindowToBuffer(Point) / BufferToWindow(Point) -- pointer coordinate mapping
+                               across the letterbox (presenter mode); both
+                               return a nullable Windows.Foundation.Point.
+    SetPointerCursorHidden(bool hidden) -- hide/restore the cursor over the canvas.
 
 During a live window resize the canvas suppresses engine presents and re-blits
 the last frame at the new size; live presenting resumes ~500 ms after the size
@@ -354,8 +443,9 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
   * When no GPU context is available (no driver / no GPU support, or macOS in
     software-rendering mode) the adapter logs one warning and falls back to
     CPU-rendering the GpuBackbuffer's fallback surface (the game still runs);
-    IsGpuInitialized on the adapter reports the outcome, and the init log records
-    the chosen backend ("GPU rendering initialized (backend: Metal)").
+    IsGpuInitialized (bool?, null until the first attempt) on the adapter
+    reports the outcome, and the init log records the chosen backend ("GPU
+    rendering initialized (backend: Metal)").
   * WINDOWS: GpuRendering needs a real OpenGL driver (ICD). Most x64 machines
     have one from their GPU vendor; many Windows-on-ARM devices do NOT, and get
     OpenGL only from Microsoft's free "OpenCL and OpenGL Compatibility Pack"
@@ -366,28 +456,27 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
   * Unload/reload aware: when the canvas leaves the visual tree (window close or
     page navigation) the adapter stops driving frames and tears the GPU surface
     and context down while the owning window is still alive — on WGL the
-    off-screen context is bound to a window's device context (the head's own
-    window, or a private context-host window the GL wrapper owns on drivers that
-    require one), so Unloaded is the last moment teardown can reliably run. When the canvas returns, the context
-    is rebuilt lazily on the next frame notification. The CpuRendering adapter
-    and the Mode-B presenter likewise stop scheduling canvas paints while
-    unloaded. Without this, an engine still cycling after the last window
-    closed kept posting to the dispatcher and kept the process alive (a zombie
-    process with no window, observed on the Win32-Skia head; stopping the
-    engine on close remains the application's job, but exit no longer depends
-    on it).
+    off-screen context is bound to a window's device context, so Unloaded is
+    the last moment teardown can reliably run. When the canvas returns, the
+    context is rebuilt lazily on the next frame notification. The CpuRendering
+    adapter and the Mode-B presenter likewise stop scheduling canvas paints
+    while unloaded, so an engine still cycling after the last window closed no
+    longer keeps the process alive (stopping the engine on close remains the
+    application's job, but exit no longer depends on it).
   * The mode is fixed once Host is created; presenter mode (Mode B) is CPU-only.
 
 MODE A WALKTHROUGH 1: DERIVING FROM CodeBrixGameHost (recommended)
 --------------------------------------------------------------------------------
-CodeBrixGameHost (Host library) wires the canvas, input adapters, scene
-binding, and engine start; the game overrides content hooks. Initialize() runs
-this fixed sequence — override what you need, in the order it fires:
+CodeBrixGameHost (Host assembly) wires the canvas, input adapters, scene
+binding, and engine start; the game overrides content hooks.
+Initialize(string? configPath = null, bool? autoSaveConfig = null,
+LogLevel logLevel = LogLevel.Warning) runs this fixed sequence — override what
+you need, in the order it fires:
 
     OnInitializing
     ConfigurePlatform  -> OnConfigurePlatform
     ConfigureInput     -> keyboard/mouse/touch adapters wired to the canvas,
-                          OnKeyboardAdapterInitialized / OnMouseAdapter... /
+                          OnKeyboardAdapterInitialized / OnMouseAdapterInitialized /
                           OnConfigureGamepads / OnTouchAdapterInitialized
     LoadAssets                       } "load content"
     LoadTilesheets                   }
@@ -402,6 +491,10 @@ this fixed sequence — override what you need, in the order it fires:
     StartEngine        -> OnEngineStarted       (cycle thread now running)
     OnInitialized
 
+Members you get: Engine (=> Engine.Instance), Scene, RenderSurface (the
+GameSurfaceCanvas), OnRenderSurfaceResized(int width, int height),
+OnEnginePaused() / OnEngineResumed(), OnDisposing() / OnDisposed(), Dispose().
+
 Minimal game skeleton (the Spot.Brix sample is the full worked example):
 
     public sealed class MyGameHost : CodeBrixGameHost
@@ -409,7 +502,7 @@ Minimal game skeleton (the Spot.Brix sample is the full worked example):
         public MyGameHost(GameSurfaceCanvas canvas) : base(canvas) { }
 
         protected override void LoadAssets() { /* AudioResourceManager, AssetsFile... */ }
-        protected override void LoadTilesheets() { /* TilesheetFactory... */ }
+        protected override void LoadTilesheets() { /* TilesheetRegistry... */ }
         protected override void LoadAnimationCycles() { /* Cycle definitions */ }
         protected override Scene CreateInitialScene() { /* build + return scene */ }
         protected override void CreateInitialViews()
@@ -461,9 +554,10 @@ already cycling: post the scene mutation to the engine thread —
 
 MODE B WALKTHROUGH: SoftwareRenderedGameHostBase
 --------------------------------------------------------------------------------
-Derive, implement four members, construct with the canvas and tic rate, call
-Initialize() from FirstStarted (the SoftRender sample is the full worked
-example — 320x200 plasma+starfield at 70 Hz with raw-PCM audio):
+Derive, implement the abstract members, construct with the canvas and tic
+rate, call Initialize(LogLevel logLevel = LogLevel.Warning) from FirstStarted
+(the SoftRender sample is the full worked example — 320x200 plasma+starfield
+at 70 Hz with raw-PCM audio):
 
     public sealed class MyRetroHost : SoftwareRenderedGameHostBase
     {
@@ -481,8 +575,8 @@ example — 320x200 plasma+starfield at 70 Hz with raw-PCM audio):
         protected override void ConfigureAudio()      // opt-in
             => AudioSystem.Initialize(44100, 2);
 
-        protected override void ConfigureGamepads()   // opt-in
-            => _gamepads = Engine.Instance.InitializeSdlGamepadManager();
+        protected override void ConfigureGamepads()   // opt-in; needs the
+            => _gamepads = Engine.Instance.InitializeSdlGamepadManager(); // Sdl2 package
 
         protected override void OnTic() { /* one tic of game logic */ }
 
@@ -494,37 +588,46 @@ example — 320x200 plasma+starfield at 70 Hz with raw-PCM audio):
         protected override void OnEngineResumed() { }
     }
 
+Members you get: RenderSurface (GameSurfaceCanvas), Presenter
+(PixelFramePresenter), GameLoop (FixedRateGameLoop), ConfigureInput() (virtual;
+wires the keyboard adapter), Dispose() (stops and disposes the loop, calls
+OnShutdown, disposes the keyboard adapter and presenter — it does NOT dispose
+the Engine singleton).
+
 Per tic, on the dedicated game-loop thread, the base runs:
     InputPump.PollNow() -> OnTic() -> OnRenderFrame(buffer) -> present.
 PollNow refreshes gamepad state and then runs every poller, so a Mode-B game
 gets the same gamepad behavior — hotplug included — as a Mode-A one.
 
-FixedRateGameLoop semantics the game can rely on:
+FixedRateGameLoop(int ticsPerSecond, Action onTic) semantics the game can rely
+on:
   * Non-drifting fixed timestep: each tic's target advances by exactly one
     period; scheduling lag does not accumulate.
   * Bounded catch-up: at most MaxCatchUpTics (default 5) back-to-back tics;
     a longer stall re-baselines and counts DroppedTics instead of bursting.
   * Sleep+yield hybrid pacing — an idle loop does not burn a core.
-  * Pause()/Resume() (and the global engine pause via PauseWithEngine, which
-    the host base enables) park after the tic in progress and resume with a
-    re-baselined schedule: no burst, nothing dropped.
+  * Start()/Stop(), Pause()/Resume(), WaitUntilPaused() (and the global engine
+    pause via PauseWithEngine, which the host base enables) park after the tic
+    in progress and resume with a re-baselined schedule: no burst, nothing
+    dropped. IsRunning / IsPaused / TargetTicsPerSecond report state.
   * ActualTicsPerSecond / TicCount / DroppedTics for health monitoring.
   * A callback exception stops the loop, lands in LastException, and raises
-    UnhandledException — a Mode-B game should log it (the SoftRender host
-    shows the pattern).
+    UnhandledException (Action<Exception>) — a Mode-B game should log it (the
+    SoftRender host shows the pattern).
 
 PixelFramePresenter details:
   * Configure(width, height, format {Rgba8888,Bgra8888}, orientation
     {Identity,Rotate90}, scaleMode {Fit,Stretch,PixelPerfect,Center},
     filterQuality). Reconfigurable at any time from the game thread (e.g.
-    320x200 <-> 640x400).
-  * PresentFrame(bytes | uint[] | ReadOnlyMemory<byte>): any thread, once per
-    tic, exactly width*height*4 bytes; one full-frame copy, zero per-frame
-    managed allocations, latest-frame-wins triple buffering.
+    320x200 <-> 640x400). IsConfigured, FrameWidth, FrameHeight, Format,
+    Orientation, ScaleMode, FilterQuality read back the current setup.
+  * PresentFrame(ReadOnlySpan<byte> | uint[] | ReadOnlyMemory<byte>): any
+    thread, once per tic, exactly width*height*4 bytes; one full-frame copy,
+    zero per-frame managed allocations, latest-frame-wins triple buffering.
   * Rotate90 displays column-major (transposed) buffers with NO CPU transpose
     — for column-major renderers.
-  * WindowToBuffer/BufferToWindow map pointer coordinates across the
-    letterbox (exposed on the canvas too).
+  * WindowToBuffer(SKPoint) / BufferToWindow(SKPoint) map pointer coordinates
+    across the letterbox (exposed on the canvas too, in XAML points).
 
 TIMERS AND THE PER-CYCLE EVENTS (Mode A)
 --------------------------------------------------------------------------------
@@ -535,7 +638,11 @@ inside the cycle:
     t.Tick += () => SpawnWave();          // every 2.5 s of engine time
     Timer.Remove("spawner");              // or t.Dispose()
 
-  * TimerType.PreCycle fires at step 2 (before input/movement); PostCycle at
+    static Timer Add(string timerID, TimerType type, TimerCycles cycles, double length)
+    static Timer Add(TimerType type, TimerCycles cycles, double length)
+    static void Remove(string timerID);  static void ClearAll();  static bool PausedAll
+
+  * TimerType.PreCycle fires at step 3 (before input/movement); PostCycle at
     step 15 (after rendering). TimerCycles.Once auto-removes after firing.
   * Repeating timers are schedule-preserving: a late cycle does not shift the
     next due time (no drift), and a missed interval fires as soon as possible.
@@ -568,36 +675,107 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
                                && e.KeyCode == (int)VirtualKey.W) ... };
       kb.StartMonitoringKey((int)VirtualKey.W, "W");
       // or StartMonitoringKeys(codes) / StartMonitoringAllKeys()
-  Key codes are Windows VirtualKey values cast to int. KeyDownEventArgs
-  carries KeyAction (Pressed/Released/Repeated) and modifier flags.
-  MouseEventArgs has edge helpers (LeftButtonJustPressed, ...) plus polled
-  properties on the poller (CurrentPosition, ButtonStates, ScrollDelta).
+  KeyboardEventPoller signatures:
+      StartMonitoringKey(int keyCode, string? displayName = null,
+                         double timeBetweenEvents = -1, bool isPaused = false)
+      StartMonitoringKeys(IEnumerable<int> keyCodes, double timeBetweenEvents = -1)
+      StartMonitoringAllKeys(double timeBetweenEvents = -1)
+      StopMonitoringKey(int keyCode) / StopMonitoringKey(string key)
+      StopMonitoringAllKeys();  AllKeyConfigs;  PauseAllKeyEvents;  Adapter
+  Key codes are Windows VirtualKey values (Windows.System.VirtualKey) cast to
+  int. KeyDownEventArgs carries KeyConfig (KeyEventConfiguration), KeyCode,
+  KeyAction (Pressed/Released/Repeated), Modifiers (KeyboardModifierState) and
+  IsShift/IsCtrl/IsAlt.
+  MouseEventPoller: StartMonitoringMouse(bool trackMouseMovement = true,
+  double timeBetweenEvents = -1, bool isPaused = false), StopMonitoringMouse(),
+  event MouseEvent (Action<MouseEventArgs>), plus polled properties
+  CurrentPosition, ButtonStates (IReadOnlyDictionary<MouseButton,
+  MouseButtonState>), ScrollDelta, CurrentKeyboardModifiers. MouseEventArgs
+  has edge helpers (LeftButtonJustPressed, ...).
   MouseEventArgs.Tick / TouchEventArgs.Tick carry the HighResTimer tick of the
   poll that raised the event, for input timing that cannot be reconstructed
   afterwards (0 when the raiser did not supply one).
-  Touch has Began/Moved/Ended events plus built-in tap/swipe/pinch
-  recognizers. Event pacing: Configuration.TimeBetweenKeyboardEvents /
+  Event pacing: Configuration.TimeBetweenKeyboardEvents /
   ...Mouse/Touch/GamepadEvents (default 0.03 — SECONDS, despite a few older
   doc comments saying milliseconds) throttle repeat delivery; per-key
   overrides via the StartMonitoring* timeBetweenEvents parameter.
   Start/StopMonitoring* registrations are queued and applied at the next
   poll — not instantaneous.
 
-  POLLING: IKeyboardAdapter.IsDown(keyCode) (reach it via
+  POLLING: IKeyboardAdapter.IsDown(int keyCode) (reach it via
   KeyboardEventPoller.Adapter or your own adapter reference) is lock-free and
   valid from any thread at any time — the per-tic gameplay path for held keys
-  (movement). Gamepads: read IGamepadAdapter (sticks, triggers, PressedButtons)
-  straight off Engine.Instance.Input.GamepadManager.ConnectedAdapters. NEVER
-  call IGamepadManager.Update() yourself — the engine refreshes gamepad state
-  in BOTH modes (engine cycle step 4, or InputPump.PollNow in Mode B), throttled
+  (movement). IMouseAdapter exposes CurrentPosition, PressedButtons
+  (HashSet<MouseButton>), CurrentKeyboardModifiers, ScrollDelta. Gamepads: read
+  IGamepadAdapter (LeftStick/RightStick as GamepadStickState?, LeftTrigger/
+  RightTrigger, PressedButtons, GamepadId) straight off
+  Engine.Instance.Input.GamepadManager.ConnectedAdapters. NEVER call
+  IGamepadManager.Update() yourself — the engine refreshes gamepad state in
+  BOTH modes (engine cycle step 4, or InputPump.PollNow in Mode B), throttled
   by Configuration.TimeBetweenGamepadStateUpdates. A game that calls it too gets
-  unthrottled native device polling on top of the engine's.
+  unthrottled native device polling on top of the engine's. A gamepad BACKEND
+  is a separate package — see the Sdl2 AGENT-README named in OVERVIEW.
 
-  Wiring adapters (Host extensions, canvas-based):
-      Engine.InitializeCodeBrixKeyboardAdapter(canvas);
-      Engine.InitializeCodeBrixMouseAdapter(canvas);
-      Engine.InitializeCodeBrixTouchAdapter(canvas);
-  CodeBrixGameHost and SoftwareRenderedGameHostBase do this for you.
+  TOUCH AND GESTURES: Engine.Instance.Input.TouchEventPoller (TouchEventPoller,
+  which implements ITouchInput):
+      ActiveTouches : IReadOnlyList<TouchPoint>
+      events TouchBegan / TouchMoved / TouchEnded : EventHandler<TouchEventArgs>
+      event TouchEvent : Action<GestureEventArgs>     -- every recognized gesture
+      TapRecognizer / SwipeRecognizer / PinchRecognizer (built in, always wired)
+      StartMonitoringTouch(double timeBetweenEvents = -1, bool isPaused = false)
+      StopMonitoringTouch();  Adapter;  Configuration
+  TouchPoint(int Id, Point Position, TouchPhase Phase) is a readonly record
+  struct; TouchPhase = Began, Moved, Stationary, Ended, Cancelled.
+  TouchEventArgs: Touch (TouchPoint), Tick (long).
+  Recognizers (each is constructed over an ITouchInput and is IDisposable;
+  the poller owns its three, so a game normally just subscribes):
+      TapGestureRecognizer   -- MaxTapDurationSeconds (0.3), MaxTapMovementPixels
+                                (20); event Tapped : EventHandler<TappedEventArgs>
+                                (Position, TouchId)
+      SwipeGestureRecognizer -- MinimumSwipeSpeedPixelsPerSecond (200);
+                                event Swiped : EventHandler<SwipedEventArgs>
+                                (Direction : SwipeDirection Right/Left/Up/Down,
+                                StartPosition, EndPosition, SpeedPixelsPerSecond)
+      PinchGestureRecognizer -- event PinchUpdated : EventHandler<PinchedEventArgs>
+                                (ScaleDelta, CurrentDistance)
+  GestureEventArgs wraps one of them: GestureType (Tap/Swipe/Pinch), IsTap/
+  IsSwipe/IsPinch, and the Tap/Swipe/Pinch payload (the others null).
+  The engine-side seam is ITouchAdapter (ActiveTouches; ConsumeEndedTouches());
+  the Host's CodeBrixTouchInputAdapter implements it over a UIElement.
+
+  INPUT EVENT CONFIGURATION: every registration is an
+  InputEventConfigurationBase (TimeBetweenEvents in seconds; IsPaused):
+      KeyEventConfiguration(string key, double secondsBetweenEvents = 0,
+                            bool isPaused = false)             -- Key
+      MouseEventConfiguration(bool trackMouseMovement,
+                            double secondsBetweenEvents = 0,
+                            bool isPaused = false)             -- TrackMouseMovement
+      TouchEventConfiguration(double secondsBetweenEvents = 0, bool isPaused = false)
+      GamepadButtonEventConfiguration(string button, double secondsBetweenEvents = 0,
+                            bool isPaused = false)             -- Button
+  Set IsPaused on one configuration to mute that registration without
+  unregistering it; PauseAllKeyEvents (keyboard) and PauseAllInput (gamepad
+  poller) mute a whole poller. The live registrations are readable:
+  KeyboardEventPoller.AllKeyConfigs, MouseEventPoller.Configuration,
+  TouchEventPoller.Configuration, GamepadEventPoller.AllButtonConfigsByGamepadId.
+
+  Wiring adapters (Host extension methods in CodeBrix.Platform.GameEngine.Host.
+  EngineExtensions, canvas-based):
+      Engine.Instance.InitializeCodeBrixKeyboardAdapter(UIElement element);
+      Engine.Instance.InitializeCodeBrixMouseAdapter(UIElement element,
+                                  MouseEventConfiguration? mouseEventConfiguration = null);
+      Engine.Instance.InitializeCodeBrixTouchAdapter(UIElement element);
+  CodeBrixGameHost and SoftwareRenderedGameHostBase do this for you. The
+  adapter classes themselves are public if you need them directly:
+      CodeBrixKeyboardAdapter(UIElement element) : IKeyboardAdapter, IDisposable
+          IsDown(int keyCode); CurrentKeyboardModifiers;
+          static int? GetKeyCodeFromString(string keyName)
+      CodeBrixMouseAdapter(UIElement element) : IMouseAdapter, IDisposable
+          CurrentPosition; PressedButtons; CurrentKeyboardModifiers;
+          ScrollDelta (reading it returns the accumulated delta and resets it)
+      CodeBrixTouchInputAdapter(UIElement element) : ITouchAdapter, IDisposable
+          ActiveTouches; ConsumeEndedTouches()
+  Or pass your own adapters to Engine.Initialize(...) (see LIFECYCLE).
 
   FOCUS: keyboard input reaches the canvas only while it HAS focus. Call
   canvas.EnsureFocus() (host bases apply it) — and remember that clicking any
@@ -606,10 +784,11 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   FOCUSED element: a handler attached to the canvas never sees keys while a
   sibling control is focused.
 
-  RELATIVE MOUSE (FPS mouse look): RelativeMouseSession over
-  MouseDevice.MouseMoved — Begin() (hide + confine + accumulate), per-tic
-  ConsumeDelta() -> (dx, dy), End(). Inactive (logged) on platform versions
-  without relative mouse support.
+  RELATIVE MOUSE (FPS mouse look): RelativeMouseSession(GameSurfaceCanvas
+  renderSurface) over MouseDevice.MouseMoved — Begin() (hide + confine +
+  accumulate), per-tic ConsumeDelta() -> (int DeltaX, int DeltaY), End(),
+  IsActive; Dispose() ends it. Inactive (logged) on platform versions without
+  relative mouse support.
 
   WHILE PAUSED: engine/game-loop input stops entirely. UI-level input
   (canvas.KeyDown, canvas.PointerPressed at the XAML layer) keeps flowing —
@@ -628,22 +807,21 @@ device, so overlapping sounds are cheap):
   PlaybackCompleted. Clone() gives an independent voice of the same clip.
 
   SHORT-EFFECT PRELOAD (automatic): container-format sounds (.wav/.mp3/.ogg/
-  .flac) no
-  longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds (default
-  10 s; 0 disables) are decoded ONCE to raw float PCM in memory at load time
-  (AudioResource.IsPreloaded == true; the CachedSound type). Plays, Clone()s,
-  SoundChannel clips, and SfxVoicePool voices over a preloaded resource share
-  that single decoded buffer — no decode, file, or MP3 work ever happens on
-  the real-time audio thread. Ogg Vorbis and FLAC decode through the same
-  managed path as WAV and MP3, which matters because free asset packs ship
-  .ogg almost exclusively. When the app pinned the device format
-  (AudioSystem.Initialize) the decode also rate-converts up front. Longer
-  material (music, ambience) keeps its streaming reader — leave it that way;
-  preloading minutes of PCM would waste memory for a single voice.
+  .flac) no longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds
+  (default 10 s; 0 disables) are decoded ONCE to raw float PCM in memory at
+  load time (AudioResource.IsPreloaded == true; the CachedSound type). Plays,
+  Clone()s, SoundChannel clips, and SfxVoicePool voices over a preloaded
+  resource share that single decoded buffer — no decode, file, or MP3 work
+  ever happens on the real-time audio thread. Ogg Vorbis and FLAC decode
+  through the same managed path as WAV and MP3, which matters because free
+  asset packs ship .ogg almost exclusively. When the app pinned the device
+  format (AudioSystem.Initialize) the decode also rate-converts up front.
+  Longer material (music, ambience) keeps its streaming reader — leave it that
+  way; preloading minutes of PCM would waste memory for a single voice.
 
-  RAPID-FIRE SFX — SfxVoicePool: route sound-effect TRIGGERS (gunshots,
-  pickups, impacts) through a fixed-size voice pool instead of playing the
-  AudioResource itself per shot:
+  RAPID-FIRE SFX — SfxVoicePool: route sound-effect TRIGGERS (shots, pickups,
+  impacts) through a fixed-size voice pool instead of playing the
+  AudioResource itself per trigger:
       AudioResourceManager.Instance.TryPlaySfx("laser", volume, pan, priority);
   That one call plays the preloaded clip on the shared pool
   (AudioResourceManager.Instance.SfxPool, 32 pre-allocated voices) — no
@@ -711,10 +889,10 @@ device, so overlapping sounds are cheap):
   game that never touches AudioMixer sounds exactly as it did before buses
   existed. Bus defaults: AudioResource, SoundChannel and pool voices are Sfx;
   StreamingAudioSource is Music (it is the endless-material path); everything
-  MusicManager plays is Music. Each exposes a Bus property to override.
-  MusicDuckMultiplier is read-only here and owned by MusicManager's ducking —
-  duck through that, never by writing MusicVolume, so the player's own setting
-  survives and can be restored.
+  MusicManager plays is Music. Each exposes a Bus property (AudioBus) to
+  override. MusicDuckMultiplier is read-only here and owned by MusicManager's
+  ducking — duck through that, never by writing MusicVolume, so the player's
+  own setting survives and can be restored.
 
 MUSIC (MusicManager)
 --------------------------------------------------------------------------------
@@ -722,7 +900,7 @@ MusicManager.Instance is to music what SfxVoicePool is to sound effects: the
 place the policy lives, so a game does not reimplement fade timing and
 "which track is current" bookkeeping. Everything it plays is on AudioBus.Music.
 
-  WHAT DRIVES THE FADES: ONE background thread (MusicFadeTicker, 20 ms). A
+  WHAT DRIVES THE FADES: ONE background thread (a 20 ms fade ticker). A
   thread rather than engine Timers because fades must behave identically in
   both hosting modes and MODE B NEVER RUNS THE ENGINE CYCLE. It is not started
   until the first fade, parks on a wait handle when idle rather than spinning,
@@ -749,8 +927,8 @@ place the policy lives, so a game does not reimplement fade timing and
   a tick apart and leave a hole or a bump in the middle; complementary values
   from a single progress cannot. CrossfadeCurve is EqualPower by default
   (a linear crossfade sits at 0.5/0.5 halfway, ~6 dB down, and audibly dips);
-  choose Linear for CORRELATED material (a stem swap, a loop splice), where it
-  is the correct law.
+  choose Linear (MusicFadeCurve) for CORRELATED material (a stem swap, a loop
+  splice), where it is the correct law.
 
   DUCKING: PushDuck(depth, attack, release) returns a handle; dispose it to
   release. Overlapping ducks are reference-counted and the DEEPEST wins, so two
@@ -868,9 +1046,10 @@ place the policy lives, so a game does not reimplement fade timing and
   are exempt: they are converted through the whole tempo map.
 
   JUMP POINTS: a MIDI file's markers (and cue points) become
-  MusicTimeline.Markers, and MusicManager.JumpToMarker("chorus") seeks the
-  current track to one (case-insensitive; returns false rather than seeking
-  somewhere arbitrary if there is no such marker).
+  MusicTimeline.Markers (MusicMarker(string Name, TimeSpan Time)), and
+  MusicManager.JumpToMarker("chorus") seeks the current track to one
+  (case-insensitive; returns false rather than seeking somewhere arbitrary if
+  there is no such marker).
 
 SCENES, LAYERS, AND TILES (Mode A)
 --------------------------------------------------------------------------------
@@ -883,6 +1062,11 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
                                coordinateSystem: CoordinateSystemTypes.Orthogonal);
     layer[0, 0].CurrentFrame = tilesheet[4, 4];   // place a graphic on a cell
 
+    SceneLayer AddLayer(int columnCount, int rowCount, int width = 32,
+                        int height = 32, int zOrder = 0, float parallax = 1f,
+                        CoordinateSystemTypes coordinateSystem = Orthogonal)
+    SceneLayer AddLayer(SceneLayer sceneLayer);   void RemoveAllLayers()
+
   * Layers: ZOrder (lower renders behind), Parallax (1 = moves with camera,
     <1 background, >1 foreground), Visible, WrapHorizontally/Vertically,
     OriginPx (world origin of tile (0,0)), ShowGridLines/ShowCollisionBoxes
@@ -894,9 +1078,10 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     square lattice — columns stay horizontal while rows advance down and to
     the right, giving a parallelogram tile footprint rather than an isometric
     diamond; tile art fits that footprint with transparent bounding-box
-    corners). The CoordinateTest sample exercises the first five. Conversions: layer.GridToWorldPx / WorldPxToGrid /
-    GetAdjacentTile(tile, CardinalDirections); tile indexers return null out
-    of bounds (no auto-wrap — call WrapGrid first when wrapping).
+    corners). The CoordinateTest sample exercises the first five. Conversions:
+    layer.GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile,
+    CardinalDirections); tile indexers return null out of bounds (no
+    auto-wrap — call WrapGrid first when wrapping).
   * SceneLayerTile: cells are created with the layer; assigning CurrentFrame
     places a tilesheet frame. Set EnableAnimator = true only on tiles that
     animate (it allocates an Animator per tile).
@@ -904,6 +1089,8 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     must be Dispose()d (or Scene.ClearAllScenes()) or they linger there.
   * Scene.FullRefreshNeeded flags a full redraw; structural changes set it
     automatically.
+  * Scene, SceneLayer and every Tile carry a TypedValueBag (ValueBag) for the
+    game's own per-object data (see VALUE BAGS; not serialized).
 
 VIEWS AND CAMERAS (Mode A)
 --------------------------------------------------------------------------------
@@ -912,7 +1099,13 @@ rectangle + zoom) with a Camera (world position):
 
     host.ViewManager.ConfigureSingleFullView();          // the usual case
     host.ViewManager.ConfigureVerticalSplit(1f, 1f);     // split screen
-    var view = host.ViewManager.AddView(targetRectPx, zoom, zOrder);  // custom
+    host.ViewManager.AddView(targetRectPx, zoom, zOrder); // custom
+
+    void ConfigureSingleFullView(float zoom = 1f, int zOrder = 0)
+    void ConfigureVerticalSplit(float leftZoom = 1f, float rightZoom = 1f)
+    void AddView(Rectangle targetRectPx, float zoom = 1f, int zOrder = 0,
+                 RectangleF? worldBoundsPx = null)
+    void ClearViews();   ReadOnlyCollection<View> Views
 
   * Camera movement (every move clamps to WorldBoundsPx unless it is Empty):
     instant — SnapTo, CenterOn, CenterOnGrid, PanBy; smooth — PanTo/
@@ -933,17 +1126,27 @@ rectangle + zoom) with a Camera (world position):
     exists — bind/configure from FirstStarted onward, on the UI thread.
   * host.RedrawDirtyRectangleOnly (default true) presents only dirty regions;
     host.Backbuffer.ClearColor sets the letterbox/background color.
-  * RenderBackbufferPostScene(SKCanvas) is a post-scene overlay hook — it runs
-    on the engine thread for CPU surfaces but on the GL thread for GPU
-    backbuffers; never marshal that canvas elsewhere.
+  * host.RenderBackbufferPostScene (event Action<SKCanvas>) is a post-scene
+    overlay hook — it runs on the engine thread for CPU surfaces but on the UI
+    thread with the GPU context current for GPU backbuffers; never marshal
+    that canvas elsewhere.
 
 TILESHEETS, SPRITES, AND ANIMATION (Mode A)
 --------------------------------------------------------------------------------
 TILESHEETS: TilesheetRegistry.Instance is the named store —
-LoadFromImageFile / LoadFromBitmap / LoadFromStream / LoadFromAssetsFile /
-LoadFromDefinitionFile(.gts) / LoadFromDefinitionAsset. A .gts file is a JSON
-TilesheetDefinition (image source, regions, mask); relative image paths
-resolve against the .gts directory.
+    Tilesheet LoadFromImageFile(string name, string imageFilePath)
+    Tilesheet LoadFromBitmap(string name, SKBitmap bitmap)
+    Tilesheet LoadFromStream(string name, Stream stream)
+    Tilesheet LoadFromAssetsFile(AssetsFile assetsFile, string entryName)
+    Tilesheet LoadFromDefinitionFile(string gtsPath)
+    Tilesheet LoadFromDefinition(TilesheetDefinition definition,
+                                 string? baseDirectory = null)
+    Tilesheet LoadFromDefinitionAsset(AssetsFile assetsFile, string gtsEntryName)
+    bool TryGet(string name, out Tilesheet? sheet);  Tilesheet? GetOrNull(name)
+    this[string name];  Remove(string name, bool dispose = false);  Names;
+    Count;  GetAll();  Clear()
+A .gts file is a JSON TilesheetDefinition (image source, regions, mask);
+relative image paths resolve against the .gts directory.
 
     var sheet = TilesheetRegistry.Instance.LoadFromImageFile("spots", path);
     sheet.DefaultRegion.TileSize = new Size(93, 96);
@@ -951,14 +1154,52 @@ resolve against the .gts directory.
     Frame frame = sheet[0, 0];                  // or sheet[regionName, x, y]
 
 Sheets can carry multiple named Regions (AddRegion with area, tile size,
-padding, margin, overhang); Frame is the (sheet, cell) handle everything else
-consumes.
+padding, margin, overhang; GetRegion(name); RemoveRegion(name, dispose);
+this[regionName]); Frame is the (sheet, cell) handle everything else consumes
+(GetFrame(x, y) / GetFrame(regionName, x, y)). ApplyMask(SKColor? maskColor =
+null, byte tolerance = 5) sets MaskColor/MaskTolerance; GetImage/GetBitmap
+(regionName, x, y) hand back one cell.
+
+THE TILESHEET DEFINITION MODEL (.gts) — namespace ...Drawing.Tilesheets.GTS:
+    TilesheetDefinition          Name, Image (TilesheetImageDefinition),
+                                 Regions (List<TilesheetRegionDefinition>),
+                                 Mask (TilesheetMaskDefinition?),
+                                 PremultiplyAlpha, Source (TilesheetDefinitionSource)
+    TilesheetImageDefinition     FilePath, or AssetsFilePath + AssetEntryName
+    TilesheetRegionDefinition    Name (default region name), Area (Rectangle),
+                                 TileSize (Size), TilePadding / RegionMargin /
+                                 Overhang (Spacing)
+    TilesheetMaskDefinition      Red, Green, Blue, Alpha (255), Tolerance (5)
+    TilesheetDefinitionSource    Kind (TilesheetDefinitionSourceKind: None,
+                                 LooseDefinitionFile, PackedDefinitionFile,
+                                 Generated), GtsFilePath, AssetsFilePath,
+                                 AssetEntryName; factories LooseDefinitionFile(
+                                 gtsFilePath), PackedDefinitionFile(assetsFilePath,
+                                 assetEntryName), Generated(), None()
+    TilesheetDefinitionSerializer (static)
+        TilesheetDefinition Load(string filePath) / Load(Stream stream)
+        void Save(string filePath, TilesheetDefinition definition)
+        TilesheetDefinition FromJson(string json);  string ToJson(TilesheetDefinition)
+        TilesheetDefinition FromTilesheet(Tilesheet tilesheet,
+                                          string? baseDirectory = null,
+                                          bool makePathsRelative = false)
+        void Save(string filePath, Tilesheet tilesheet, bool makePathsRelative = true)
+        string ToJson(Tilesheet tilesheet, string? baseDirectory = null,
+                      bool makePathsRelative = false)
+Round trip: build a Tilesheet in code, Save(path, sheet) writes the .gts; the
+save system's separateGtsFiles option and LoadFromDefinitionFile use the same
+format.
 
 SPRITES: create ONLY via the manager (the constructor is not public):
 
     var sprite = SpriteManager.Instance.CreateSprite(sceneLayer, new Frame(sheet, 0, 0), "hero");
     sprite.Visible = true;
     sprite.SetPosition(new Vector2(5, 0));      // GRID cells, not pixels
+
+    Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null)
+    Sprite CloneSprite(Sprite sprite) / CloneSprite(Sprite sprite, SceneLayer sceneLayer)
+    Sprite? CloneSprite(string id, SceneLayer sceneLayer);  Sprite? GetSpriteByID(string ID)
+    List<Sprite> GetSpritesAtViewPixel(...);  bool SizeNewSpritesToSceneLayer
 
   * Sprite positions are GRID coordinates on their scene layer; RenderSize,
     NudgeX/NudgeY, and CollisionArea are pixels.
@@ -974,6 +1215,8 @@ SPRITES: create ONLY via the manager (the constructor is not public):
   * Jiggle (visual-only shake; never affects collision or RenderSize):
     StartJiggle(intensityX, intensityY, speed, duration, loop, ...),
     JiggleOnce, StopJiggle.
+  * CompositeSprite groups sprites (CompositeAnchorMode) and is itself an
+    IMovableOnSceneLayer.
 
 ANIMATION CYCLES:
 
@@ -988,16 +1231,18 @@ ANIMATION CYCLES:
     key replaces it, and SetCurrentCycle/StartAnimation(key) fetch a CLONE.
   * Cycles can chain (NextCycle) and hide the tile at cycle end
     (hideTileOnCycleEnd). A throttle of 0 auto-stops the animation.
-  * Animator events: Started, Stopped, Cycled (per frame advance). Never call
-    Animator.Dispose directly — the owning Tile does.
+  * Animator events: Started, Stopped, Cycled (per frame advance;
+    AnimatorEventArgs). Never call Animator.Dispose directly — the owning Tile
+    does.
   * Static scene tiles animate too: set tile.EnableAnimator = true first.
 
 MOVEMENT, EASING, AND COLLISIONS (Mode A)
 --------------------------------------------------------------------------------
 Every Sprite (and DirectComposite / movable direct drawing) has a .Movement
 MovementController. Units are the mover's space — GRID cells for sprites,
-PIXELS for direct drawings; all durations are seconds. Per-frame priority:
-Follow > Scripted > Integrated physics.
+PIXELS for direct drawings (MovementSpace.Grid / MovementSpace.Pixel); all
+durations are seconds. Per-frame priority: Follow > Scripted > Integrated
+physics.
 
   SCRIPTED (tweens):
     sprite.Movement.MoveTo(target, 0.4f, EasingKind.SmootherStep);
@@ -1019,6 +1264,11 @@ Follow > Scripted > Integrated physics.
     PITFALL: MoveBy(delta, float, ...) has two meanings — with an easing
     argument the float is a DURATION (tween); without, it is a SPEED
     (constant velocity). Pass EasingKind/Func explicitly to get the tween.
+    Read-only introspection: Movement.MovementState (MovementState: Velocity,
+    Acceleration, MaxSpeed, LinearDamping, HasMotion, MovementSpace),
+    Movement.IsScripted, Movement.IsIntegratedActive. The active script is a
+    ScriptedMovement (Type: MovementScriptType None/TweenTo/Toward, Origin,
+    Target, DurationSec, ElapsedSec, SpeedPerSec, SnapEpsilon, Easing).
   INTEGRATED (physics): SetVelocity, SetAcceleration, SetMaxSpeed,
     SetLinearDamping. Setting velocity/acceleration cancels a script;
     starting a script zeroes velocity/acceleration.
@@ -1030,10 +1280,13 @@ Follow > Scripted > Integrated physics.
 COLLISIONS:
   * Nothing collides until tile.CollisionsEnabled = true (default false).
     Sprites auto-create a TileCollider with all-groups masks; customize with
-    TileCollider(tile, collisionGroup, collidesWith, CollisionResponseType).
+    TileCollider(Tile tile, int collisionGroup, int collidesWith,
+    CollisionResponseType responseType = CollisionResponseType.Solid).
   * Groups are bitmasks — allocate named bits via the scene's
-    CollisionGroups registry (Define/Get; presets WorldStatic, Actors,
-    Projectiles, Triggers).
+    CollisionGroups registry (CollisionGroupRegistry: int Define(string name),
+    int Get(string name), GetGroupNames(); preset bits WorldStatic, Actors,
+    Projectiles, Triggers). CollisionMasks.None (0) and CollisionMasks.All
+    (~0) are the two constants.
   * Resolution is AUTOMATIC, once per cycle, per layer: Solid vs Solid gets
     a minimum-axis push-out with velocity canceled on the hit axis (slide);
     Trigger reports without push-out. (Overlap events are currently
@@ -1041,6 +1294,38 @@ COLLISIONS:
     via SceneLayer.ColliderRegistry.QueryAabb for game logic.)
   * SceneLayer.ShowCollisionBoxes = true overlays collision bounds for
     debugging.
+  * Tile.AdjustCollisionArea (CollisionDetectionAdjustment: Top, Bottom,
+    Left, Right in pixels; CollisionDetectionAdjustment.None) shrinks or grows
+    a tile's collision rectangle relative to its render bounds.
+
+THE COLLISION MODEL TYPES (namespace ...Physics.Collisions):
+    ICollisionEntity            Rectangle CollisionArea
+    ICollisionMovableEntity     : ICollisionEntity — TranslateWorldPx(int dx, int dy),
+                                CancelVelocityComponent(bool cancelX, bool cancelY)
+                                (Sprite implements this; the resolver pushes
+                                through it)
+    ICollider                   Aabb BoundsWorldPx; ICollisionEntity Owner;
+                                bool IsStatic; int CollisionGroup {get;set;};
+                                int CollidesWith {get;set;};
+                                CollisionResponseType ResponseType {get;set;}
+    CollisionResponseType       Solid, Trigger
+    Aabb(float minX, float minY, float maxX, float maxY)
+                                MinX/MinY/MaxX/MaxY, Width, Height, Center (PointF),
+                                Intersects(in Aabb other), ToRectangle(),
+                                static FromRectangle(Rectangle) / FromRectangleF(RectangleF)
+    CollisionResult(ICollider primary, ICollider other, CollisionDirectionFrom direction)
+                                Primary, Other, Direction
+    CollisionDirectionFrom      N, NE, E, SE, S, SW, W, NW, Center;
+                                CollisionDirectionHelper.FromCenters(Aabb primary, Aabb other)
+    ColliderRegistry            (one per SceneLayer) StaticColliders, DynamicColliders,
+                                Register(ICollider), Unregister(ICollider),
+                                void QueryAabb(in Aabb area, int layerMask,
+                                               int collidesWithMask,
+                                               List<ICollider> results,
+                                               ICollider? ignore = null)
+  A typical game-logic query: build an Aabb around the player, call QueryAabb
+  with CollisionMasks.All for both masks and a reusable List<ICollider>, then
+  inspect each result's Owner (the Tile) and ResponseType.
 
 DIRECT DRAWINGS AND PARTICLES (Mode A, immediate-mode)
 --------------------------------------------------------------------------------
@@ -1065,6 +1350,7 @@ and self-register with DirectDrawingManager (dispose to remove).
     DirectComposite(host, DirectDrawingMode.View)
         .Add(child1).Add(child2)      // group; has .Movement (pixel space)
         .SetOpacity/FadeTo/FadeIn/FadeOut
+    ImageInstanceLayer                // many ImageInstance copies of one image
     ParticleSurface(host, layerOrView, bounds, nickname, maxParticles)
         .Emitters.Add(new ParticleEmitter {
             Position, EmitRate, LifeRange, VelocityRangeX/Y, SizeRange,
@@ -1072,6 +1358,11 @@ and self-register with DirectDrawingManager (dispose to remove).
             OnSpawn = (ref Particle p) => { /* per-particle custom */ } });
         // plus Burst(emitter, count), ActiveParticleCount, GlobalEmitScale,
         // CullingMarginX for off-surface emitters
+
+Fonts for TextBlock come from SKTypeface or from FontManager (see FONTS AND
+SVG). Custom drawables derive from DirectDrawingBase (or
+DirectDrawingMovableBase for a .Movement) and override OnDraw — the GpuRender
+sample's PlasmaBackdrop is the worked example.
 
 The ParticleTest sample is the reference for particles + composites +
 TextBlock; the glowing pulsing text box it animates upward is a
@@ -1098,10 +1389,10 @@ frame, alignment/nudge/render-size, collision flag), animation cycles
 (source, volume/pan/looping), asset-pack references, and tilesheets
 (re-registered by definition). SHARED REFERENCES are preserved as identities:
 a sprite's layer reference and the scene's layer entry deserialize to the SAME
-instance ($id/$ref via CodeBrix.Json.Extensions Feature A). Loaded content is
-fully REHYDRATED: layer collision registries/refresh queues, tile colliders,
-tile->layer back-references, sprite animators/movement/colliders, and
-scene<->layer event wiring are rebuilt during the load's merge step.
+instance ($id/$ref via CodeBrix.Json.Extensions reference handling). Loaded
+content is fully REHYDRATED: layer collision registries/refresh queues, tile
+colliders, tile->layer back-references, sprite animators/movement/colliders,
+and scene<->layer event wiring are rebuilt during the load's merge step.
 
 NOT persisted (by design): State.ValueBag and the per-tile/per-scene ValueBags
 (open-ended object data), in-flight movement scripts/jiggle/pulse state
@@ -1170,9 +1461,11 @@ immediately.
     first, then base-name match ignoring extension.
   * AssetsFileIdentifier(pack, type, name) is a serializable pointer to one
     entry (used by audio/tilesheet loading and save files); IsValid guards a
-    missing entry.
+    missing entry. AssetsFileEntry describes one stored entry.
   * AudioResourceManager.LoadFromEngineAssetsFile(pack) bulk-loads every
-    audio entry.
+    audio entry; SvgResourceManager.Instance.LoadFromEngineAssetsFile(pack)
+    does the same for SVGs; TilesheetRegistry.LoadFromAssetsFile /
+    LoadFromDefinitionAsset pull images and .gts definitions.
 
 CONFIGURATION: EngineConfiguration / EngineConfigurationFile
 --------------------------------------------------------------------------------
@@ -1205,22 +1498,317 @@ Engine.Instance.Configuration (loaded by Initialize; default file
 EngineConfigurationFile.CreateNew/Load/Save manage the file; AutoSave writes
 on Dispose.
 
-PLAYING WELL WITH THE ENGINE — THE CHECKLIST
+PLUGINS, LOGGING, DI, VALUE BAGS, FONTS AND SVG
 --------------------------------------------------------------------------------
-A game "plays well" when it respects the engine's contracts instead of
-fighting them:
+PLUGINS (namespace ...Extensibility): IEnginePlugin hooks the cycle without
+subscribing to events —
+    string Name;  string Version
+    void OnInitialize(Engine engine)
+    void OnPreCycle(Engine engine, double deltaMs)
+    void OnPreFrameRender(Engine engine, double deltaMs)
+    void OnPostFrameRender(Engine engine, double deltaMs)
+    void OnPostCycle(Engine engine, double deltaMs)
+    void OnPostRenderCanvas(Engine engine, RenderSurfaceHostBase host, SKCanvas canvas)
+                                                  // default no-op overlay hook
+    void OnShutdown(Engine engine)
+    EnginePluginRegistry.Register(IEnginePlugin) / Unregister(IEnginePlugin) / All
+The same thread rules as the matching events apply (engine thread; the canvas
+hook follows the surface's render thread, UI thread under GpuRendering).
 
-THREADS
-  [] Mutate game state on the engine thread (Mode A) or the game-loop thread
-     (Mode B) only; use EngineDispatcher.Post to get there.
-  [] Never touch XAML/UI from the engine or game-loop thread; use
-     UiDispatcher.Post.
-  [] Audio fill callbacks: fast, allocation-free, never block, never touch
-     game state.
-  [] Do not call blocking waits (Task.Wait, lock convoys, I/O) inside cycle
-     events, timer handlers, or OnTic — one slow handler stalls the whole
-     game.
+LOGGING (namespace ...Logging): the engine logs through
+Microsoft.Extensions.Logging. EngineLogger (static):
+    EngineLoggingMode Mode            -- Asynchronous (default) / Synchronous
+    void StartAsyncLogging(int capacity = ...);  void StopAsyncLogging(
+        bool flush = true, TimeSpan? flushTimeout = null)
+    void SwitchToSyncAndFlush(TimeSpan? flushTimeout = null);  void SwitchToAsync(int? capacity = null)
+    ILoggerFactory EngineLoggerFactory;  ILogger<T> GetLogger<T>()
+    void SetLogLevel(LogLevel level)  -- what GameHostBase.Initialize(logLevel:) calls
+    event EventHandler<LoggingErrorEventArgs> LoggingError
+        (LoggingErrorEventArgs: Exception, CategoryName, LogLevel)
+Engine.Logger is the engine's own ILogger<Engine>; a game logs through
+EngineLogger.GetLogger<MyGame>(). Configuration.LoggingMode /
+LoggingQueueCapacity / FlushAsyncLogsOnShutdown govern the async queue.
 
+DI: ServiceCollectionExtensions.AddEngineLogging(this IServiceCollection
+services) registers the engine's logger factory into an application's service
+collection so app code and engine code share one logging pipeline.
+
+VALUE BAGS: TypedValueBag is a typed, key-safe property bag carried by
+EngineState (State.ValueBag), Scene, SceneLayer and every Tile/Sprite
+(ValueBag) for the game's own per-object data. Keys are typed:
+    public static readonly ValueKey<int> Hp = new("hp");
+    tile.ValueBag.Set(Hp, 10);
+    int hp = tile.ValueBag.Get(Hp, defaultValue: 0);
+    void Set<T>(ValueKey<T> key, T value);  bool TryGet<T>(ValueKey<T> key, out T? value)
+    T Get<T>(ValueKey<T> key, T defaultValue = default);  bool Remove<T>(ValueKey<T> key)
+    bool Contains(string keyName) / Contains<T>(ValueKey<T> key);  void Clear()
+    void MergeFrom(TypedValueBag? incoming, bool overwriteExisting = false)
+    TypedValueBag Clone();  Dictionary<string, object?> ToDictionary()
+Value bags are NOT part of the save file (see SAVE / LOAD) — persist their
+contents yourself if they matter.
+
+FONTS: FontManager.Instance (namespace ...Rendering.Text) is a keyed SKTypeface
+cache for TextBlock fonts:
+    SKTypeface LoadFromFile(string key, string filePath)
+    SKTypeface LoadFromResource(string key, Assembly assembly, string resourceName)
+    SKTypeface LoadFromResource(string key, string resourceName)
+    SKTypeface Get(string key);  bool TryGet(string key, out SKTypeface? typeface)
+    SKTypeface GetOrDefault(string key);  bool Contains(key);  bool Remove(key)
+    void Clear();  IReadOnlyCollection<string> Keys
+
+SVG: SvgResourceManager.Instance (namespace ...Drawing) is the keyed store for
+vector art that DirectSvg draws:
+    SvgResource LoadFromFile(string key, string path)
+    List<SvgResource> LoadFromEngineAssetsFile(AssetsFile resourceFile)
+    bool Contains(string key);  SvgResource? Get(string key)
+    Dictionary<string, SvgResource> GetAll();  void Unload(string key);  void Clear()
+    SvgResource: static Load(string path); IntrinsicSize (SizeF);
+                 SKBitmap Rasterize(int width, int height);
+                 SKBitmap Rasterize(float scale = 1.0f); Dispose()
+
+COMPLETE EXAMPLES
+=================
+The two host walkthroughs above (MODE A WALKTHROUGH 1 and MODE B WALKTHROUGH)
+are the skeletons; this is a small but complete Mode-A game host that draws a
+tile grid, places a sprite, moves it with the keyboard and tweens it on a
+mouse click. Every call is a verified engine signature.
+
+    using System.Drawing;
+    using System.Numerics;
+    using CodeBrix.Platform.GameEngine;
+    using CodeBrix.Platform.GameEngine.Drawing;
+    using CodeBrix.Platform.GameEngine.Drawing.Sprites;
+    using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
+    using CodeBrix.Platform.GameEngine.Host.Hosting;
+    using CodeBrix.Platform.GameEngine.Host.Rendering;
+    using CodeBrix.Platform.GameEngine.Input.Keyboard;
+    using CodeBrix.Platform.GameEngine.Physics.Movement.Easing;
+    using CodeBrix.Platform.GameEngine.Scenes;
+    using Windows.System;
+
+    public sealed class TinyGameHost : CodeBrixGameHost
+    {
+        private Tilesheet _sheet = null!;
+        private SceneLayer _layer = null!;
+        private Sprite _hero = null!;
+
+        public TinyGameHost(GameSurfaceCanvas canvas) : base(canvas) { }
+
+        protected override void LoadTilesheets()
+        {
+            _sheet = TilesheetRegistry.Instance.LoadFromImageFile("tiles", "assets/tiles.png");
+            _sheet.DefaultRegion.TileSize = new Size(32, 32);
+        }
+
+        protected override Scene CreateInitialScene()
+        {
+            var scene = new Scene();
+            _layer = scene.AddLayer(columnCount: 20, rowCount: 12, width: 32, height: 32);
+            for (int y = 0; y < 12; y++)
+                for (int x = 0; x < 20; x++)
+                    _layer[x, y].CurrentFrame = _sheet[0, 0];     // grass everywhere
+            return scene;
+        }
+
+        protected override void CreateInitialViews()
+            => RenderSurface.Host.ViewManager.ConfigureSingleFullView();
+
+        protected override void CreateSprites()
+        {
+            _hero = SpriteManager.Instance.CreateSprite(_layer, _sheet[1, 0], "hero");
+            _hero.SetPosition(new Vector2(3, 3));       // grid cells
+            _hero.Visible = true;
+        }
+
+        protected override void OnKeyboardAdapterInitialized()
+        {
+            var kb = Engine.Input.KeyboardEventPoller!;
+            kb.KeyDown += OnKeyDown;
+            kb.StartMonitoringKeys(new[] { (int)VirtualKey.Left, (int)VirtualKey.Right,
+                                           (int)VirtualKey.Up,   (int)VirtualKey.Down });
+        }
+
+        private void OnKeyDown(KeyDownEventArgs e)          // engine thread
+        {
+            if (e.KeyAction != KeyAction.Pressed) return;
+            Vector2 delta = e.KeyCode switch
+            {
+                (int)VirtualKey.Left  => new Vector2(-1, 0),
+                (int)VirtualKey.Right => new Vector2( 1, 0),
+                (int)VirtualKey.Up    => new Vector2(0, -1),
+                (int)VirtualKey.Down  => new Vector2(0,  1),
+                _ => Vector2.Zero
+            };
+            if (delta != Vector2.Zero)
+                _hero.Movement.MoveBy(delta, 0.2f, EasingKind.SmootherStep)
+                              .OnComplete(() => Engine.Logger.LogInformation("arrived"));
+        }
+
+        protected override void OnEngineStarted() => Engine.Configuration.TargetFPS = 60;
+
+        protected override void OnDisposing()
+        {
+            if (Engine.Input.KeyboardEventPoller is { } kb) kb.KeyDown -= OnKeyDown;
+            base.OnDisposing();
+        }
+    }
+
+Page code-behind (the same in every sample):
+
+    public sealed partial class MainPage : Page
+    {
+        private TinyGameHost? _host;
+
+        public MainPage()
+        {
+            InitializeComponent();
+            GameCanvas.FirstStarted += (_, _) =>
+            {
+                GameCanvas.SetRenderResolution(640, 384);     // 20x12 tiles of 32 px
+                _host = new TinyGameHost(GameCanvas);
+                _host.Initialize(logLevel: LogLevel.Warning);
+            };
+            Unloaded += (_, _) => { _host?.Dispose(); _host = null; };
+        }
+    }
+
+MINIMUM VIABLE PROJECT
+======================
+A CodeBrix.Platform application is one shared library that holds the game
+plus one thin executable per head. The layout below is the one the Spot.Brix
+sample uses (three heads; a game library; a shared XAML project). Version
+attributes are omitted — use the latest of each package.
+
+MyGame.Core/MyGame.Core.csproj  (the shared library — engine reference lives here)
+
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <RootNamespace>MyGame</RootNamespace>
+        <Nullable>enable</Nullable>
+      </PropertyGroup>
+      <ItemGroup>
+        <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" />
+        <PackageReference Include="CodeBrix.Platform.Fonts.OpenSans.ApacheLicenseForever" />
+        <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" />
+      </ItemGroup>
+      <ItemGroup>
+        <Content Include="assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+      </ItemGroup>
+    </Project>
+
+MyGame.LinuxX11/MyGame.LinuxX11.csproj  (one head; swap the single head
+package for CodeBrix.Platform.Runtime.Skia.Win32.ApacheLicenseForever or
+CodeBrix.Platform.Runtime.Skia.MacOS.ApacheLicenseForever for the others)
+
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+      </PropertyGroup>
+      <ItemGroup>
+        <Page Include="**\*.xaml" Exclude="bin\**\*.xaml;obj\**\*.xaml" />
+        <None Remove="**\*.xaml" />
+      </ItemGroup>
+      <Import Project="..\MyGame.UI\MyGame.UI.projitems" Label="Shared" />
+      <ItemGroup>
+        <ProjectReference Include="..\MyGame.Core\MyGame.Core.csproj" />
+      </ItemGroup>
+      <ItemGroup>
+        <PackageReference Include="CodeBrix.Platform.Runtime.Skia.X11.ApacheLicenseForever" />
+      </ItemGroup>
+    </Project>
+
+MyGame.LinuxX11/Program.cs
+
+    using CodeBrix.Platform.UI.Hosting;
+    using System;
+
+    namespace MyGame;
+
+    internal class Program
+    {
+        [STAThread]
+        public static void Main(string[] args)
+        {
+            var host = CodeBrixPlatformHostBuilder.Create()
+                .App(() => new App())
+                .UseLinuxX11()          // .UseWin32Skia() / .UseMacOS() on the other heads
+                .Build();
+            host.Run();
+        }
+    }
+
+MyGame.UI/App.xaml  (shared project; the .projitems lists App.xaml, App.xaml.cs,
+Views/MainPage.xaml and Views/MainPage.xaml.cs)
+
+    <Application x:Class="MyGame.App"
+           xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+      <Application.Resources>
+        <ResourceDictionary>
+          <ResourceDictionary.MergedDictionaries>
+            <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+          </ResourceDictionary.MergedDictionaries>
+          <FontFamily x:Key="OpenSansFont">ms-appx:///CodeBrix.Platform.Fonts.OpenSans/Fonts/OpenSans.ttf</FontFamily>
+        </ResourceDictionary>
+      </Application.Resources>
+    </Application>
+
+MyGame.UI/App.xaml.cs
+
+    using Microsoft.UI.Xaml;
+    using Microsoft.UI.Xaml.Controls;
+
+    namespace MyGame;
+
+    public partial class App : Application
+    {
+        public App()
+        {
+            global::CodeBrix.Platform.UI.FeatureConfiguration.Font.DefaultTextFontFamily =
+                "ms-appx:///CodeBrix.Platform.Fonts.OpenSans/Fonts/OpenSans.ttf";
+            InitializeComponent();
+        }
+
+        protected Window MainWindow { get; private set; }
+
+        protected override void OnLaunched(LaunchActivatedEventArgs args)
+        {
+            MainWindow = new Window { Title = "MyGame" };
+            if (MainWindow.Content is not Frame rootFrame)
+            {
+                rootFrame = new Frame();
+                MainWindow.Content = rootFrame;
+            }
+            if (rootFrame.Content == null)
+                rootFrame.Navigate(typeof(Views.MainPage), args.Arguments);
+            MainWindow.Activate();
+        }
+    }
+
+MyGame.UI/Views/MainPage.xaml  (the canvas is the whole page)
+
+    <Page
+        x:Class="MyGame.Views.MainPage"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:game="using:CodeBrix.Platform.GameEngine.Host.Rendering"
+        FontFamily="{StaticResource OpenSansFont}">
+        <Grid Background="#FF222222">
+            <game:GameSurfaceCanvas x:Name="GameCanvas" />
+        </Grid>
+    </Page>
+
+MyGame.UI/Views/MainPage.xaml.cs — the page code-behind from COMPLETE
+EXAMPLES (FirstStarted -> new host -> Initialize; Unloaded -> Dispose).
+
+Run it with `dotnet run --project MyGame.LinuxX11`. The page hosts the
+canvas; the canvas raises FirstStarted once it has a size; the host builds
+the scene and starts the engine.
+
+PERFORMANCE TIPS
+================
 THE LOOP
   [] Pick a real TargetFPS (60/90/120) for Mode A; 0 (unbounded) burns a core
      for no visible gain on most displays.
@@ -1232,6 +1820,49 @@ THE LOOP
   [] No per-frame allocations in hot paths (OnRenderFrame, fill callbacks,
      per-cycle handlers) — the SoftRender sample logs its per-frame allocs as
      a regression canary; zero steady-state garbage is achievable and worth it.
+  [] Do not call blocking waits (Task.Wait, lock convoys, I/O) inside cycle
+     events, timer handlers, or OnTic — one slow handler stalls the whole
+     game.
+
+SOUND EFFECTS
+  [] Fire rapid SFX through AudioResourceManager.TryPlaySfx (or your own
+     SfxVoicePool) — never a fresh decode or player per shot. Short effects
+     preload automatically; check IsPreloaded if a pool play returns false.
+  [] Keep music/ambience on streaming readers (one long-lived voice each);
+     don't raise PreloadShortSoundEffectMaxSeconds to cover them.
+  [] Pick the cull policy deliberately; with CullLowestPriority, give the
+     player's critical cues the highest priorities so they are never stolen.
+  [] Audio fill callbacks: fast, allocation-free, never block, never touch
+     game state.
+
+RENDERING
+  [] Pin a render resolution (SetRenderResolution) when the game's layout
+     assumes fixed coordinates; letterboxing is automatic, and pointer
+     mapping across the letterbox is provided (WindowToBuffer).
+  [] Do not force refreshes during window resizes; the canvas already
+     suppresses and resumes presenting around a resize.
+  [] Size-anchored HUD content: reposition in OnRenderSurfaceResized.
+  [] GpuRendering pays off for blending, scaling/rotation and SkSL shader
+     scenes; a plain tile blit may not benefit and still re-renders the full
+     surface every frame (no dirty rectangles on GPU).
+  [] Batch SceneLayer property changes — nearly every setter forces a full
+     scene refresh; use SetTileSize(w, h) rather than TileWidth + TileHeight.
+  [] Enable tile.EnableAnimator only on tiles that animate (one Animator each).
+  [] Load content in the host's load hooks (before the loop starts), not
+     mid-game on the hot path; AssetsFile/tilesheets/audio all support
+     up-front loading.
+
+COMMON PITFALLS TO AVOID
+========================
+THREADS
+  [] Mutate game state on the engine thread (Mode A) or the game-loop thread
+     (Mode B) only; use EngineDispatcher.Post to get there.
+  [] Never touch XAML/UI from the engine or game-loop thread; use
+     UiDispatcher.Post.
+  [] Never await EngineDispatcher.PostAsync FROM the engine thread; and after
+     the first await inside the posted action you are no longer on it.
+  [] MusicManager Ended/playlist events arrive on a background or audio
+     thread — marshal before touching game state.
 
 PAUSE CORRECTNESS
   [] Wire the hosting app: minimize -> Pause(), restore -> Resume().
@@ -1243,342 +1874,317 @@ PAUSE CORRECTNESS
   [] Long-running voices the game manages specially: set SuspendOnEnginePause
      explicitly instead of fighting the automatic rule.
 
-SOUND EFFECTS
-  [] Fire rapid SFX through AudioResourceManager.TryPlaySfx (or your own
-     SfxVoicePool) — never a fresh decode or player per shot. Short effects
-     preload automatically; check IsPreloaded if a pool play returns false.
-  [] Keep music/ambience on streaming readers (one long-lived voice each);
-     don't raise PreloadShortSoundEffectMaxSeconds to cover them.
-  [] Pick the cull policy deliberately; with CullLowestPriority, give the
-     player's critical cues the highest priorities so they are never stolen.
-
 MUTUAL-EXCLUSIVITY RULES (each throws if violated)
   [] One mode per canvas: Host XOR UsePixelFramePresenter().
   [] InputPump.PollNow() only when the engine loop is NOT running.
   [] AudioSystem.Initialize before SoundChannel/callback streams.
   [] Presenter.Configure before the Mode-B loop starts (OnLoadContent).
+  [] SetRenderResolution / UseGpuRendering BEFORE the first access to Host.
+  [] ConfigureSingleFullView / Bind only from FirstStarted onward, on the UI
+     thread.
 
 RESOURCES AND SHUTDOWN
-  [] Load content in the host's load hooks (before the loop starts), not
-     mid-game on the hot path; AssetsFile/tilesheets/audio all support
-     up-front loading.
   [] Dispose the game host on page close; it stops the loop, unhooks events,
-     and tears the engine down in the right order. After Engine.Dispose() the
-     singleton is dead for the process — do not try to restart it.
+     and (CodeBrixGameHost) tears the engine down in the right order. After
+     Engine.Dispose() the singleton is dead for the process — do not try to
+     restart it. SoftwareRenderedGameHostBase.Dispose does NOT dispose the
+     engine; call AudioSystem.Shutdown() / MusicManager.Instance.Dispose()
+     yourself in that mode.
   [] Unsubscribe any engine events you subscribed outside the host bases
      (the bases unhook their own).
+  [] Scenes self-register globally: Dispose() them (or Scene.ClearAllScenes())
+     or they linger. Never call Animator.Dispose directly.
 
-RENDERING
-  [] Pin a render resolution (SetRenderResolution) when the game's layout
-     assumes fixed coordinates; letterboxing is automatic, and pointer
-     mapping across the letterbox is provided (WindowToBuffer).
-  [] Do not force refreshes during window resizes; the canvas already
-     suppresses and resumes presenting around a resize.
-  [] Size-anchored HUD content: reposition in OnRenderSurfaceResized.
+API TRAPS
+  [] MoveBy(delta, float) — the float is a SPEED without an easing argument
+     and a DURATION with one. Pass EasingKind/Func explicitly for a tween.
+  [] OnBeginning(...) throws if no scripted move is active (a move that
+     snapped instantly). OnComplete is safe.
+  [] Configuration.TimeBetween*Events are SECONDS (0.03), whatever older doc
+     comments say.
+  [] Start/StopMonitoring* registrations apply at the NEXT poll, not
+     instantly; keys must be registered before KeyDown fires for them.
+  [] Keyboard focus: a toolbar click steals focus from the canvas and the
+     engine poller then sees nothing. Call EnsureFocus() and hand focus back
+     after toolbar interactions.
+  [] Sprite positions are GRID cells; RenderSize/Nudge/CollisionArea are
+     pixels. SizeNewSpritesToSceneLayer (default true) resizes new sprites to
+     the layer's tile size.
+  [] Cycle keys are global; constructing a Cycle with an existing key
+     replaces it, and StartAnimation(key) fetches a CLONE.
+  [] Save/load: compress flags must agree; load tilesheets with the scenes
+     that use them; keep EngineSaveContractResolver if you replace
+     SerializerOptions; ValueBags and subclasses do not round-trip.
+  [] MusicDuckMultiplier is owned by MusicManager — duck through PushDuck/
+     Duck, never by writing AudioMixer.MusicVolume. ClearDucks() rescues a
+     leaked duck handle.
+  [] A .sfz instrument references sample files on disk — extract it from an
+     AssetsFile before loading; a .sf2 loads from a Stream.
+  [] Never call IGamepadManager.Update() yourself — the engine refreshes
+     gamepad state in both modes.
 
-CODING CONVENTIONS (CodeBrix family)
---------------------------------------------------------------------------------
-  * Target net10.0 only; never multi-target.
-  * File-scoped namespaces; usings at the top (System.* first), never global
-    usings.
-  * XML doc comments on public/protected members (GenerateDocumentationFile
-    = true; fix CS1591 at the source, never suppress).
-  * xUnit v3 + SilverAssertions for tests; coverlet.collector for coverage.
-  * No project-wide warning suppression except the documented port exceptions
-    below.
+WHAT THIS PACKAGE DOES NOT DO
+=============================
+  * No gamepad BACKEND. It defines IGamepadManager<T>/IGamepadAdapter and the
+    GamepadEventPoller; the SDL2 implementation is the separate
+    CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever package.
+  * No 3D rendering. GpuRendering rasterises the same 2D/2.5D scene on the
+    GPU and reads it back; it is not a 3D pipeline.
+  * Mode B (presenter mode) is CPU-only — no GPU presentation path.
+  * The engine singleton is not restartable after Engine.Dispose(): one game
+    host per process lifetime. Stop() (not Dispose) is the restartable halt.
+  * It does not un-pause itself: engine input pollers are parked while paused,
+    so the resume trigger must come from the hosting application's UI layer.
+  * Save files do not persist: value bags (TypedValueBag on state, scenes,
+    layers, tiles), in-flight movement/jiggle/pulse state, animation
+    playback position, audio playback position, or the music system's state.
+    Custom Sprite/Tile subclasses are not round-trip aware.
+  * Pre-schema (Newtonsoft-era) save files are rejected, not migrated.
+  * Collision overlap events are engine-internal: response is automatic
+    (Solid push-out / Trigger report); game logic queries
+    ColliderRegistry.QueryAabb itself.
+  * No beat/tempo detection for decoded audio — the game supplies the
+    MusicTimeline; a MIDI file supplies its own.
+  * .opus is not built in (license separation); register
+    CodeBrix.Audio.Opus.BsdLicenseForever yourself.
+  * It ships no SkiaSharp Linux native assets of its own — the CodeBrix.Platform
+    head application provides them; a headless Linux consumer adds
+    SkiaSharp.NativeAssets.Linux.
+  * No Windows OpenGL driver: GpuRendering on a machine without an ICD falls
+    back to CPU rendering and logs a warning.
 
-  PORT EXCEPTIONS (this repository):
-  * Nullable reference types are ENABLED (<Nullable>enable</Nullable>) on both
-    libraries. The upstream source relies on "?" annotations throughout;
-    stripping them would change observable public signatures and reduce
-    fidelity. This is the same sanctioned exception used by
-    CodeBrix.Platform.OpenGL. Because NRT is on, "?" on reference types and
-    the "!" null-forgiveness operator are permitted in this repository
-    (unlike the family default).
+WORKING EXAMPLES ON GITHUB
+==========================
+Repository root: https://github.com/ellisnet/CodeBrix.Platform.GameEngine
 
-ARCHITECTURE
---------------------------------------------------------------------------------
-  CodeBrix.Platform.GameEngine (core)
-    deps: SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression, CodeBrix.Audio,
-          System.Text.Json + CodeBrix.Json.Extensions, Microsoft.Extensions.*
-    No CodeBrix.Platform UI dependency. Rendering seam = SKImage + adapter base.
+SAMPLES — seven complete games/demos, each with LinuxX11, Win32Skia and MacOS
+heads plus a shared .UI project and a .Game library; each is the reference
+consumer for the subsystems it exercises:
 
-  CodeBrix.Platform.GameEngine.Host
-    refs: CodeBrix.Platform.GameEngine
-    deps: CodeBrix.Platform, CodeBrix.Platform.SkiaSharp.Views,
-          CodeBrix.Platform.Graphics3DGL (GPU path), SkiaSharp,
-          CodeBrix.Platform.Svg (platform-integrated SVG)
-    CpuRendering = CPU BitmapBackbuffer adapter (default, all heads).
-    GpuRendering = GPU GpuBackbuffer adapter via the backend-neutral
-    SkiaGpuContext (Graphics3DGL) + one-copy readback (opt-in:
-    GameSurfaceCanvas.UseGpuRendering — see RENDER MODES). GPU-thread surfaces
-    skip the cycle's render step; the adapter renders them via GlRenderAndSnapshot
-    on the UI thread at TargetFPS cadence. They park during the global pause, are
-    captured by the pause snapshot via the adapter's latest presented frame, and
-    get one adapter-driven paused-overlay frame after the Paused handlers run.
-    All three frame drivers (both adapters and the Mode-B presenter) stop posting
-    to the dispatcher while their canvas is unloaded, and the GPU adapter
-    releases its surface and context while the window is still alive, rebuilding
-    them lazily if the canvas reloads (see RENDER MODES).
-    The adapter builds its GRContext through SkiaGpuContext.TryCreate, which
-    resolves the head's GPU backend behind one API — OpenGL/GLES on the Windows,
-    X11, Wayland and Frame Buffer heads (via OffscreenGLContext), Skia-on-Metal on
-    macOS (a separate GRContext on its own command queue, on the window's MTLDevice)
-    — and returns false (→ CPU fallback) where none is available. Requires
-    CodeBrix.Platform with SkiaGpuContext (the X11 GL wrapper also filters the
-    garbage egl* stubs glvnd/Mesa returns from glXGetProcAddress, the cause of the
-    earlier assembled-interface segfault).
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/Spot.Brix
+      Mode A via CodeBrixGameHost: scenes, sprites, tilesheets, engine
+      mouse+keyboard input, the toolbar/focus recipe (src/Spot.Brix.UI/Views/
+      MainPage.xaml.cs), per-move callbacks (src/libs/Spot.Brix.Game/
+      SpotBrixGameHost.cs).
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/Slider
+      Mode A, direct Engine: sprites built on the engine thread via
+      EngineDispatcher.Post, engine mouse events, rebuild-while-running.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/CoordinateTest
+      Mode A, direct Engine: coordinate systems (orthogonal, isometric, hex),
+      cameras/views.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/ParticleTest
+      Mode A, direct Engine: ParticleSurface/emitters, DirectComposite/
+      TextBlock/DirectRectangle, movement easing — plus the campfire click =
+      global Pause()/Resume() toggle (UI-level pointer input + letterbox
+      mapping; src/libs/ParticleTest.Game/ParticleTestGame.cs,
+      OnCanvasPointerPressed). PARTICLETEST_USE_GPU=1 runs it on GpuRendering.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/SoftRender
+      Mode B end-to-end: 320x200/70 Hz plasma+starfield, presenter, InputPump,
+      raw-PCM blips (SoundChannel), streamed drone (StreamingAudioSource),
+      zero-alloc frame loop, loop health stats (src/libs/SoftRender.Game/
+      SoftRenderGameHost.cs).
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/GpuRender
+      Mode A, direct Engine: the GpuRendering (GPU) showcase and SoftRender's
+      GPU-first counterpart — resolution-independent SkSL plasma + starfield
+      via a custom DirectDrawingBase subclass (PlasmaBackdrop), stats
+      TextBlock with live GPU FPS, click-anywhere pause with a pause overlay
+      (paused-frame + snapshot demo), window-tracking resolution with resize
+      handling. GPURENDER_USE_CPU=1 runs the same scene on CpuRendering.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/MusicDemo
+      The MUSIC SYSTEM reference: volume buses, fades and equal-power
+      crossfades, ducking (fire-and-forget and the held-handle form),
+      stingers, playlists, layered adaptive stems (MusicStemSet) AND the MIDI
+      per-channel route, transitions quantised to the next bar, marker jump
+      points, and the global pause freezing music and fades together. It
+      GENERATES every asset it plays on first run (src/libs/MusicDemo.Game/
+      MusicAssetFactory.cs: stems, two tracks, a stinger, an SFZ instrument
+      and a MIDI file with markers), so the sample runs anywhere.
 
-  Source is grouped into sub-folders that mirror the sub-namespaces
-  (Drawing, Rendering, Scenes, Physics, Input, Audio, Assets, Timers, ...).
+TESTS — headless unit tests that double as usage references:
 
-THE SAMPLES — THE LIVING REFERENCE
---------------------------------------------------------------------------------
-samples/ holds seven complete games/demos, each with LinuxX11, Win32Skia, and
-MacOS heads plus a shared .UI project; each is the reference consumer for the
-subsystems it exercises:
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests
+      EngineStateRoundTripTests.cs / EngineStateSaveTests.cs — populated-graph
+          save/load round-trips (scenes/layers/tile grids, shared sprite
+          references, cycles, loose-file and asset-pack audio, compression,
+          merge semantics)
+      EnginePauseTests.cs — park/resume semantics, no-burst time shifting,
+          audio suspend rules, snapshot capture
+      CachedSoundTests.cs / SfxVoicePoolTests.cs — decode-once preload and the
+          pool's cull-policy selection (nothing opens the audio device)
+      AudioMixerTests.cs, MusicManagerTests.cs, MusicStemSetTests.cs,
+          MusicTimelineTests.cs, MusicQuantizedTransitionTests.cs,
+          MidiMusicTrackLayerTests.cs — the music system, with fades advanced
+          by hand and MIDI fixtures built in code
+      FixedRateGameLoopTests.cs, PixelFramePresenterTests.cs — Mode B
+      InputPumpGamepadTests.cs — the Mode-B gamepad refresh path
+      EngineConfigurationTests.cs, PlatformAudioFactoryTests.cs (the .opus
+          registration proof), DirectCompositeTests.cs, GpuBackbufferTests.cs,
+          ImageFilterQualityTests.cs, SpacingTests.cs, VariableRateSampleProviderTests.cs,
+          AudioResourceDisposalTests.cs, AudioResourceManagerPcmTests.cs
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Host.Tests
+      CodeBrixPlatformUiDispatcherTests.cs — the Host UI dispatcher
 
-  Spot.Brix      -- Mode A via CodeBrixGameHost: scenes, sprites, tilesheets,
-                    engine mouse+keyboard input, toolbar/focus recipe.
-  Slider         -- Mode A, direct Engine: sprites built on the engine thread
-                    via EngineDispatcher.Post, engine mouse events, rebuild-
-                    while-running.
-  CoordinateTest -- Mode A, direct Engine: coordinate systems (orthogonal,
-                    isometric, hex), cameras/views.
-  ParticleTest   -- Mode A, direct Engine: ParticleSurface/emitters,
-                    DirectComposite/TextBlock/DirectRectangle, movement
-                    easing — plus the campfire click = global Pause()/Resume()
-                    toggle (UI-level pointer input + letterbox mapping).
-                    PARTICLETEST_USE_GPU=1 runs it on GpuRendering.
-  SoftRender     -- Mode B end-to-end: 320x200/70 Hz plasma+starfield,
-                    presenter, InputPump, raw-PCM blips (SoundChannel),
-                    streamed drone (StreamingAudioSource), zero-alloc frame
-                    loop, loop health stats.
-  GpuRender      -- Mode A, direct Engine: the GpuRendering (GPU) showcase and
-                    SoftRender's GPU-first counterpart — resolution-
-                    independent SkSL plasma + starfield via a custom
-                    DirectDrawingBase subclass (PlasmaBackdrop), stats
-                    TextBlock with live GPU FPS, click-anywhere pause with a
-                    pause overlay (paused-frame + snapshot demo), window-
-                    tracking resolution with resize handling.
-                    GPURENDER_USE_CPU=1 runs the same scene on CpuRendering.
-  MusicDemo      -- the MUSIC SYSTEM reference: volume buses, fades and
-                    equal-power crossfades, ducking (fire-and-forget and the
-                    held-handle form), stingers, playlists, layered adaptive
-                    stems (MusicStemSet) AND the MIDI per-channel route,
-                    transitions quantised to the next bar, marker jump points,
-                    and the global pause freezing music and fades together.
-                    It GENERATES every asset it plays on first run
-                    (MusicAssetFactory: stems, two tracks, a stinger, an SFZ
-                    instrument and a MIDI file with markers), so the repo
-                    carries no binary music and the sample runs anywhere.
+QUICK REFERENCE CARD
+====================
+LIFECYCLE (Engine.Instance)
+    void Initialize(string? configFileName = null, bool? autoSaveConfig = null,
+                    IKeyboardAdapter? keyboardAdapter = null, IMouseAdapter? mouseAdapter = null,
+                    ITouchAdapter? touchAdapter = null,
+                    IGamepadManager<IGamepadAdapter>? gamepadManager = null)
+    void Start();  void Start(SynchronizationContext uiContext)
+    void StartTimerDriven(SynchronizationContext uiContext);  void Tick()
+    void Stop();  void Pause();  void Resume();  void Dispose()
+    bool IsRunning / IsPaused / IsInitialized / IsDisposed
+    SKImage? LastFrameBeforePause;  byte[]? LastFrameBeforePauseAsRgba(out int w, out int h)
+    IEngineDispatcher EngineDispatcher   -- Post(Action), PostAsync(Func<Task>), IsOnEngineThread
+    IUiDispatcher? UiDispatcher          -- Post(Action), Send(Action), IsOnUIThread
+    EngineConfiguration Configuration;  EngineState State;  EngineInputSystems Input
+    static ILogger<Engine> Logger
 
-GAMEPAD SUPPORT (CodeBrix.Platform.GameEngine.Sdl2)
---------------------------------------------------------------------------------
-A SEPARATE, OPTIONAL NuGet package (note the license suffix):
+HOST (CodeBrix.Platform.GameEngine.Host.*)
+    class GameSurfaceCanvas : SKXamlCanvas
+        event FirstStartedEventHandler FirstStarted   (FirstStartedEventArgs.NewSize)
+        RenderSurfaceHost<BackbufferBase> Host;  RenderSurfaceAdapterBase RenderSurfaceAdapter
+        bool UseGpuRendering;  void SetRenderResolution(int width, int height)
+        PixelFramePresenter UsePixelFramePresenter();  void EnsureFocus()
+        void SetPointerCursorHidden(bool hidden)
+        Point? WindowToBuffer(Point canvasPoint);  Point? BufferToWindow(Point bufferPoint)
+    abstract class CodeBrixGameHost : GameHostBase
+        ctor(GameSurfaceCanvas renderSurface);  GameSurfaceCanvas RenderSurface
+        void Initialize(string? configPath = null, bool? autoSaveConfig = null,
+                        LogLevel logLevel = LogLevel.Warning)
+        overrides: LoadAssets, LoadTilesheets, LoadAnimationCycles, Scene CreateInitialScene,
+                   CreateInitialViews, CreateSprites, CreateDirectDrawings, OnEngineInitialized,
+                   OnEngineStarted, OnEnginePaused, OnEngineResumed, OnConfigureGamepads,
+                   OnKeyboardAdapterInitialized, OnMouseAdapterInitialized,
+                   OnTouchAdapterInitialized, OnRenderSurfaceResized(int, int), OnDisposing
+    abstract class SoftwareRenderedGameHostBase
+        ctor(GameSurfaceCanvas renderSurface, int ticsPerSecond)
+        void Initialize(LogLevel logLevel = LogLevel.Warning)
+        PixelFramePresenter Presenter;  FixedRateGameLoop GameLoop;  GameSurfaceCanvas RenderSurface
+        abstract OnLoadContent(), OnTic(), OnRenderFrame(Span<byte> frameBuffer)
+        virtual ConfigureInput(), ConfigureGamepads(), ConfigureAudio(), OnShutdown(),
+                OnEnginePaused(), OnEngineResumed()
+    static class EngineExtensions
+        InitializeCodeBrixKeyboardAdapter(this Engine, UIElement element)
+        InitializeCodeBrixMouseAdapter(this Engine, UIElement element,
+                                       MouseEventConfiguration? mouseEventConfiguration = null)
+        InitializeCodeBrixTouchAdapter(this Engine, UIElement element)
+    CodeBrixKeyboardAdapter(UIElement) / CodeBrixMouseAdapter(UIElement) /
+    CodeBrixTouchInputAdapter(UIElement);  static int? CodeBrixKeyboardAdapter.GetKeyCodeFromString(string)
+    RelativeMouseSession(GameSurfaceCanvas): Begin(), End(), (int DeltaX, int DeltaY) ConsumeDelta()
+    CodeBrixPlatformUiDispatcher(DispatcherQueue);  static CodeBrixPlatformUiDispatcher? ForCurrentThread()
 
-    CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
+MODE B
+    FixedRateGameLoop(int ticsPerSecond, Action onTic): Start(), Stop(), Pause(), Resume(),
+        PauseWithEngine, MaxCatchUpTics, TicCount, DroppedTics, ActualTicsPerSecond,
+        LastException, event Action<Exception> UnhandledException
+    PixelFramePresenter: Configure(width, height, PixelBufferFormat, FrameOrientation,
+        PixelFrameScaleMode, ImageFilterQuality); PresentFrame(ReadOnlySpan<byte> | uint[] |
+        ReadOnlyMemory<byte>); SKPoint? WindowToBuffer(SKPoint); SKPoint? BufferToWindow(SKPoint)
+    static void InputPump.PollNow()
 
-    dotnet add package CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
+INPUT
+    KeyboardEventPoller: StartMonitoringKey(int keyCode, string? displayName = null,
+        double timeBetweenEvents = -1, bool isPaused = false); StartMonitoringKeys(IEnumerable<int>,
+        double = -1); StartMonitoringAllKeys(double = -1); StopMonitoringKey(int|string);
+        StopMonitoringAllKeys(); event Action<KeyDownEventArgs> KeyDown; IKeyboardAdapter? Adapter
+    KeyDownEventArgs: KeyCode, KeyAction (Pressed/Released/Repeated), Modifiers, KeyConfig
+    MouseEventPoller: StartMonitoringMouse(bool trackMouseMovement = true,
+        double timeBetweenEvents = -1, bool isPaused = false); StopMonitoringMouse();
+        event Action<MouseEventArgs> MouseEvent; CurrentPosition; ButtonStates; ScrollDelta
+    TouchEventPoller: StartMonitoringTouch(double = -1, bool = false); StopMonitoringTouch();
+        ActiveTouches; TouchBegan/TouchMoved/TouchEnded; event Action<GestureEventArgs> TouchEvent;
+        TapRecognizer.Tapped / SwipeRecognizer.Swiped / PinchRecognizer.PinchUpdated
+    TouchPoint(int Id, Point Position, TouchPhase Phase)
+    GamepadEventPoller: StartMonitoringButton(string gamepadId, string button,
+        double timeBetweenEvents = -1, bool isPaused = false); StopMonitoringButton(gamepadId,
+        button); StopMonitoringAllButtons(gamepadId); event Action<GamepadButtonDownEventArgs> ButtonDown
+    IGamepadAdapter: GamepadId, PressedButtons, LeftStick/RightStick (GamepadStickState?),
+        LeftTrigger/RightTrigger;  GamepadStickState: X, Y, Magnitude, Angle,
+        IsEngaged(float threshold = 0.15f), Direction(float = 0.15f), WithDeadzone(float = 0.15f)
 
-It is a second package built from THIS repository, and it is versioned and
-published INDEPENDENTLY of CodeBrix.Platform.GameEngine.MitLicenseForever. It
-depends on that package by ordinary PackageReference, pinned to a version
-already on nuget.org. So if a change here ever needs the engine core to expose
-something new: publish the engine package FIRST, wait for it to index, bump the
-pinned version in the .Sdl2 csproj, then build and publish .Sdl2. The two
-packages do NOT share a version number, and that is intentional — .Sdl2 uses
-only PUBLIC engine API and has no InternalsVisibleTo seam into the core.
+TIMERS
+    static Timer Timer.Add(string timerID, TimerType type, TimerCycles cycles, double length)
+    static Timer Timer.Add(TimerType type, TimerCycles cycles, double length)
+    static void Timer.Remove(string timerID);  static void Timer.ClearAll();  static bool Timer.PausedAll
+    Timer: event Tick; Paused; Dispose()
 
-WIRING IT UP -- one call:
+SCENE GRAPH
+    Scene: SceneLayer AddLayer(int columnCount, int rowCount, int width = 32, int height = 32,
+        int zOrder = 0, float parallax = 1f, CoordinateSystemTypes coordinateSystem = Orthogonal);
+        AddLayer(SceneLayer); RemoveAllLayers(); FullRefreshNeeded; ValueBag; Dispose()
+    SceneLayer: this[x, y] (SceneLayerTile?), SetTileSize(w, h), ZOrder, Parallax, Visible,
+        WrapHorizontally/WrapVertically, OriginPx, ShowGridLines, ShowCollisionBoxes,
+        GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile, CardinalDirections),
+        ColliderRegistry, ValueBag
+    Tile (SceneLayerTile, Sprite): CurrentFrame, Visible, CollisionsEnabled, CollisionArea,
+        AdjustCollisionArea, EnableAnimator, TileAnimator, ValueBag
+    RenderSurfaceHost<T>: void Bind(Scene newScene, bool limitCameraToWorldBoundPx = true);
+        ViewManager; Backbuffer; RedrawDirtyRectangleOnly; event Action<SKCanvas> RenderBackbufferPostScene
+    ViewManager: ConfigureSingleFullView(float zoom = 1f, int zOrder = 0);
+        ConfigureVerticalSplit(float leftZoom = 1f, float rightZoom = 1f);
+        AddView(Rectangle targetRectPx, float zoom = 1f, int zOrder = 0, RectangleF? worldBoundsPx = null);
+        ClearViews(); Views
 
-    using CodeBrix.Platform.GameEngine.Sdl2;
+TILESHEETS / SPRITES / ANIMATION
+    TilesheetRegistry.Instance: LoadFromImageFile(string name, string imageFilePath);
+        LoadFromBitmap(name, SKBitmap); LoadFromStream(name, Stream);
+        LoadFromAssetsFile(AssetsFile, string entryName); LoadFromDefinitionFile(string gtsPath);
+        LoadFromDefinition(TilesheetDefinition, string? baseDirectory = null);
+        LoadFromDefinitionAsset(AssetsFile, string gtsEntryName); TryGet; GetOrNull; this[name]
+    Tilesheet: DefaultRegion, Regions, AddRegion(...), GetRegion(name), this[regionName],
+        this[regionName, x, y], GetFrame(x, y), ApplyMask(SKColor? maskColor = null, byte tolerance = 5)
+    TilesheetDefinitionSerializer: Load(string|Stream); Save(string filePath, TilesheetDefinition);
+        FromJson(string); ToJson(TilesheetDefinition); FromTilesheet(Tilesheet, string? baseDirectory = null,
+        bool makePathsRelative = false); Save(string filePath, Tilesheet, bool makePathsRelative = true)
+    SpriteManager.Instance: Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null);
+        CloneSprite(Sprite[, SceneLayer]); Sprite? GetSpriteByID(string ID);
+        GetSpritesAtViewPixel(...); bool SizeNewSpritesToSceneLayer
+    Sprite: SetPosition(Vector2 pos) (grid); Visible; RenderSize; Movement; TileAnimator;
+        ResizeTo / ScaleBy / PulseTo / PulseBy / StopPulse / CancelResize; StartJiggle / JiggleOnce / StopJiggle
+    FrameSequence: AddFrame(sheet, x, y); SequenceCycleType (CycleType Simple/Repeating/PingPong)
+    Cycle(FrameSequence seq, double throttleSeconds, string key); NextCycle
+    Animator: CurrentCycle; StartAnimation(); events Started, Stopped, Cycled
 
-    var gamepads = Engine.Instance.InitializeSdlGamepadManager();
+MOVEMENT / COLLISION
+    MovementController: MoveTo(target, seconds, EasingKind|Func); MoveBy(delta, seconds, easing)
+        or MoveBy(delta, speed); MoveToward(target, speedPerSec); OnBeginning(Action); OnComplete(Action);
+        CancelScript(); StopAllMovement(); SetVelocity / SetAcceleration / SetMaxSpeed / SetLinearDamping;
+        FollowPixelSoft/Hard, FollowTileSoft/Hard, Unfollow(); MovementState; IsScripted
+    TileCollider(Tile tile, int collisionGroup, int collidesWith,
+                 CollisionResponseType responseType = Solid)
+    CollisionGroupRegistry: int Define(string name); int Get(string name); WorldStatic/Actors/Projectiles/Triggers
+    ColliderRegistry.QueryAabb(in Aabb area, int layerMask, int collidesWithMask,
+                               List<ICollider> results, ICollider? ignore = null)
+    Aabb(float minX, float minY, float maxX, float maxY): Intersects(in Aabb), Center, ToRectangle()
 
-That assigns an IGamepadManager to Engine.Instance.Input.GamepadManager, which
-the engine refreshes and feeds to GamepadEventPoller every cycle (Mode A, step
-4) or every tic (Mode B, from InputPump.PollNow). No other engine plumbing is
-needed, and nothing differs between the two hosting modes — the game never calls
-Update() itself in either.
+AUDIO / MUSIC
+    AudioResourceManager.Instance: LoadFromFile / LoadFromStream / LoadFromPcm(key, data, rate,
+        bits, channels) / LoadFromEngineAssetsFile(pack); bool TryPlaySfx(string key, float volume,
+        float pan, int priority); SfxPool; PreloadShortSoundEffectMaxSeconds
+    AudioSystem.Initialize(int sampleRate, int channels); AudioSystem.Shutdown()
+    SoundChannel: SetClip(key); Play(volume, pan, pitch); Volume/Pan/Pitch; State
+    StreamingAudioSource: FillAudioBuffer(Span<float>) callback or ISampleProvider; Start/Stop; Volume
+    AudioMixer: MasterVolume, MusicVolume, SfxVolume, MusicDuckMultiplier (read-only)
+    MusicManager.Instance: Play(track, fadeIn[, MusicTransitionQuantize]); CrossfadeTo(track,
+        TimeSpan duration[, MusicTransitionQuantize]); Stop(fadeOut[, quantize]); Pause(); Resume();
+        Seek(); PushDuck(depth, attack, release) -> IDisposable; Duck(depth, attack, hold, release);
+        ClearDucks(); PlayStinger(key, volume, duckMusic); Play(playlist, crossfade); Next(crossfade);
+        JumpToMarker(name); HasPendingTransition; CancelPendingTransition(); NowPlaying; IsPlaying
+    MusicTimeline(beatsPerMinute, beatsPerBar); MusicMarker(string Name, TimeSpan Time)
+    MusicStemSet(key, params stem paths): this[stem].FadeTo(volume, TimeSpan)
+    MidiMusicTrack: SetLayerVolume(channel, v); FadeLayerTo(channel, v, TimeSpan); SetLayerPan; Speed
 
-WHERE TO PUT THAT CALL:
-  Mode A (CodeBrixGameHost)             override OnConfigureGamepads()
-  Mode B (SoftwareRenderedGameHostBase) override ConfigureGamepads()
-
-    protected override void ConfigureGamepads()
-        => _gamepads = Engine.Instance.InitializeSdlGamepadManager();
-
-  Both hooks run after the input adapters are wired and before the game's
-  content loads. Driving Engine directly (no host base) works too: call it any
-  time after the adapters exist.
-
-Reading input, either style:
-
-    // Polled, per frame:
-    foreach (var pad in gamepads.ConnectedAdapters)
-    {
-        var move = pad.LeftStick?.WithDeadzone() ?? default;
-        bool firing = pad.PressedButtons.Contains(SdlGamepadButtons.A)
-                      || pad.RightTrigger > 0.5f;
-    }
-
-    // Event-driven, via the engine's existing poller:
-    Engine.Instance.Input.GamepadEventPoller.StartMonitoringButton(
-        pad.GamepadId, SdlGamepadButtons.Start);
-    Engine.Instance.Input.GamepadEventPoller.ButtonDown += args => { ... };
-
-Use the SdlGamepadButtons constants rather than string literals — a misspelled
-button name registers happily and then simply never fires.
-
-WHY ONE IMPLEMENTATION COVERS ALL SIX HEADS
-  SDL2 is initialized with the game controller subsystem ONLY, which starts no
-  video subsystem: it never creates a window, never opens an X11 or Wayland
-  display, and never touches Win32 or AppKit. It is a headless joystick backend
-  over evdev (Linux), XInput/RawInput (Windows) and IOKit (macOS). There is
-  therefore no contention with CodeBrix.Platform for the display connection,
-  and the Frame Buffer head gets controller support on the same terms as the
-  desktop heads.
-
-  This package also does NOT pump the SDL2 event queue — it polls controller
-  state directly and disables SDL2 controller events, so there is no second
-  event loop running alongside the CodeBrix.Platform one.
-
-AVAILABILITY IS INSPECTABLE, NOT JUST LOGGED
-  Nothing here throws when SDL2 or a controller is missing; gamepad support is
-  an enhancement to a game that is already playable with keyboard and mouse.
-  InitializeSdlGamepadManager ALWAYS returns a usable manager. Ask it:
-
-    gamepads.IsAvailable          // did SDL2 load and the subsystem start?
-    gamepads.UnavailableReason    // player-facing text, null when available
-    gamepads.UnavailableCause     // machine-readable enum, to branch on
-    gamepads.GetNoControllersHint()  // available, but nothing connected
-
-  Keep the manager if the game has a settings screen: when a player enables
-  gamepad support and nothing happens, UnavailableReason is the text to show.
-  The startup log and the settings screen then read the SAME property instead
-  of each working the answer out for themselves.
-
-NATIVE LIBRARY: WHAT SHIPS, AND THE ONE LINUX PREREQUISITE
-  The package carries SDL2 native binaries for Windows (x64, x86, ARM64) and
-  macOS (x86_64 + arm64), committed into this repo under native_libraries/ and
-  packed to runtimes/<rid>/native/. Nothing is downloaded during a build.
-
-  NO LINUX BINARY IS SHIPPED, deliberately. SDL2's Linux gamepad support is a
-  thin layer over evdev plus udev for hotplug, and the distribution's own build
-  is matched to the host's udev; a binary built elsewhere against a newer glibc
-  would fail on older systems. So on Linux the SYSTEM SDL2 is used, and it is
-  the one prerequisite this package has:
-
-      sudo apt install libsdl2-2.0-0
-
-  That is the RUNTIME package. The -dev package is NOT needed: it only adds
-  headers and the unversioned symlink, and the loader deliberately probes the
-  versioned soname (libSDL2-2.0.so.0) first. If it is missing, gamepad support
-  reports itself unavailable with exactly that apt command in the message
-  text — the game keeps running.
-
-  A kiosk or Frame Buffer deployment has a second failure mode worth knowing:
-  SDL2's evdev backend needs read access to /dev/input/event*, which a desktop
-  login session grants through a per-device ACL but a bare service account may
-  not have. That looks identical to "no controller plugged in", so
-  GetNoControllersHint() tests for it specifically and, when it applies, says
-  to add the account to the 'input' group.
-
-GOTCHAS WORTH KNOWING
-  * A controller that disconnects and reconnects gets a NEW GamepadId (it is
-    derived from SDL2's joystick instance ID). Anything registered against the
-    old id — button monitoring in particular — must be registered again.
-    Bluetooth controllers sleep aggressively, so this happens in normal use.
-  * Stick Y is INVERTED relative to SDL2: SDL2 reports up as negative, the
-    engine's GamepadStickState defines +1 as up. The adapter handles it; raw
-    SDL2 values do not.
-  * A resting stick does NOT read zero. Observed drift on a real pad is around
-    1500-2900 raw units. Use WithDeadzone()/IsEngaged() rather than != 0.
-  * GamepadStickState.Magnitude CAN EXCEED 1.0 — up to sqrt(2) on a diagonal.
-    X and Y are each clamped to [-1, 1] independently, so a stick held hard
-    into a corner legitimately reports e.g. (-0.34, -1.00), magnitude 1.06;
-    values up to 1.25 were measured on a real pad. This does not affect
-    Direction() or IsEngaged(), which is why it goes unnoticed easily. It DOES
-    matter if a game multiplies movement speed by Magnitude: that yields up to
-    41% extra speed on diagonals, the classic diagonal-speed-boost bug. Clamp
-    the magnitude to 1, or normalize the vector, before using it as a scalar.
-  * The FIRST poll after a controller connects is discarded on purpose. A
-    freshly connected Bluetooth pad has been observed reporting every stick
-    axis at -32768 — full deflection — until its first HID report arrives. A
-    deadzone cannot filter that, because it is a maximum reading, not a small
-    one.
-  * Do not Math.Abs() a raw axis value as a short: -32768 is a real reading and
-    negating it overflows. Widen to int first.
-  * Button/axis NUMBERING is device- and transport-specific (the same Xbox pad
-    reports a different raw layout over Bluetooth than over USB). Always go
-    through the game controller API, never raw joystick indices. The startup
-    log records each pad's SDL2 mapping string, which is the first thing to
-    look at when a controller behaves oddly.
-  * VERIFY GAMEPAD CHANGES IN BOTH HOSTING MODES. The first release of this
-    package was hardware-verified only through a harness that called
-    manager.Update() itself, so it could not notice that NOTHING called Update()
-    on the InputPump path — gamepads were completely dead in Mode B (frozen
-    state, no events, no hotplug) while every hardware check passed. padcheck
-    now has a --pump mode for exactly this; run it as well as the default mode.
-  * padcheck (and anything else downstream of this project) compiles against the
-    PUBLISHED engine package, so it cannot see engine changes still in the
-    working tree. Build it with -p:UseLocalEngineProject=true to test local
-    engine source. Without that flag a local engine fix appears to have no
-    effect, which is indistinguishable from the fix not working.
-
-TESTING
---------------------------------------------------------------------------------
-  Core tests are headless unit tests (the UI-agnostic core makes this clean):
-  populated-graph save/load round-trips (EngineStateRoundTripTests: scenes/
-  layers/tile grids, shared sprite references, cycles, loose-file and
-  asset-pack audio, compression, merge semantics), the global pause suite
-  (EnginePauseTests: park/resume semantics, no-burst time shifting, audio
-  suspend rules, snapshot capture), and the audio SFX suites
-  (CachedSoundTests, SfxVoicePoolTests — decode-once preload and the pool's
-  cull-policy selection logic; nothing in them opens the audio device), and the
-  music suites (AudioMixerTests, MusicManagerTests, MusicStemSetTests,
-  MusicTimelineTests, MusicQuantizedTransitionTests, MidiMusicTrackLayerTests —
-  fades advanced by hand through MusicFadeTicker.ManualTickingForTests rather
-  than slept through, so the assertions are exact instead of racy; the stem
-  mixer's actual output samples are read and summed; and the MIDI fixtures are
-  BUILT IN CODE — a MidiEventCollection exported through MidiFile.Export, and a
-  one-region SFZ over a generated tone — so there is no committed binary). Host
-  tests cover what can run without a live UI head; head-dependent behavior is
-  env-gated or skipped with a reason.
-
-  The core test assembly runs its collections SERIALLY
-  (CollectionBehavior(DisableTestParallelization = true) in AssemblyInfo.cs):
-  the engine under test is a process-global singleton machine (Engine.Instance
-  plus the scene/sprite/cycle/tilesheet/audio registries), so tests that
-  populate or clear that state cannot overlap. Keep new test classes
-  compatible with that assumption — clean up global state you create.
-
-  THE SHARED AUDIO OUTPUT IS PART OF THAT GLOBAL STATE, and it is the easiest
-  one to leak. The shared output ADOPTS A SAMPLE RATE from the first thing that
-  plays, and it keeps it. So a test that loads anything with its own rate — a
-  MidiMusicTrack builds a synthesizer and an output voice merely by LOADING,
-  without ever being played — leaves every later test whose source has a
-  different rate failing at WaveOutEvent.Init with "this source is N Hz but the
-  shared audio output runs at M Hz". The symptom is nasty: a VARYING number of
-  unrelated failures depending on the order the suite happened to run in, and
-  nothing at all when the offending class is run on its own. Any test class
-  that causes a rate to be adopted must call AudioSystem.Shutdown() in its
-  Dispose to hand the output back unclaimed (MidiMusicTrackLayerTests is the
-  worked example). Tests that only build CachedSounds or drive a
-  StemMixSampleProvider directly never touch the device and need none of this.
-
-  The Sdl2 test assembly also runs SERIALLY, for the same class of reason:
-  SDL2 keeps its initialization state and device list in process-global native
-  state, and those tests start and shut the subsystem down. Its tests are
-  written as invariants that hold WITH OR WITHOUT SDL2 installed and with or
-  without a controller attached — asserting that SDL2 loads would turn a
-  machine without it into a test failure, which is the very outcome the loader
-  exists to prevent. The conversion logic that real hardware cannot be made to
-  exercise on demand (axis inversion, the -32768 edge) is tested directly with
-  fabricated raw values.
-
-    dotnet test CodeBrix.Platform.GameEngine.slnx
+SAVE / LOAD / ASSETS / CONFIG
+    EngineState: SaveToFile(path, compress); static LoadFromFile(path, compressed[, parts]);
+        static MergeFromFile(path, overwriteExisting, parts); SerializerOptions; ValueBag
+    AssetsFile.LoadOrCreate(path); Get(AssetTypes, name); this[AssetTypes, name]; Add(AssetTypes, path); Save()
+    EngineConfiguration: TargetFPS, VSync, MsaaSampleCount, TimeBetween*Events,
+        TimeBetweenGamepadStateUpdates, PauseSuspendsAudio, PauseShortSoundEffectSeconds,
+        StateFiles, ConfigurationSections
+    TypedValueBag: Set<T>(ValueKey<T>, T); Get<T>(ValueKey<T>, T defaultValue = default);
+        TryGet<T>(ValueKey<T>, out T?); Remove<T>; Contains; Clear(); Clone()
 
 ================================================================================
 END OF AGENT-README
