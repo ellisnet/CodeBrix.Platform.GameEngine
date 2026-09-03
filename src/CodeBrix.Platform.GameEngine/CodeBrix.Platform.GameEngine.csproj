@@ -85,16 +85,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.11" />
     <PackageReference Include="SkiaSharp" Version="4.151.0" />
-    <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.214.1201" />
-    <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.198.139" />
-    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.214.913" />
-    <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.196.1178" />
+    <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.238.140" />
+    <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.238.89" />
+    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.245.150" />
+    <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.242.1163" />
   </ItemGroup>
 
 </Project>

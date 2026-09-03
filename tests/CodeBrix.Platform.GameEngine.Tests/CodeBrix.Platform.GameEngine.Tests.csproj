@@ -6,13 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.164.180" />
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+    <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.237.1200" />
     <!-- The base SkiaSharp package carries Windows/macOS natives; Linux needs this explicit
          native-assets package for the PixelFramePresenter draw tests. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.151.0" />
@@ -21,7 +21,7 @@
          stops being true. This project ships nothing, so it can reference the real codec and prove
          that a separately licensed format registered with CodeBrix.Audio becomes a first-class
          engine format (PlatformAudioFactoryTests). Do not move this reference into src/. -->
-    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.214.925" />
+    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.245.260" />
   </ItemGroup>
 
   <ItemGroup>
