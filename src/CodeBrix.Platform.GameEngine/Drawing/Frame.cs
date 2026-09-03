@@ -1,6 +1,7 @@
 using System.Drawing;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -89,4 +90,116 @@ public struct Frame
     /// Returns <see cref="Spacing.None"/> if the tilesheet is not available.
     /// </summary>
     public readonly Spacing Overhang => Tilesheet?.GetRegion(RegionName)?.Overhang ?? Spacing.None;
+
+    /// <summary>
+    /// Gets or sets the collision adjustment associated with this frame's region coordinates.
+    /// Returns <see cref="Physics.Collisions.CollisionAdjust.None"/> if the tilesheet is not available.
+    /// </summary>
+    /// <remarks>
+    /// A frame is a lightweight tilesheet reference, so assigning this property updates the
+    /// authoritative per-frame metadata owned by <see cref="TilesheetRegion"/> and its cache.
+    /// Assigning a value always records an explicit override, even when the value equals the
+    /// region default.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown by the setter when the frame's tilesheet region cannot be resolved.
+    /// </exception>
+    public CollisionAdjust CollisionAdjust
+    {
+        readonly get => Tilesheet?.GetRegion(RegionName)?.GetFrameCollisionAdjust(XTile, YTile)
+            ?? Physics.Collisions.CollisionAdjust.None;
+        set
+        {
+            var region = Tilesheet?.GetRegion(RegionName)
+                ?? throw new InvalidOperationException(
+                    $"Tilesheet region '{RegionName}' could not be resolved for this frame.");
+
+            region.SetFrameCollisionAdjust(XTile, YTile, value);
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether this frame carries an explicit collision adjustment rather
+    /// than inheriting its region's <see cref="TilesheetRegion.CollisionAdjust"/>.
+    /// </summary>
+    public readonly bool HasCollisionAdjustOverride =>
+        Tilesheet?.GetRegion(RegionName)?.TryGetFrameCollisionAdjustOverride(XTile, YTile, out _) == true;
+
+    /// <summary>
+    /// Removes this frame's explicit collision adjustment so that it once again inherits its
+    /// region's <see cref="TilesheetRegion.CollisionAdjust"/>.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when an explicit override was removed; otherwise, <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the frame's tilesheet region cannot be resolved.
+    /// </exception>
+    public readonly bool ClearCollisionAdjustOverride()
+    {
+        var region = Tilesheet?.GetRegion(RegionName)
+            ?? throw new InvalidOperationException(
+                $"Tilesheet region '{RegionName}' could not be resolved for this frame.");
+
+        return region.ClearFrameCollisionAdjustOverride(XTile, YTile);
+    }
+
+    /// <summary>
+    /// Gets the frame-local collision rectangle derived from <see cref="TileSize"/> and
+    /// <see cref="CollisionAdjust"/>.
+    /// </summary>
+    public readonly Rectangle CollisionArea =>
+        CollisionAdjust.ApplyTo(new Rectangle(Point.Empty, TileSize));
+
+    /// <summary>
+    /// Gets or sets the effective collision type associated with this frame's region coordinates.
+    /// Returns <see cref="TileCollisionType.None"/> if the tilesheet is not available.
+    /// </summary>
+    /// <remarks>
+    /// A frame is a lightweight tilesheet reference, so assigning this property updates the
+    /// authoritative per-frame metadata owned by <see cref="TilesheetRegion"/>. Assigning a value
+    /// always records an explicit override, even when the value equals the region default.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown by the setter when the frame's tilesheet region cannot be resolved.
+    /// </exception>
+    public TileCollisionType CollisionType
+    {
+        readonly get => Tilesheet?.GetRegion(RegionName)?.GetFrameCollisionType(XTile, YTile)
+            ?? TileCollisionType.None;
+        set
+        {
+            var region = Tilesheet?.GetRegion(RegionName)
+                ?? throw new InvalidOperationException(
+                    $"Tilesheet region '{RegionName}' could not be resolved for this frame.");
+
+            region.SetFrameCollisionType(XTile, YTile, value);
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether this frame carries an explicit collision type rather than
+    /// inheriting its region's <see cref="TilesheetRegion.CollisionType"/>.
+    /// </summary>
+    public readonly bool HasCollisionTypeOverride =>
+        Tilesheet?.GetRegion(RegionName)?.TryGetFrameCollisionTypeOverride(XTile, YTile, out _) == true;
+
+    /// <summary>
+    /// Removes this frame's explicit collision type so that it once again inherits its region's
+    /// <see cref="TilesheetRegion.CollisionType"/>.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when an explicit override was removed; otherwise, <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the frame's tilesheet region cannot be resolved.
+    /// </exception>
+    public readonly bool ClearCollisionTypeOverride()
+    {
+        var region = Tilesheet?.GetRegion(RegionName)
+            ?? throw new InvalidOperationException(
+                $"Tilesheet region '{RegionName}' could not be resolved for this frame.");
+
+        return region.ClearFrameCollisionTypeOverride(XTile, YTile);
+    }
 }

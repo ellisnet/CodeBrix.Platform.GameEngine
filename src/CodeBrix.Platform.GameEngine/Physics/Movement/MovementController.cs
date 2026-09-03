@@ -110,22 +110,24 @@ public sealed partial class MovementController : IDisposable
     /// When enabled, movement crossing the left/right edges wraps the IMovable to the opposite side.
     /// Only meaningful for Grid space; ignored for Pixel space.
     /// </summary>
-    public bool WrapX { get; internal set; } = false;
+    public bool WrapX { get; set; } = false;
 
     /// <summary>
     /// Enables or disables vertical world wrapping.
     /// When enabled, movement crossing the top/bottom edges wraps the IMovable to the opposite side.
     /// Only meaningful for Grid space; ignored for Pixel space.
     /// </summary>
-    public bool WrapY { get; internal set; } = false;
+    public bool WrapY { get; set; } = false;
 
     /// <summary>
     /// Immediately stops all forms of movement — follow, scripted, and integrated.
-    /// Cancels active tweens, clears velocity and acceleration, and halts motion this frame.
+    /// Cancels active scripted movement, clears follow behavior, clears velocity
+    /// and acceleration, and halts motion this frame.
     /// </summary>
     public void StopAllMovement()
     {
-        CancelScript();
+        Unfollow();
+
         _state.Velocity = Vector2.Zero;
         _state.Acceleration = Vector2.Zero;
     }
@@ -135,6 +137,8 @@ public sealed partial class MovementController : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _scriptCompleted = null;
+
         ScriptedMovementStarted = null;
         ScriptedMovementStopped = null;
     }

@@ -1,4 +1,5 @@
 using System.Drawing;
+using CodeBrix.Platform.GameEngine.Effects;
 using CodeBrix.Platform.GameEngine.Logging;
 using CodeBrix.Platform.GameEngine.Scenes;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,10 @@ namespace CodeBrix.Platform.GameEngine.Rendering.Views; //was previously: Gondwa
 /// </summary>
 public sealed class View
 {
+    private SceneLayer? _zoomAnchorLayer;
+    private PointF _zoomAnchorScreenPoint;
+    private PointF _zoomAnchorWorldPoint;
+
     /// <summary>
     /// Gets the unique identifier for this view instance.
     /// </summary>
@@ -62,6 +67,24 @@ public sealed class View
     /// </summary>
     public float MaxZoom { get; set; } = 8f;
 
+    // Presentation-only state owned by EffectsManager. These values never alter
+    // camera, viewport, world, or collision state.
+    internal float EffectOpacity { get; set; } = 1f;
+    internal float EffectReveal { get; set; } = 1f;
+    internal EffectDirection EffectRevealDirection { get; set; } = EffectDirection.FromLeftToRight;
+    internal PointF EffectOffsetFactor { get; set; } = PointF.Empty;
+    internal PointF EffectOffsetPx { get; set; } = PointF.Empty;
+
+    internal bool HasPresentationEffect =>
+        EffectOpacity < 0.9999f
+        || EffectReveal < 0.9999f
+        || Math.Abs(EffectOffsetFactor.X) > 0.0001f
+        || Math.Abs(EffectOffsetFactor.Y) > 0.0001f
+        || Math.Abs(EffectOffsetPx.X) > 0.0001f
+        || Math.Abs(EffectOffsetPx.Y) > 0.0001f;
+
+    internal bool BlocksViewsBelow => !HasPresentationEffect;
+
     internal View(Camera cam, Viewport vp)
     {
         Camera = cam;
@@ -71,10 +94,8 @@ public sealed class View
     }
 
     /// <summary>
-    /// Smoothly zooms the view so that a given screen-space point appears to
-    /// zoom in/out around a fixed world position beneath it, similar to
-    /// map-style mouse-wheel zoom. Both the viewport zoom and camera position
-    /// are animated over the specified duration.
+    /// Zooms the view around a screen-space point while keeping the world point
+    /// beneath that location fixed throughout the operation.
     /// </summary>
     /// <param name="layer">
     /// Reference layer whose parallax factor is used for the world-space transform.
@@ -87,21 +108,79 @@ public sealed class View
     /// Desired zoom factor after the animation completes.
     /// </param>
     /// <param name="durationSeconds">
-    /// Approximate duration in seconds for the zoom + pan animation.
-    /// Values &lt;= 0 snap immediately.
+    /// Duration in seconds for the zoom animation. Values &lt;= 0 snap immediately.
     /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="layer"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// During a smooth zoom, the viewport zoom is animated and the camera position
+    /// is recomputed after every intermediate zoom update. This prevents the anchor
+    /// point from drifting while zoom and camera movement are in progress.
+    /// </remarks>
     public void ZoomAroundScreenPoint(SceneLayer layer, PointF screenPoint, float targetZoom, float durationSeconds)
     {
-        if (layer is null)
-            throw new ArgumentNullException(nameof(layer));
+        ArgumentNullException.ThrowIfNull(layer);
 
         targetZoom = Math.Clamp(targetZoom, MinZoom, MaxZoom);
 
         // World under cursor BEFORE zoom changes
-        var worldUnderCursor = ScreenPxToWorldPx(layer, screenPoint);
+        PointF worldUnderCursor = ScreenPxToWorldPx(layer, screenPoint);
 
-        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X;
-        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y;
+        // Anchored zoom owns camera positioning until the zoom completes. Cancel an
+        // unrelated explicit pan, but leave follow configuration intact so it can
+        // resume on the next update after the anchored zoom finishes.
+        Camera.CancelPan();
+
+        if (durationSeconds <= 0f)
+        {
+            ClearZoomAnchor();
+            Viewport.SnapZoom(targetZoom);
+            SnapCameraToZoomAnchor(layer, screenPoint, worldUnderCursor);
+            return;
+        }
+
+        _zoomAnchorLayer = layer;
+        _zoomAnchorScreenPoint = screenPoint;
+        _zoomAnchorWorldPoint = worldUnderCursor;
+
+        Viewport.ZoomToOverDuration(targetZoom, durationSeconds);
+    }
+
+    /// <summary>
+    /// Advances camera and zoom state for this view.
+    /// </summary>
+    /// <param name="dtSeconds">Elapsed time, in seconds, since the previous update.</param>
+    internal void Update(float dtSeconds)
+    {
+        if (_zoomAnchorLayer is { } anchorLayer)
+        {
+            // Update zoom first, then derive the one camera position that keeps
+            // the selected world point at the selected screen point.
+            Viewport.UpdateZoom(dtSeconds);
+            SnapCameraToZoomAnchor(
+                anchorLayer,
+                _zoomAnchorScreenPoint,
+                _zoomAnchorWorldPoint);
+
+            if (!Viewport.IsZoomAnimating)
+                ClearZoomAnchor();
+
+            return;
+        }
+
+        Camera.Update(dtSeconds);
+        Viewport.UpdateZoom(dtSeconds);
+    }
+
+    private void SnapCameraToZoomAnchor(SceneLayer layer, PointF screenPoint, PointF worldPoint)
+    {
+        float zoom = Viewport.Zoom > 0f
+            ? Viewport.Zoom
+            : 1f;
+
+        PointF effectOffset = GetEffectOffsetPx(layer);
+
+        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X + effectOffset.X;
+        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y + effectOffset.Y;
 
         float parallax = layer.Parallax;
         if (Math.Abs(parallax) < 1e-6f)
@@ -110,23 +189,19 @@ public sealed class View
         float localX = screenPoint.X - offsetX;
         float localY = screenPoint.Y - offsetY;
 
-        // screen = offset + (world - camera*p) / zoom
-        // camera = (world - local*zoom) / p
-        float camTargetX = (worldUnderCursor.X - localX * targetZoom) / parallax;
-        float camTargetY = (worldUnderCursor.Y - localY * targetZoom) / parallax;
+        // screen = offset + (world - camera*p) * zoom
+        // camera = (world - local/zoom) / p
+        float cameraX = (worldPoint.X - localX / zoom) / parallax;
+        float cameraY = (worldPoint.Y - localY / zoom) / parallax;
 
-        var cameraTargetUL = new PointF(camTargetX, camTargetY);
+        Camera.SnapTo(new PointF(cameraX, cameraY));
+    }
 
-        if (durationSeconds <= 0f)
-        {
-            Viewport.SnapZoom(targetZoom);
-            Camera.SnapTo(cameraTargetUL);
-        }
-        else
-        {
-            Viewport.ZoomToOverDuration(targetZoom, durationSeconds);
-            Camera.PanToOverDuration(cameraTargetUL, durationSeconds);
-        }
+    private void ClearZoomAnchor()
+    {
+        _zoomAnchorLayer = null;
+        _zoomAnchorScreenPoint = PointF.Empty;
+        _zoomAnchorWorldPoint = PointF.Empty;
     }
 
     #region Coordinate conversion methods
@@ -147,21 +222,30 @@ public sealed class View
     /// </returns>
     /// <remarks>
     /// The transformation formula is:
-    /// <code>world = camera * parallax + (screen - offset) * zoom</code>
+    /// <code>world = camera * parallax + (screen - offset) / zoom</code>
     /// This is commonly used for mouse picking and screen-to-world raycasting.
     /// </remarks>
     public PointF ScreenPxToWorldPx(SceneLayer layer, PointF screenPx)
     {
-        float zoom = Viewport.Zoom <= 0f ? 1f : Viewport.Zoom;
-        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X;
-        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y;
+        RenderContext? context = GetCurrentRenderContext();
+        float zoom = context?.ViewportZoom
+            ?? (Viewport.Zoom <= 0f ? 1f : Viewport.Zoom);
+        Rectangle targetRect = context?.ViewportTargetRectPx
+            ?? Viewport.TargetRectPx;
+        PointF screenOffset = context?.ViewportScreenOffsetPx
+            ?? Viewport.ScreenOffsetPx;
+        PointF cameraPosition = context?.CameraPositionPx
+            ?? Camera.PositionPx;
+        PointF effectOffset = GetEffectOffsetPx(layer);
+        float offsetX = targetRect.Left + screenOffset.X + effectOffset.X;
+        float offsetY = targetRect.Top + screenOffset.Y + effectOffset.Y;
         float parallax = layer.Parallax;
 
-        float worldX = Camera.PositionPx.X * parallax
-                     + (screenPx.X - offsetX) * zoom;
+        float worldX = cameraPosition.X * parallax
+                     + (screenPx.X - offsetX) / zoom;
 
-        float worldY = Camera.PositionPx.Y * parallax
-                     + (screenPx.Y - offsetY) * zoom;
+        float worldY = cameraPosition.Y * parallax
+                     + (screenPx.Y - offsetY) / zoom;
 
         return new PointF(worldX, worldY);
     }
@@ -182,19 +266,28 @@ public sealed class View
     /// </returns>
     /// <remarks>
     /// The transformation formula is:
-    /// <code>screen = offset + (world - camera * parallax) / zoom</code>
+    /// <code>screen = offset + (world - camera * parallax) * zoom</code>
     /// This is commonly used for rendering world objects to screen coordinates
     /// and for UI elements that track world positions.
     /// </remarks>
     public PointF WorldPxToScreenPx(SceneLayer layer, PointF worldPx)
     {
-        float zoom = Viewport.Zoom <= 0f ? 1f : Viewport.Zoom;
-        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X;
-        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y;
+        RenderContext? context = GetCurrentRenderContext();
+        float zoom = context?.ViewportZoom
+            ?? (Viewport.Zoom <= 0f ? 1f : Viewport.Zoom);
+        Rectangle targetRect = context?.ViewportTargetRectPx
+            ?? Viewport.TargetRectPx;
+        PointF screenOffset = context?.ViewportScreenOffsetPx
+            ?? Viewport.ScreenOffsetPx;
+        PointF cameraPosition = context?.CameraPositionPx
+            ?? Camera.PositionPx;
+        PointF effectOffset = GetEffectOffsetPx(layer);
+        float offsetX = targetRect.Left + screenOffset.X + effectOffset.X;
+        float offsetY = targetRect.Top + screenOffset.Y + effectOffset.Y;
         float parallax = layer.Parallax;
 
-        float screenX = offsetX + (worldPx.X - Camera.PositionPx.X * parallax) / zoom;
-        float screenY = offsetY + (worldPx.Y - Camera.PositionPx.Y * parallax) / zoom;
+        float screenX = offsetX + (worldPx.X - cameraPosition.X * parallax) * zoom;
+        float screenY = offsetY + (worldPx.Y - cameraPosition.Y * parallax) * zoom;
 
         return new PointF(screenX, screenY);
     }
@@ -218,7 +311,7 @@ public sealed class View
     /// for this View, using the specified layer's parallax factor.
     ///
     /// Matches the render path:
-    ///   screen = offset + (world - camera * parallax) / zoom
+    ///   screen = offset + (world - camera * parallax) * zoom
     /// </summary>
     /// <param name="layer">Scene layer whose parallax should be applied.</param>
     /// <param name="worldRect">World-space rectangle (in pixels).</param>
@@ -228,22 +321,30 @@ public sealed class View
         if (layer is null)
             throw new ArgumentNullException(nameof(layer));
 
-        float zoom = Viewport.Zoom <= 0f ? 1f : Viewport.Zoom;
-        float inverseZoom = 1f / zoom;
+        RenderContext? context = GetCurrentRenderContext();
+        float zoom = context?.ViewportZoom
+            ?? (Viewport.Zoom <= 0f ? 1f : Viewport.Zoom);
+        Rectangle targetRect = context?.ViewportTargetRectPx
+            ?? Viewport.TargetRectPx;
+        PointF screenOffset = context?.ViewportScreenOffsetPx
+            ?? Viewport.ScreenOffsetPx;
+        PointF cameraPosition = context?.CameraPositionPx
+            ?? Camera.PositionPx;
 
-        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X;
-        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y;
+        PointF effectOffset = GetEffectOffsetPx(layer);
+        float offsetX = targetRect.Left + screenOffset.X + effectOffset.X;
+        float offsetY = targetRect.Top + screenOffset.Y + effectOffset.Y;
 
         float parallax = layer.Parallax;
 
-        // screen = offset + (world - camera * p) / zoom
-        float localLeft = worldRect.Left - Camera.PositionPx.X * parallax;
-        float localTop = worldRect.Top - Camera.PositionPx.Y * parallax;
+        // screen = offset + (world - camera * p) * zoom
+        float localLeft = worldRect.Left - cameraPosition.X * parallax;
+        float localTop = worldRect.Top - cameraPosition.Y * parallax;
 
-        float scaledLeft = localLeft * inverseZoom;
-        float scaledTop = localTop * inverseZoom;
-        float scaledWidth = worldRect.Width * inverseZoom;
-        float scaledHeight = worldRect.Height * inverseZoom;
+        float scaledLeft = localLeft * zoom;
+        float scaledTop = localTop * zoom;
+        float scaledWidth = worldRect.Width * zoom;
+        float scaledHeight = worldRect.Height * zoom;
 
         float screenLeft = offsetX + scaledLeft;
         float screenTop = offsetY + scaledTop;
@@ -257,17 +358,26 @@ public sealed class View
     /// and the layer's parallax factor.
     ///
     /// Inverse of:
-    ///     screen = offset + (world - camera * p) / zoom
+    ///     screen = offset + (world - camera * p) * zoom
     /// </summary>
     public RectangleF ScreenRectToWorldRect(SceneLayer layer, RectangleF screenRect)
     {
         if (layer is null)
             throw new ArgumentNullException(nameof(layer));
 
-        float zoom = Viewport.Zoom <= 0f ? 1f : Viewport.Zoom;
+        RenderContext? context = GetCurrentRenderContext();
+        float zoom = context?.ViewportZoom
+            ?? (Viewport.Zoom <= 0f ? 1f : Viewport.Zoom);
+        Rectangle targetRect = context?.ViewportTargetRectPx
+            ?? Viewport.TargetRectPx;
+        PointF screenOffset = context?.ViewportScreenOffsetPx
+            ?? Viewport.ScreenOffsetPx;
+        PointF cameraPosition = context?.CameraPositionPx
+            ?? Camera.PositionPx;
 
-        float offsetX = Viewport.TargetRectPx.Left + Viewport.ScreenOffsetPx.X;
-        float offsetY = Viewport.TargetRectPx.Top + Viewport.ScreenOffsetPx.Y;
+        PointF effectOffset = GetEffectOffsetPx(layer);
+        float offsetX = targetRect.Left + screenOffset.X + effectOffset.X;
+        float offsetY = targetRect.Top + screenOffset.Y + effectOffset.Y;
 
         float parallax = layer.Parallax;
 
@@ -275,14 +385,79 @@ public sealed class View
         float localLeft = screenRect.Left - offsetX;
         float localTop = screenRect.Top - offsetY;
 
-        // world = camera*parallax + local * zoom
-        float worldLeft = Camera.PositionPx.X * parallax + localLeft * zoom;
-        float worldTop = Camera.PositionPx.Y * parallax + localTop * zoom;
+        // world = camera*parallax + local / zoom
+        float worldLeft = cameraPosition.X * parallax + localLeft / zoom;
+        float worldTop = cameraPosition.Y * parallax + localTop / zoom;
 
-        float worldWidth = screenRect.Width * zoom;
-        float worldHeight = screenRect.Height * zoom;
+        float worldWidth = screenRect.Width / zoom;
+        float worldHeight = screenRect.Height / zoom;
 
         return new RectangleF(worldLeft, worldTop, worldWidth, worldHeight);
+    }
+
+    /// <summary>
+    /// Gets the combined presentation offset contributed by this view's effects and, when a layer
+    /// is supplied, by that layer's effects. Factors are scaled by the viewport size; pixel offsets
+    /// are used as they stand.
+    /// </summary>
+    /// <param name="layer">The scene layer whose own effect offset should be added, or <see langword="null"/> for the view offset alone.</param>
+    /// <returns>The offset to add to the screen-space transform, in screen pixels.</returns>
+    internal PointF GetEffectOffsetPx(SceneLayer? layer)
+    {
+        RenderContext? context = GetCurrentRenderContext();
+        PointF factor = context?.ViewEffectOffsetFactor
+            ?? EffectOffsetFactor;
+        PointF pixels = context?.ViewEffectOffsetPx
+            ?? EffectOffsetPx;
+        Rectangle targetRect = context?.ViewportTargetRectPx
+            ?? Viewport.TargetRectPx;
+
+        if (layer is not null)
+        {
+            factor = new PointF(
+                factor.X + layer.EffectOffsetFactor.X,
+                factor.Y + layer.EffectOffsetFactor.Y);
+            pixels = new PointF(
+                pixels.X + layer.EffectOffsetPx.X,
+                pixels.Y + layer.EffectOffsetPx.Y);
+        }
+
+        return new PointF(
+            pixels.X + factor.X * targetRect.Width,
+            pixels.Y + factor.Y * targetRect.Height);
+    }
+
+    /// <summary>
+    /// Gets the screen rectangle this view presents into once its own effect offset is applied.
+    /// </summary>
+    /// <returns>The presentation bounds, in screen pixels.</returns>
+    internal RectangleF GetPresentationBoundsPx()
+    {
+        PointF offset = GetEffectOffsetPx(layer: null);
+        RectangleF viewport = GetRenderViewportTargetRectPx();
+
+        return new RectangleF(
+            viewport.Left + offset.X,
+            viewport.Top + offset.Y,
+            viewport.Width,
+            viewport.Height);
+    }
+
+    /// <summary>
+    /// Gets the viewport target rectangle that the current render pass is drawing against: the value
+    /// snapshotted when this view's render pass began, or the live value outside of a render pass.
+    /// </summary>
+    /// <returns>The viewport target rectangle, in screen pixels.</returns>
+    internal Rectangle GetRenderViewportTargetRectPx() =>
+        GetCurrentRenderContext()?.ViewportTargetRectPx
+        ?? Viewport.TargetRectPx;
+
+    private RenderContext? GetCurrentRenderContext()
+    {
+        RenderContext? context = RenderContext.Current;
+        return context is not null && ReferenceEquals(context.View, this)
+            ? context
+            : null;
     }
 
     #endregion Coordinate conversion methods

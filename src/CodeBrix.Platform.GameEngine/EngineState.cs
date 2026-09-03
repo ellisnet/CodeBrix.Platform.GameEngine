@@ -66,7 +66,8 @@ public sealed class EngineState
                 new FrameJsonConverter(),
                 new Serialization.FrameSequenceJsonConverter(),
                 new Serialization.SceneLayerTileArrayJsonConverter(),
-                new Serialization.CollisionGroupRegistryJsonConverter()
+                new Serialization.CollisionGroupRegistryJsonConverter(),
+                new Serialization.CollisionProfileRegistryJsonConverter()
             }
         };
 

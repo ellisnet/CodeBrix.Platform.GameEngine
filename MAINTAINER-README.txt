@@ -36,7 +36,7 @@ REPOSITORY LAYOUT
     tests/CodeBrix.Platform.GameEngine.Tests/
     tests/CodeBrix.Platform.GameEngine.Host.Tests/
     tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/
-    samples/                                   seven complete games/demos
+    samples/                                   nine complete games/demos
     tools/padcheck/                            hand-run gamepad hardware check
     tools/sdl2_library_building/               SDL2 Windows-ARM64 build script
     native_libraries/<rid>/                    committed SDL2 binaries + provenance
@@ -121,6 +121,24 @@ TESTING
 xUnit v3 + SilverAssertions, with coverlet.collector for coverage. No opt-in
 environment variables are required; head-dependent host behavior is env-gated or
 skipped with a reason.
+
+The suites are Microsoft.Testing.Platform runners (see global.json), so each
+test assembly is also a self-contained executable. Running the built dlls
+directly is the reliable fallback when `dotnet test` discovers nothing — on
+.NET SDK 10.0.400 it reports zero tests for this repository — and it is the way
+to filter down to one class or method while iterating:
+
+    dotnet build CodeBrix.Platform.GameEngine.slnx -c Debug --nologo -v q
+    dotnet tests/CodeBrix.Platform.GameEngine.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Tests.dll
+    dotnet tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Sdl2.Tests.dll
+    dotnet tests/CodeBrix.Platform.GameEngine.Host.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Host.Tests.dll
+
+    # filters
+    ... .Tests.dll -class 'CodeBrix.Platform.GameEngine.Tests.TimerTests'
+    ... .Tests.dll -method 'CodeBrix.Platform.GameEngine.Tests.TimerTests.Add_with_a_sub_tick_length_throws'
+
+Current counts: 456 engine-core tests, 45 gamepad tests, 2 host tests (1 of the
+host tests skips without a UI head).
 
 ENGINE CORE TESTS
 -----------------
@@ -256,12 +274,38 @@ engine. Publish the engine package, wait for it to index, bump the pinned engine
 version in the Sdl2 csproj, then build and publish Sdl2. Never pack Sdl2 with
 UseLocalEngineProject=true (the build blocks it).
 
+RELEASE NOTES
+-------------
+A release that changes behaviour or API gets a dated release-notes file at the
+repository root, named RELEASE-NOTES-<yyyy-MM-dd>.md. The current one is
+RELEASE-NOTES-2026-09-03.md. Conventions:
+
+  * BREAKING changes come FIRST, each with the old shape, the new shape and
+    what a consumer has to do. Behaviour changes that need no code edit but
+    change what the game does (a reversed sign, a moved anchor, a new default)
+    count as breaking and belong in that section.
+  * Then new features, then fixes, then the sample/repository changes.
+  * Say member names, default values and file names explicitly; a reader should
+    be able to grep their own code from the notes.
+  * The files are additive history — write a NEW dated file for the next
+    release rather than rewriting an old one.
+
+Release-notes files are repository content only: they are not packed into
+either NuGet package (only README.md, THIRD-PARTY-NOTICES.txt and the relevant
+AGENT-README.txt are — see PACKAGING). Update AGENT-README.txt in the same pass,
+because that file DOES ship and consumers read it as the current truth.
+
 PROVENANCE AND VENDORED SOURCES
 ===============================
-ENGINE CORE — a vendored port of the open-source Gondwana game engine version
-2.5.0 (MIT, (c) 2025 Michael Adkins). Namespaces are
-CodeBrix.Platform.GameEngine[.*]; the upstream namespaces are not used. Ported
-files carry "//was previously:" markers on the changed namespace lines.
+ENGINE CORE — a vendored port of an open-source, MIT-licensed game engine
+((c) 2025 Michael Adkins). THIRD-PARTY-NOTICES.txt names the upstream project
+and carries the exact revision this port tracks, plus the vendoring history;
+update the "Version:" line there whenever upstream changes are merged in.
+Namespaces are CodeBrix.Platform.GameEngine[.*]; the upstream namespaces are not
+used. Ported files carry "//was previously:" markers on the changed namespace
+lines, and files written for this port rather than ported carry
+"//CodeBrix (not from Gondwana)" in the same position. Keep both markers
+accurate: they are how a later merge tells ported code from ours.
 
 SDL2 MANAGED BINDINGS — the files under
 src/CodeBrix.Platform.GameEngine.Sdl2/Native are vendored from the Veldrid
@@ -389,8 +433,8 @@ NOTES
     carries its own .slnx; see EXTRAS-README.txt.
   * Documentation files in this repository: see README-INDEX.txt. The
     repository-root AGENT-README.txt ships in the engine package; the Sdl2
-    project's local AGENT-README.txt ships in the Sdl2 package; this file and
-    EXTRAS-README.txt ship in neither.
+    project's local AGENT-README.txt ships in the Sdl2 package; this file,
+    EXTRAS-README.txt and the RELEASE-NOTES-*.md files ship in neither.
 
 ================================================================================
 END OF MAINTAINER-README

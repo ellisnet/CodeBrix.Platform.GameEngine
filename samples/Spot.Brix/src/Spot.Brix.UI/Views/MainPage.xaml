@@ -23,6 +23,7 @@
             <CheckBox Content="Sound Effects" Foreground="White" IsChecked="{Binding SoundEffectsEnabled, Mode=TwoWay}" />
             <CheckBox Content="Jiggle" Foreground="White" IsChecked="{Binding JiggleEnabled, Mode=TwoWay}" />
             <CheckBox Content="Clouds" Foreground="White" IsChecked="{Binding CloudsEnabled, Mode=TwoWay}" />
+            <CheckBox Content="GPU (on restart)" Foreground="White" IsChecked="{Binding GpuAccelerationEnabled, Mode=TwoWay}" />
             <TextBlock Text="Press S to toggle scores" Foreground="#AAFFFFFF" VerticalAlignment="Center" />
         </StackPanel>
 

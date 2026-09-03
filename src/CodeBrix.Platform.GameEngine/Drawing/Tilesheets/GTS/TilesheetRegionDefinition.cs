@@ -1,4 +1,5 @@
 using System.Drawing;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -73,4 +74,38 @@ public sealed class TilesheetRegionDefinition
     /// tile spaces while maintaining proper grid alignment.
     /// </remarks>
     public Spacing Overhang { get; set; } = Spacing.None;
+
+    /// <summary>
+    /// Gets or sets the region-level collision adjustment applied to every frame in the region
+    /// that has no explicit override.
+    /// </summary>
+    /// <value>Defaults to <see cref="Physics.Collisions.CollisionAdjust.None"/>.</value>
+    /// <remarks>
+    /// A definition file written before collision metadata existed omits this member, which reads
+    /// back as <see cref="Physics.Collisions.CollisionAdjust.None"/>.
+    /// </remarks>
+    public CollisionAdjust CollisionAdjust { get; set; } = CollisionAdjust.None;
+
+    /// <summary>
+    /// Gets or sets the region-level collision type inherited by every frame in the region that
+    /// has no explicit collision-type override.
+    /// </summary>
+    /// <value>Defaults to <see cref="TileCollisionType.None"/>.</value>
+    /// <remarks>
+    /// A definition file written before collision metadata existed omits this member, which reads
+    /// back as <see cref="TileCollisionType.None"/>.
+    /// </remarks>
+    public TileCollisionType CollisionType { get; set; } = TileCollisionType.None;
+
+    /// <summary>
+    /// Gets or sets the per-frame collision metadata for this region.
+    /// </summary>
+    /// <value>Defaults to an empty list.</value>
+    /// <remarks>
+    /// A frame entry whose <see cref="TilesheetFrameDefinition.CollisionAdjust"/> or
+    /// <see cref="TilesheetFrameDefinition.CollisionType"/> is missing inherits the corresponding
+    /// region value; a frame entry carrying a value is an explicit override, even when that value
+    /// equals the region default.
+    /// </remarks>
+    public List<TilesheetFrameDefinition> Frames { get; set; } = new();
 }

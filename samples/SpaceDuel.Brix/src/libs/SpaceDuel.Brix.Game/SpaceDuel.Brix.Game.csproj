@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Keep a distinct RootNamespace (not the app's "SpaceDuel.Brix") so a transitive
+         CodeBrix.Platform reference does not generate a duplicate GlobalStaticResources. -->
+    <RootNamespace>SpaceDuel.Brix.Game</RootNamespace>
+
+    <!-- The space duel game host is ported from NRT-annotated source; enable NRT here. -->
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- The ship sprite sheet travels inside the assembly, so the game library needs no
+       content files on disk. The logical name is pinned so it never moves with RootNamespace. -->
+  <ItemGroup>
+  </ItemGroup>
+
+  <!-- The game logic owns the CodeBrix.Platform.GameEngine references; the app's .Core
+       project depends on this library rather than referencing the engine directly. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine.Host\CodeBrix.Platform.GameEngine.Host.csproj" />
+  </ItemGroup>
+</Project>

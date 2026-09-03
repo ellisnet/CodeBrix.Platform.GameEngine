@@ -1,0 +1,19 @@
+<Page
+    x:Class="SpaceDuel.Brix.Views.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:SpaceDuel.Brix.ViewModels"
+    xmlns:game="using:CodeBrix.Platform.GameEngine.Host.Rendering"
+    FontFamily="{StaticResource OpenSansFont}"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.DataContext>
+        <vm:MainViewModel />
+    </Page.DataContext>
+
+    <!-- The game draws its own HUD, so the page is nothing but the canvas: that keeps
+         keyboard focus on the canvas, which is where the engine reads the keyboard. -->
+    <Grid Background="Black">
+        <game:GameSurfaceCanvas x:Name="GameCanvas" />
+    </Grid>
+</Page>

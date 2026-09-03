@@ -277,10 +277,7 @@ public sealed class ViewManager
     internal void UpdateCameras(float dtSeconds)
     {
         foreach (var view in _views)
-        {
-            view.Camera.Update(dtSeconds);
-            view.Viewport.UpdateZoom(dtSeconds);
-        }
+            view.Update(dtSeconds);
     }
 
     internal void BindToScene(Scene scene, bool limitCameraToWorldBoundPx)

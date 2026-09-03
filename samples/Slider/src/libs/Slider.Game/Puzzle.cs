@@ -18,7 +18,7 @@ namespace Slider.Game
 {
     /// <summary>
     /// A classic sliding-tile picture puzzle. Slices an image into an N&#215;M grid of sprite tiles with
-    /// one empty space; adjacent tiles slide (with sound) into the open space. Ported from the Gondwana
+    /// one empty space; adjacent tiles slide (with sound) into the open space. Ported from the upstream
     /// Slider demo; the game logic references only the engine and .NET (no UI-toolkit dependency).
     /// </summary>
     public class Puzzle : IDisposable

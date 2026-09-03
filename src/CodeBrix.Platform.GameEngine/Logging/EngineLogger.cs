@@ -44,6 +44,7 @@ namespace CodeBrix.Platform.GameEngine.Logging; //was previously: Gondwana.Loggi
 public static partial class EngineLogger
 {
     private static ILoggerFactory? _loggerFactory;
+    private static bool _usingExternalLoggerFactory;
     private static readonly object _factoryLock = new();
 
     // Cache wrappers (not raw loggers)
@@ -215,6 +216,7 @@ public static partial class EngineLogger
         lock (_factoryLock)
         {
             _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            _usingExternalLoggerFactory = true;
             _loggerCache.Clear(); // refresh wrappers
         }
     }
@@ -254,11 +256,16 @@ public static partial class EngineLogger
     /// <remarks>
     /// This method clears the logger cache, so any previously retrieved loggers may need to be refreshed.
     /// The new log level applies to all loggers created after this method is called.
+    /// When an external factory has been supplied via <see cref="Initialize"/>, provider and filtering
+    /// configuration remain owned by that factory and this method leaves it unchanged.
     /// </remarks>
     public static void SetLogLevel(LogLevel level)
     {
         lock (_factoryLock)
         {
+            if (_usingExternalLoggerFactory)
+                return;
+
             // Check if we're running in a browser/WASM environment
             bool isBrowser = OperatingSystem.IsBrowser();
 

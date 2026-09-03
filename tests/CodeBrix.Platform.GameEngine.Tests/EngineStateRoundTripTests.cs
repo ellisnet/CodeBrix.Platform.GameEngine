@@ -3,6 +3,7 @@ using CodeBrix.Platform.GameEngine.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Animation;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Scenes;
 using SilverAssertions;
 using SkiaSharp;
@@ -11,6 +12,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Text.Json.Nodes;
 using Xunit;
 
 // ReSharper disable RedundantSuppressNullableWarningExpression
@@ -79,6 +81,9 @@ public class EngineStateRoundTripTests : IDisposable
         ground[0, 0]!.Visible = false;
         ground[3, 1]!.CurrentFrame = new Frame(sheet, 0, 2);
         ground[3, 1]!.CollisionsEnabled = true;
+        sheet.DefaultRegion.SetFrameCollisionAdjust(0, 2, new CollisionAdjust(1, 2, 3, 4));
+        ground[3, 1]!.AdjustCollisionAreaByFrame = true;
+        ground[1, 2]!.AdjustCollisionArea = new CollisionAdjust(5, 6, 7, 8);
 
         var sequence = new FrameSequence(new Frame(sheet, 0, 0)) { SequenceCycleType = CycleType.PingPong };
         sequence.AddFrame(sheet, 1, 0);
@@ -88,6 +93,7 @@ public class EngineStateRoundTripTests : IDisposable
         var hero = SpriteManager.Instance.CreateSprite(ground, new Frame(sheet, 3, 3), "hero");
         hero.SetPosition(new Vector2(2f, 1f));
         hero.Visible = true;
+        hero.AdjustCollisionArea = new CollisionAdjust(9, 10, 11, 12);
 
         var blip = AudioResourceManager.Instance.LoadFromFile("blip", wavPath, volume: 0.75f, pan: -0.5f);
         blip.IsLooping = true;
@@ -118,6 +124,13 @@ public class EngineStateRoundTripTests : IDisposable
         loadedGround[0, 0]!.Visible.Should().BeFalse();
         loadedGround[3, 1]!.CollisionsEnabled.Should().BeTrue();
         loadedGround[3, 1]!.Collider.Should().NotBeNull();
+
+        //Assert - collision adjustment: the by-frame tile re-derives from its frame, the static
+        //tile keeps the value it was saved with.
+        loadedGround[3, 1]!.AdjustCollisionAreaByFrame.Should().BeTrue();
+        loadedGround[3, 1]!.AdjustCollisionArea.Should().Be(new CollisionAdjust(1, 2, 3, 4));
+        loadedGround[1, 2]!.AdjustCollisionAreaByFrame.Should().BeFalse();
+        loadedGround[1, 2]!.AdjustCollisionArea.Should().Be(new CollisionAdjust(5, 6, 7, 8));
         ReferenceEquals(loadedGround[0, 0]!.SceneLayer, loadedGround).Should().BeTrue();
 
         //Assert - sprite with shared layer reference and live wiring
@@ -127,6 +140,7 @@ public class EngineStateRoundTripTests : IDisposable
         loadedHero.SceneLayerCoordinates.X.Should().Be(2f);
         loadedHero.SceneLayerCoordinates.Y.Should().Be(1f);
         loadedHero.CurrentFrame.XTile.Should().Be(3);
+        loadedHero.AdjustCollisionArea.Should().Be(new CollisionAdjust(9, 10, 11, 12));
         loadedHero.TileAnimator.Should().NotBeNull();
         loadedHero.Movement.Should().NotBeNull();
 
@@ -211,6 +225,66 @@ public class EngineStateRoundTripTests : IDisposable
         //Assert - both scenes present, the live one untouched.
         ReferenceEquals(Scene.GetSceneByID("scene-live"), liveScene).Should().BeTrue();
         Scene.GetSceneByID("scene-saved").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Save_files_written_before_by_frame_collision_mode_still_load()
+    {
+        //Arrange - a save whose tile carries only the pre-existing AdjustCollisionArea member.
+        var imagePath = WriteTilesheetPng("legacy_sheet.png", tileSize: 16, columns: 2, rows: 2);
+        var savePath = Path.Combine(_workDirectory, "save_legacy.json");
+
+        var sheet = TilesheetRegistry.Instance.LoadFromImageFile("legacy_sheet", imagePath);
+        sheet.DefaultRegion.TileSize = new Size(16, 16);
+        sheet.DefaultRegion.SetFrameCollisionAdjust(0, 0, new CollisionAdjust(6, 6, 6, 6));
+
+        var scene = new Scene { ID = "scene-legacy" };
+        var layer = scene.AddLayer(columnCount: 2, rowCount: 2, width: 16, height: 16, zOrder: 0, parallax: 1f);
+        layer[0, 0]!.CurrentFrame = new Frame(sheet, 0, 0);
+        layer[0, 0]!.AdjustCollisionArea = new CollisionAdjust(1, 2, 3, 4);
+
+        Engine.Instance.State.SaveToFile(savePath);
+
+        //Act - strip every AdjustCollisionAreaByFrame member, as a pre-#246 save file would be.
+        var document = JsonNode.Parse(File.ReadAllText(savePath))!;
+        RemoveMember(document, "AdjustCollisionAreaByFrame");
+        File.WriteAllText(savePath, document.ToJsonString());
+
+        ClearAllEngineState();
+        TilesheetRegistry.Instance.LoadFromImageFile("legacy_sheet", imagePath).DefaultRegion.TileSize =
+            new Size(16, 16);
+        EngineState.LoadFromFile(savePath);
+
+        //Assert - the saved adjustment survives and by-frame mode defaults to off.
+        var loadedLayer = Scene.GetSceneByID("scene-legacy")!.First();
+        loadedLayer[0, 0]!.AdjustCollisionArea.Should().Be(new CollisionAdjust(1, 2, 3, 4));
+        loadedLayer[0, 0]!.AdjustCollisionAreaByFrame.Should().BeFalse();
+    }
+
+    private static void RemoveMember(JsonNode node, string memberName)
+    {
+        switch (node)
+        {
+            case JsonObject jsonObject:
+                jsonObject.Remove(memberName);
+
+                foreach (var property in jsonObject.ToList())
+                {
+                    if (property.Value is not null)
+                        RemoveMember(property.Value, memberName);
+                }
+
+                break;
+
+            case JsonArray jsonArray:
+                foreach (var item in jsonArray.ToList())
+                {
+                    if (item is not null)
+                        RemoveMember(item, memberName);
+                }
+
+                break;
+        }
     }
 
     private string WriteTilesheetPng(string fileName, int tileSize, int columns, int rows)

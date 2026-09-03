@@ -1,4 +1,5 @@
 using System.Drawing;
+using CodeBrix.Platform.GameEngine.Timers;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -32,8 +33,16 @@ public sealed class TapGestureRecognizer : IDisposable
 
     // Per-touch tracking: key = touch ID
     private readonly Dictionary<int, TapState> _activeTaps = new();
+    private readonly HashSet<int> _activeContacts = new();
+    private bool _isMultiTouchSequence;
 
     private bool _isDisposed;
+
+    /// <summary>
+    /// Gets or sets the swipe recognizer that competes with this recognizer for the same contact.
+    /// When set, a contact that would also be recognized as a swipe is not reported as a tap.
+    /// </summary>
+    internal SwipeGestureRecognizer? CompetingSwipeRecognizer { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum duration in seconds that a touch may last to still be considered a tap.
@@ -74,7 +83,18 @@ public sealed class TapGestureRecognizer : IDisposable
 
     private void OnTouchBegan(object? sender, TouchEventArgs e)
     {
-        _activeTaps[e.Touch.Id] = new TapState(e.Touch.Position);
+        _activeContacts.Add(e.Touch.Id);
+
+        if (_activeContacts.Count > 1)
+        {
+            // A second finger landed: the sequence is a multi-touch gesture, not a tap.
+            _isMultiTouchSequence = true;
+            _activeTaps.Clear();
+            return;
+        }
+
+        if (!_isMultiTouchSequence)
+            _activeTaps[e.Touch.Id] = new TapState(e.Touch.Position, e.Tick);
     }
 
     private void OnTouchMoved(object? sender, TouchEventArgs e)
@@ -95,6 +115,16 @@ public sealed class TapGestureRecognizer : IDisposable
 
     private void OnTouchEnded(object? sender, TouchEventArgs e)
     {
+        _activeContacts.Remove(e.Touch.Id);
+
+        if (_isMultiTouchSequence)
+        {
+            _activeTaps.Remove(e.Touch.Id);
+            if (_activeContacts.Count == 0)
+                _isMultiTouchSequence = false;
+            return;
+        }
+
         if (!_activeTaps.TryGetValue(e.Touch.Id, out var state))
             return;
 
@@ -104,9 +134,19 @@ public sealed class TapGestureRecognizer : IDisposable
         if (state.Cancelled || e.Touch.Phase == TouchPhase.Cancelled)
             return;
 
-        var elapsed = (DateTime.UtcNow - state.StartTime).TotalSeconds;
-        if (elapsed <= MaxTapDurationSeconds)
+        // The end position is checked as well as any Moved events, so a contact that drifted
+        // without producing a Moved event is still distance-checked.
+        var dx = e.Touch.Position.X - state.StartPosition.X;
+        var dy = e.Touch.Position.Y - state.StartPosition.Y;
+        var distance = Math.Sqrt(dx * dx + dy * dy);
+        var elapsed = HighResTimer.GetDuration(state.StartTick, e.Tick);
+
+        if (distance <= MaxTapMovementPixels &&
+            elapsed <= MaxTapDurationSeconds &&
+            !(CompetingSwipeRecognizer?.WouldRecognize(distance, elapsed) ?? false))
+        {
             Tapped?.Invoke(this, new TappedEventArgs(e.Touch.Id, state.StartPosition));
+        }
     }
 
     /// <summary>
@@ -121,10 +161,18 @@ public sealed class TapGestureRecognizer : IDisposable
         _touchInput.TouchBegan -= OnTouchBegan;
         _touchInput.TouchMoved -= OnTouchMoved;
         _touchInput.TouchEnded -= OnTouchEnded;
+        Reset();
     }
 
-    private record struct TapState(Point StartPosition, DateTime StartTime, bool Cancelled)
+    internal void Reset()
     {
-        public TapState(Point startPosition) : this(startPosition, DateTime.UtcNow, false) { }
+        _activeTaps.Clear();
+        _activeContacts.Clear();
+        _isMultiTouchSequence = false;
+    }
+
+    private record struct TapState(Point StartPosition, long StartTick, bool Cancelled)
+    {
+        public TapState(Point startPosition, long startTick) : this(startPosition, startTick, false) { }
     }
 }

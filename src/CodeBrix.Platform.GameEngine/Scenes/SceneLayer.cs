@@ -2,10 +2,10 @@ using System.Collections;
 using System.Drawing;
 using System.Runtime.Serialization;
 using CodeBrix.Platform.GameEngine.Drawing;
-using CodeBrix.Platform.GameEngine.Drawing.Collisions;
 using CodeBrix.Platform.GameEngine.Drawing.Coordinates;
 using CodeBrix.Platform.GameEngine.Drawing.Direct;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
+using CodeBrix.Platform.GameEngine.Effects;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Rendering;
 using System.Text.Json;
@@ -145,6 +145,24 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     private int _tileWidth;     // rendered width
     private int _tileHeight;    // rendered height
     private bool _visible;      // is SceneLayer to be rendered; useful with multiple layers
+    private string _defaultTileCollisionProfile = CollisionProfileNames.World;
+
+    // Presentation-only state owned by EffectsManager. These values never alter the layer's
+    // canonical origin, its tiles, or any collision geometry, so they are never persisted.
+    [JsonIgnore]
+    internal float EffectOpacity { get; set; } = 1f;
+
+    [JsonIgnore]
+    internal float EffectReveal { get; set; } = 1f;
+
+    [JsonIgnore]
+    internal EffectDirection EffectRevealDirection { get; set; } = EffectDirection.FromLeftToRight;
+
+    [JsonIgnore]
+    internal PointF EffectOffsetFactor { get; set; } = PointF.Empty;
+
+    [JsonIgnore]
+    internal PointF EffectOffsetPx { get; set; } = PointF.Empty;
 
     #endregion private fields
 
@@ -187,7 +205,9 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
 
         ColliderRegistry = new ColliderRegistry();
         CollisionResolver = new CollisionResolver(ColliderRegistry);
-        RefreshQueue = new RefreshQueue();
+        // Unbound scenes retain dirty regions for a future dirty-region host. Once bound,
+        // the scene policy disables queue writes for full-frame GL rendering.
+        RefreshQueue = new RefreshQueue(() => Scene?.UsesDirtyRegionRendering ?? true);
 
         for (int x = 0; x <= _sceneLayerTileArray.GetUpperBound(0); x++)
         {
@@ -204,9 +224,10 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
 
                 tile.parentSceneLayer = this;
                 tile.sceneLayerCoordinates = new Point(x, y);
-                tile.Collider ??= new TileCollider(tile, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None);
+                tile.RehydrateCollisionAdjustAfterDeserialization();
+                tile.EnsureCollider();
 
-                if (tile.CollisionsEnabled)
+                if (tile.CollisionsEnabled && tile.Collider is not null)
                 {
                     ColliderRegistry.Register(tile.Collider);
                 }
@@ -265,7 +286,8 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     /// <item><description><see cref="CoordinateSystemTypes.IsometricAxial"/> - Axial isometric projection</description></item>
     /// <item><description><see cref="CoordinateSystemTypes.HexAxialFlatTop"/> - Hexagonal grid with flat-top orientation</description></item>
     /// <item><description><see cref="CoordinateSystemTypes.HexAxialPointedTop"/> - Hexagonal grid with pointed-top orientation</description></item>
-    /// <item><description><see cref="CoordinateSystemTypes.Oblique"/> - Sheared square lattice with a parallelogram tile footprint</description></item>
+    /// <item><description><see cref="CoordinateSystemTypes.ObliqueRight"/> - Right-receding sheared square lattice with a parallelogram tile footprint</description></item>
+    /// <item><description><see cref="CoordinateSystemTypes.ObliqueLeft"/> - Left-receding sheared square lattice with a parallelogram tile footprint</description></item>
     /// </list>
     /// <para>
     /// Changing the coordinate system after layer creation is supported but may produce unexpected
@@ -284,7 +306,8 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
                 IsometricAxialCoordinates => CoordinateSystemTypes.IsometricAxial,
                 HexAxialFlatTopCoordinates => CoordinateSystemTypes.HexAxialFlatTop,
                 HexAxialPointedTop => CoordinateSystemTypes.HexAxialPointedTop,
-                ObliqueCoordinates => CoordinateSystemTypes.Oblique,
+                ObliqueRightCoordinates => CoordinateSystemTypes.ObliqueRight,
+                ObliqueLeftCoordinates => CoordinateSystemTypes.ObliqueLeft,
                 _ => throw new InvalidOperationException($"Unknown coordinate system type: {CoordinateSystem.GetType().Name}")
             };
         }
@@ -297,7 +320,8 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
                 CoordinateSystemTypes.IsometricAxial => new IsometricAxialCoordinates(),
                 CoordinateSystemTypes.HexAxialFlatTop => new HexAxialFlatTopCoordinates(),
                 CoordinateSystemTypes.HexAxialPointedTop => new HexAxialPointedTop(),
-                CoordinateSystemTypes.Oblique => new ObliqueCoordinates(),
+                CoordinateSystemTypes.ObliqueRight => new ObliqueRightCoordinates(),
+                CoordinateSystemTypes.ObliqueLeft => new ObliqueLeftCoordinates(),
                 _ => throw new ArgumentOutOfRangeException(nameof(value), $"Unknown coordinate system type: {value}")
             };
         }
@@ -678,6 +702,46 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     [JsonIgnore]
     public CollisionGroupRegistry CollisionGroups => Scene.CollisionGroups;
 
+    /// <summary>
+    /// Gets or sets the name of the scene collision profile applied to the fixed tiles on this layer.
+    /// </summary>
+    /// <value>Defaults to <see cref="CollisionProfileNames.World"/>.</value>
+    /// <remarks>
+    /// Assigning a new name re-applies it to every fixed tile immediately when the layer already
+    /// belongs to a scene; otherwise the name is retained and applied when the layer joins one.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when the value is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">
+    /// Thrown when the layer's scene has no profile registered under that name, or the profile
+    /// names a collision group the scene does not define.
+    /// </exception>
+    [JsonInclude]
+    public string DefaultTileCollisionProfile
+    {
+        get => _defaultTileCollisionProfile;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException(
+                    "Default tile collision profile cannot be empty.",
+                    nameof(value));
+            }
+
+            if (Scene is not null)
+            {
+                var profile = Scene.CollisionProfiles.Get(value);
+                _ = profile.ResolveCollisionGroup(Scene.CollisionGroups);
+                _ = profile.ResolveCollidesWith(Scene.CollisionGroups);
+            }
+
+            _defaultTileCollisionProfile = value;
+
+            if (Scene is not null && _sceneLayerTileArray is not null)
+                ApplyDefaultTileCollisionProfile();
+        }
+    }
+
     #endregion properties
 
     #region public methods
@@ -706,9 +770,9 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     }
 
     /// <summary>
-    /// Converts a grid coordinate (col,row) into the world-space pixel anchor
-    /// where that tile begins. This returns the tile's top-left anchor in world
-    /// pixels, not the tile center.
+    /// Converts a grid coordinate (col,row) into the projection-defined world-space
+    /// pixel anchor for that tile. Rectangular and oblique systems use the top-left
+    /// corner of the image bounds; isometric systems use the diamond's top vertex.
     /// </summary>
     public PointF GridToWorldPx(PointF grid) => CoordinateSystem.GetAnchorPixelAtSceneLayerCoordinates(this, grid);
 
@@ -798,6 +862,11 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         _visible = true;
 
         _originPx = Point.Empty;                  // layer world origin
+        EffectOpacity = 1f;
+        EffectReveal = 1f;
+        EffectRevealDirection = EffectDirection.FromLeftToRight;
+        EffectOffsetFactor = PointF.Empty;
+        EffectOffsetPx = PointF.Empty;
 
         CoordinateSystemType = coordinateSystem;
 
@@ -807,7 +876,9 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         // let each SceneLayerTile in array know its position in the array
         SaveGridCoordinatesToSceneLayerTiles();
         BuildTileColliders();
-        RefreshQueue = new RefreshQueue();
+        // Unbound scenes retain dirty regions for a future dirty-region host. Once bound,
+        // the scene policy disables queue writes for full-frame GL rendering.
+        RefreshQueue = new RefreshQueue(() => Scene?.UsesDirtyRegionRendering ?? true);
     }
 
     private void SaveGridCoordinatesToSceneLayerTiles()
@@ -823,6 +894,22 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         }
     }
 
+    /// <summary>
+    /// Applies <see cref="DefaultTileCollisionProfile"/> to every fixed tile on this layer. Does
+    /// nothing while the layer has no scene or no tile grid.
+    /// </summary>
+    internal void ApplyDefaultTileCollisionProfile()
+    {
+        if (Scene is null || _sceneLayerTileArray is null)
+            return;
+
+        // Resolve once up front so an invalid profile fails before partially updating the layer.
+        Scene.CollisionProfiles.Get(_defaultTileCollisionProfile);
+
+        foreach (var tile in _sceneLayerTileArray)
+            tile?.SetCollisionProfile(_defaultTileCollisionProfile);
+    }
+
     private void BuildTileColliders()
     {
         foreach (var tile in _sceneLayerTileArray)
@@ -830,7 +917,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
             if (tile is null)
                 continue;
 
-            tile.Collider ??= new TileCollider(tile, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None);
+            tile.EnsureCollider();
         }
     }
 
@@ -882,7 +969,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
                 continue;
 
             // Defensive overlap check (cheap)
-            if (!sprite.DrawLocationWorld.IntersectsWith(queryRect))
+            if (!sprite.VisualBoundsWorld.IntersectsWith(queryRect))
                 continue;
 
             list.Add(sprite);

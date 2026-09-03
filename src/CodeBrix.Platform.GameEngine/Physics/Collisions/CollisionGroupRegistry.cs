@@ -82,6 +82,28 @@ public sealed class CollisionGroupRegistry
     }
 
     /// <summary>
+    /// Combines previously defined collision groups into one bit mask.
+    /// </summary>
+    /// <param name="names">The names of the groups to combine.</param>
+    /// <returns>
+    /// The bitwise union of every named group's flag; <see cref="CollisionMasks.None"/> for an
+    /// empty collection.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="names"/> is null.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when a name is not a defined collision group.</exception>
+    public int GetMask(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        int mask = CollisionMasks.None;
+
+        foreach (var name in names)
+            mask |= Get(name);
+
+        return mask;
+    }
+
+    /// <summary>
     /// Gets a read-only collection of all defined collision group names.
     /// </summary>
     public IReadOnlyCollection<string> GetGroupNames() => _groups.Keys.ToArray();

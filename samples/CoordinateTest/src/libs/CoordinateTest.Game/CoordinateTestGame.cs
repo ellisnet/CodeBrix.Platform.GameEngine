@@ -25,7 +25,7 @@ namespace CoordinateTest.Game;
 /// <summary>
 /// A coordinate-system / camera test bed: two orthogonal tile layers, animated rooster sprites, two
 /// camera views, WASD camera-pan and arrow-key sprite movement, a screen&#8596;world&#8596;grid HUD,
-/// scroll-wheel zoom, and click particle bursts. Ported from the Gondwana CoordinateTest demo onto a
+/// scroll-wheel zoom, and click particle bursts. Ported from the upstream CoordinateTest demo onto a
 /// CodeBrix.Platform <see cref="GameSurfaceCanvas"/> using the CpuRendering (CPU) render surface.
 /// </summary>
 public class CoordinateTestGame : IDisposable

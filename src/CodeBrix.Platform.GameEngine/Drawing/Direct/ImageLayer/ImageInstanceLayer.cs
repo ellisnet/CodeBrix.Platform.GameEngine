@@ -1,6 +1,7 @@
 using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
+using CodeBrix.Platform.GameEngine.Scenes;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using CodeBrix.Platform.GameEngine.Timers;
 using SkiaSharp;
@@ -44,6 +45,12 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct.ImageLayer; //was previous
 /// per-instance update customization, and recycle behavior.
 /// </description></item>
 /// </list>
+/// </para>
+/// <para>
+/// The layer may be attached either to a <see cref="Rendering.Views.View"/> (screen space, fixed on
+/// screen) or to a <see cref="Scenes.SceneLayer"/> (world space, so camera, parallax and zoom apply).
+/// Instance bounds, the bounds handed to the hooks, and the refresh rectangles are all expressed in
+/// whichever of those two spaces the layer was constructed for.
 /// </para>
 /// </remarks>
 /// <example>
@@ -251,6 +258,27 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
     }
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="ImageInstanceLayer"/> class for scene-layer rendering.
+    /// </summary>
+    /// <param name="renderSurfaceHost">The render surface host managing this layer.</param>
+    /// <param name="sceneLayer">The scene layer to render into.</param>
+    /// <param name="worldBounds">The world-space bounds for this layer.</param>
+    /// <param name="nickname">Optional friendly name for debugging.</param>
+    public ImageInstanceLayer(RenderSurfaceHostBase renderSurfaceHost,
+                              SceneLayer sceneLayer,
+                              Rectangle worldBounds,
+                              string? nickname = null)
+        : base(renderSurfaceHost,
+               DirectDrawingMode.SceneLayer,
+               sceneLayer: sceneLayer,
+               view: null,
+               screenBounds: null,
+               worldBounds: worldBounds,
+               name: nickname)
+    {
+    }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ImageInstanceLayer"/> class and assigns optional hooks.
     /// </summary>
     /// <param name="renderSurfaceHost">The render surface host managing this layer.</param>
@@ -280,14 +308,52 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
     }
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="ImageInstanceLayer"/> class for scene-layer rendering
+    /// and assigns optional hooks.
+    /// </summary>
+    /// <param name="renderSurfaceHost">The render surface host managing this layer.</param>
+    /// <param name="sceneLayer">The scene layer to render into.</param>
+    /// <param name="worldBounds">The world-space bounds for this layer.</param>
+    /// <param name="initializer">Optional callback used to create the initial set of instances.</param>
+    /// <param name="shouldRecycle">Optional callback used to determine whether an instance should be recycled.</param>
+    /// <param name="recycleInstance">Optional callback used to create a replacement instance when recycling occurs.</param>
+    /// <param name="updateInstance">Optional callback invoked after the built-in motion update for each instance.</param>
+    /// <param name="nickname">Optional friendly name for debugging.</param>
+    public ImageInstanceLayer(RenderSurfaceHostBase renderSurfaceHost,
+                              SceneLayer sceneLayer,
+                              Rectangle worldBounds,
+                              Func<Rectangle, Random, IEnumerable<ImageInstance>>? initializer,
+                              Func<ImageInstance, Rectangle, bool>? shouldRecycle = null,
+                              Func<ImageInstance, Rectangle, Random, ImageInstance>? recycleInstance = null,
+                              Action<ImageInstance, float>? updateInstance = null,
+                              string? nickname = null)
+        : this(renderSurfaceHost, sceneLayer, worldBounds, nickname)
+    {
+        Initializer = initializer;
+        ShouldRecycle = shouldRecycle;
+        RecycleInstance = recycleInstance;
+        UpdateInstance = updateInstance;
+
+        InitializeInstances();
+    }
+
+    /// <summary>
     /// Clears the current instance collection and rebuilds it using <see cref="Initializer"/>, if one is assigned.
     /// </summary>
+    /// <remarks>
+    /// The bounds handed to <see cref="Initializer"/> are the layer's <see cref="DirectDrawingBase.WorldBounds"/>
+    /// in scene-layer mode and its <see cref="DirectDrawingBase.ScreenBounds"/> in view mode.
+    /// </remarks>
     public void InitializeInstances()
     {
         Instances.Clear();
 
+        var bounds = Mode == DirectDrawingMode.SceneLayer
+            ? WorldBounds
+            : ScreenBounds;
+
         if (Initializer is not null)
-            Instances.AddRange(Initializer(ScreenBounds, _rng));
+            Instances.AddRange(Initializer(bounds, _rng));
 
         ForceRefresh();
     }
@@ -315,7 +381,9 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
             return;
         }
 
-        var bounds = ScreenBounds;
+        var bounds = Mode == DirectDrawingMode.SceneLayer
+            ? WorldBounds
+            : ScreenBounds;
 
         for (int i = 0; i < Instances.Count; i++)
         {
@@ -359,6 +427,18 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
     {
         var canvas = backbuffer.Canvas;
 
+        Rectangle srcBounds = Mode == DirectDrawingMode.SceneLayer
+            ? WorldBounds
+            : ScreenBounds;
+
+        float sx = srcBounds.Width > 0
+            ? destRectScreen.Width / srcBounds.Width
+            : 1f;
+
+        float sy = srcBounds.Height > 0
+            ? destRectScreen.Height / srcBounds.Height
+            : 1f;
+
         canvas.Save();
         canvas.ClipRect(destRectScreen.ToSKRect());
 
@@ -367,10 +447,10 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
             _paint.Color = instance.Tint;
 
             var dst = new SKRect(
-                instance.Bounds.Left,
-                instance.Bounds.Top,
-                instance.Bounds.Right,
-                instance.Bounds.Bottom);
+                destRectScreen.Left + ((instance.Bounds.Left - srcBounds.Left) * sx),
+                destRectScreen.Top + ((instance.Bounds.Top - srcBounds.Top) * sy),
+                destRectScreen.Left + ((instance.Bounds.Right - srcBounds.Left) * sx),
+                destRectScreen.Top + ((instance.Bounds.Bottom - srcBounds.Top) * sy));
 
             if (instance.Rotation != 0f)
             {
@@ -405,12 +485,20 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
     /// <summary>
     /// Adds a dirty rectangle for redraw, with a small safety margin.
     /// </summary>
-    /// <param name="rect">The rectangle to mark dirty.</param>
+    /// <param name="rect">
+    /// The rectangle to mark dirty, in world pixels in scene-layer mode and in screen pixels in view mode.
+    /// </param>
     private void AddRefreshRect(RectangleF rect)
     {
         const float pad = 4f;
 
         var expanded = Rectangle.Ceiling(RectangleF.Inflate(rect, pad, pad));
+
+        if (Mode == DirectDrawingMode.SceneLayer)
+        {
+            SceneLayer!.RefreshQueue.AddWorldRect(expanded);
+            return;
+        }
 
         foreach (var sceneLayer in RenderSurfaceHost.Scene.SceneLayers)
             sceneLayer.RefreshQueue.AddViewScreenRect(View!, sceneLayer, expanded);

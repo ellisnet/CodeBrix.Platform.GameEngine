@@ -21,6 +21,31 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// </remarks>
 public class PlatformAudioFactoryTests
 {
+    private const string OpusFileName = "tone.opus";
+
+    // CodeBrixAudioOpus.Register() is process-wide and permanent, so ".opus is not registered yet"
+    // can only be observed ONCE per process. These are captured during static initialization of this
+    // class - which the runtime performs before the first test in the class runs, and nothing else in
+    // the assembly registers Opus - so the "before registration" assertions below cannot be changed
+    // by whichever sibling test happens to run first.
+    private static readonly bool _opusSupportedBeforeRegistration =
+        PlatformAudioFactory.Supports(OpusFileName);
+
+    private static readonly Exception? _opusFailureBeforeRegistration = CaptureOpusFailure();
+
+    private static Exception? CaptureOpusFailure()
+    {
+        try
+        {
+            PlatformAudioFactory.GetReaderFactory(OpusFileName);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
     [Theory]
     [InlineData("music.wav")]
     [InlineData("music.mp3")]
@@ -110,29 +135,25 @@ public class PlatformAudioFactoryTests
     [Fact]
     public void Opus_is_unsupported_until_registered_and_then_loads_like_any_other_format()
     {
-        //Arrange - the whole Opus story in one test, in order, because CodeBrixAudioOpus.Register()
-        // is process-wide and permanent: asserting the "before" state in a separate test would make
-        // the two order-dependent.
-        const string fileName = "tone.opus";
+        //Arrange - the BEFORE state was captured during this class's static initialization, so this
+        // test asserts the same thing whether or not a sibling test has already registered Opus.
+        var supportedBefore = _opusSupportedBeforeRegistration;
+        var failureBefore = _opusFailureBeforeRegistration;
 
-        //Act - BEFORE registration: unsupported, with a message that names the fix.
-        var supportedBefore = PlatformAudioFactory.Supports(fileName);
-        var beforeRegistration = () => PlatformAudioFactory.GetReaderFactory(fileName);
-
-        //Assert
+        //Assert - BEFORE registration: unsupported, with a message that names the fix.
         supportedBefore.Should().BeFalse();
-        beforeRegistration.Should().Throw<NotSupportedException>()
-            .WithMessage("*CodeBrixAudioOpus.Register()*");
+        failureBefore.Should().BeOfType<NotSupportedException>();
+        failureBefore!.Message.Should().Contain("CodeBrixAudioOpus.Register()");
 
         //Act - the one call an application makes.
         CodeBrixAudioOpus.Register();
 
         //Assert - .opus is now a first-class engine format: it resolves, it is listed, and a real
         // Opus stream decodes through the engine's own loading path.
-        PlatformAudioFactory.Supports(fileName).Should().BeTrue();
+        PlatformAudioFactory.Supports(OpusFileName).Should().BeTrue();
         PlatformAudioFactory.SupportedExtensions().Should().Contain(".opus");
 
-        var (factory, requiresFile) = PlatformAudioFactory.GetReaderFactory(fileName);
+        var (factory, requiresFile) = PlatformAudioFactory.GetReaderFactory(OpusFileName);
         requiresFile.Should().BeFalse();
 
         using var reader = factory(new MemoryStream(BuildOpusTone()));
@@ -146,7 +167,7 @@ public class PlatformAudioFactoryTests
         //Arrange - the "treated equally, and optimizable" claim: the preload-to-PCM path that
         // SfxVoicePool plays from must work for a format the engine does not itself carry.
         CodeBrixAudioOpus.Register();
-        var (factory, _) = PlatformAudioFactory.GetReaderFactory("tone.opus");
+        var (factory, _) = PlatformAudioFactory.GetReaderFactory(OpusFileName);
 
         //Act
         using var reader = factory(new MemoryStream(BuildOpusTone()));

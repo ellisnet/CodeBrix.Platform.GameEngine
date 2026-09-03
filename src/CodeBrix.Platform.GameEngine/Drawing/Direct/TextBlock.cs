@@ -663,21 +663,8 @@ public class TextBlock : DirectDrawingMovableBase
         var canvas = backbuffer.Canvas;
         var rect = destRectScreen.ToSKRect();
 
-        float zoom;
-
-        if (Mode == DirectDrawingMode.SceneLayer)
-        {
-            // SceneLayer-mode has View == null by design; use the ambient render context.
-            var contextZoom = RenderContext.Current?.ViewportZoom ?? 1f;
-            zoom = (contextZoom > 0f)
-                ? (1f / contextZoom)
-                : 1f;
-        }
-        else
-        {
-            // View-mode is screen/UI; do not compensate for camera zoom.
-            zoom = 1f;
-        }
+        // SceneLayer-mode has View == null by design; use the ambient render context.
+        float zoom = ResolveTextScale(Mode, RenderContext.Current?.ViewportZoom ?? 1f);
 
         // Scale "pixel-like" adornments with zoom so text behaves like other world-space drawables.
         float hPad = HorizontalPadding * zoom;
@@ -858,6 +845,23 @@ public class TextBlock : DirectDrawingMovableBase
         }
 
         canvas.Restore();
+    }
+
+    /// <summary>
+    /// Resolves the scale applied to text and its "pixel-like" adornments for a drawing mode.
+    /// </summary>
+    /// <param name="mode">The drawing mode of the text block.</param>
+    /// <param name="viewportZoom">The ambient render-context viewport zoom.</param>
+    /// <returns>
+    /// The viewport zoom for <see cref="DirectDrawingMode.SceneLayer"/> text (so world-space text scales
+    /// with the view); 1 for view-mode text, which is screen/UI space and does not compensate for zoom.
+    /// </returns>
+    internal static float ResolveTextScale(DirectDrawingMode mode, float viewportZoom)
+    {
+        if (mode != DirectDrawingMode.SceneLayer)
+            return 1f;
+
+        return viewportZoom > 0f ? viewportZoom : 1f;
     }
 
     private void RebuildLayout(SKFont font, float maxWidth)

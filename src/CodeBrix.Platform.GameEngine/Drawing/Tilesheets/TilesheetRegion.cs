@@ -1,5 +1,6 @@
 using System.Drawing;
 using SkiaSharp;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -21,6 +22,10 @@ public sealed class TilesheetRegion : IDisposable
     public static readonly string DefaultRegionName = "default";
 
     private TilesheetRegionSlice?[,]? _tileCache;
+    private readonly Dictionary<(int x, int y), CollisionAdjust> _frameCollisionAdjustments = new();
+    private readonly Dictionary<(int x, int y), TileCollisionType> _frameCollisionTypes = new();
+    private CollisionAdjust _collisionAdjust = CollisionAdjust.None;
+    private TileCollisionType _collisionType = TileCollisionType.None;
     private bool _disposed;
 
     #region ctors
@@ -37,6 +42,8 @@ public sealed class TilesheetRegion : IDisposable
     /// <param name="tilePadding">The spacing (padding) around each tile within this region.</param>
     /// <param name="regionMargin">The margin spacing around the entire region.</param>
     /// <param name="overhangPixels">The overhang dimensions in pixels that extend beyond a tile's primary area.</param>
+    /// <param name="collisionAdjust">The collision adjustment inherited by every frame that has no explicit override.</param>
+    /// <param name="collisionType">The collision type inherited by every frame that has no explicit override.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="tilesheet"/> is null.</exception>
     internal TilesheetRegion(
         Tilesheet tilesheet,
@@ -45,7 +52,9 @@ public sealed class TilesheetRegion : IDisposable
         Size tileSize,
         Spacing tilePadding,
         Spacing regionMargin,
-        Spacing overhangPixels)
+        Spacing overhangPixels,
+        CollisionAdjust collisionAdjust,
+        TileCollisionType collisionType = TileCollisionType.None)
     {
         Tilesheet = tilesheet ?? throw new ArgumentNullException(nameof(tilesheet));
 
@@ -59,6 +68,8 @@ public sealed class TilesheetRegion : IDisposable
         _tileSize = tileSize;
         _tilePadding = tilePadding;
         _regionMargin = regionMargin;
+        _collisionAdjust = collisionAdjust;
+        _collisionType = collisionType;
 
         Overhang = overhangPixels;
 
@@ -158,6 +169,57 @@ public sealed class TilesheetRegion : IDisposable
     /// and cached.
     /// </summary>
     public Spacing Overhang { get; set; } = Spacing.None;
+
+    /// <summary>
+    /// Gets or sets the collision adjustment inherited by every frame in this region that does
+    /// not carry an explicit frame-level override.
+    /// </summary>
+    /// <remarks>
+    /// Assigning this property re-applies the new default to inheriting frames only; frames with
+    /// an explicit override (see <see cref="SetFrameCollisionAdjust"/>) keep their own value until
+    /// it is removed with <see cref="ClearFrameCollisionAdjustOverride"/>.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public CollisionAdjust CollisionAdjust
+    {
+        get => _collisionAdjust;
+        set
+        {
+            ThrowIfDisposed();
+
+            _collisionAdjust = value;
+
+            ApplyDefaultCollisionAdjustToCache();
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the collision type inherited by every frame in this region that does not carry
+    /// an explicit frame-level override.
+    /// </summary>
+    /// <remarks>
+    /// Assigning this property changes the effective type of inheriting frames only; frames with an
+    /// explicit override (see <see cref="SetFrameCollisionType"/>) keep their own value until it is
+    /// removed with <see cref="ClearFrameCollisionTypeOverride"/>.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public TileCollisionType CollisionType
+    {
+        get => _collisionType;
+        set
+        {
+            ThrowIfDisposed();
+
+            _collisionType = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets the region-default frame-local collision rectangle, derived from <see cref="TileSize"/>
+    /// and <see cref="CollisionAdjust"/>.
+    /// </summary>
+    public Rectangle CollisionArea =>
+        _collisionAdjust.ApplyTo(new Rectangle(Point.Empty, _tileSize));
 
     /// <summary>
     /// Gets the number of columns (horizontal tiles) in this region.
@@ -293,6 +355,256 @@ public sealed class TilesheetRegion : IDisposable
         return images;
     }
 
+    /// <summary>
+    /// Gets the effective collision adjustment for the frame at the specified grid coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <returns>
+    /// The frame's explicit override when one exists; otherwise the region's
+    /// <see cref="CollisionAdjust"/>.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public CollisionAdjust GetFrameCollisionAdjust(int x, int y)
+    {
+        ThrowIfDisposed();
+
+        if (!IsFrameCoordinateValid(x, y))
+            return _collisionAdjust;
+
+        var slice = _tileCache![x, y];
+
+        if (slice.HasValue)
+            return slice.Value.CollisionAdjust;
+
+        return GetStoredFrameCollisionAdjust(x, y);
+    }
+
+    /// <summary>
+    /// Attempts to get the explicit collision adjustment assigned to the frame at the specified
+    /// grid coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <param name="collisionAdjust">
+    /// When this method returns <see langword="true"/>, the frame's explicit override; otherwise
+    /// an unspecified value.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when an explicit frame-level override exists; <see langword="false"/>
+    /// when the frame inherits <see cref="CollisionAdjust"/> or the coordinates are out of range.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public bool TryGetFrameCollisionAdjustOverride(int x, int y, out CollisionAdjust collisionAdjust)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            collisionAdjust = default;
+            return false;
+        }
+
+        return _frameCollisionAdjustments.TryGetValue((x, y), out collisionAdjust);
+    }
+
+    /// <summary>
+    /// Records an explicit collision adjustment for the frame at the specified grid coordinates
+    /// and updates its cache entry.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <param name="collisionAdjust">The collision adjustment to record for the frame.</param>
+    /// <remarks>
+    /// The frame is marked as explicitly overridden even when <paramref name="collisionAdjust"/>
+    /// currently equals the region default, so a later change to <see cref="CollisionAdjust"/>
+    /// leaves it untouched.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the coordinates fall outside the region.</exception>
+    public void SetFrameCollisionAdjust(int x, int y, CollisionAdjust collisionAdjust)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(x),
+                $"Frame coordinates ({x}, {y}) are outside region '{Name}'.");
+        }
+
+        _frameCollisionAdjustments[(x, y)] = collisionAdjust;
+
+        var slice = _tileCache![x, y];
+
+        if (slice.HasValue)
+            _tileCache[x, y] = slice.Value.WithCollisionAdjust(collisionAdjust);
+    }
+
+    /// <summary>
+    /// Removes the explicit collision adjustment from the frame at the specified grid coordinates
+    /// so that it once again inherits <see cref="CollisionAdjust"/>.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <returns>
+    /// <see langword="true"/> when an explicit frame override was removed; otherwise,
+    /// <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the coordinates fall outside the region.</exception>
+    public bool ClearFrameCollisionAdjustOverride(int x, int y)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(x),
+                $"Frame coordinates ({x}, {y}) are outside region '{Name}'.");
+        }
+
+        if (!_frameCollisionAdjustments.Remove((x, y)))
+            return false;
+
+        var slice = _tileCache![x, y];
+
+        if (slice.HasValue)
+            _tileCache[x, y] = slice.Value.WithCollisionAdjust(_collisionAdjust);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Gets the frame-local collision rectangle for the frame at the specified grid coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <returns>The collision rectangle relative to the frame's top-left corner.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public Rectangle GetFrameCollisionArea(int x, int y) =>
+        GetFrameCollisionAdjust(x, y).ApplyTo(new Rectangle(Point.Empty, _tileSize));
+
+    /// <summary>
+    /// Gets the effective collision type for the frame at the specified grid coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <returns>
+    /// The frame's explicit override when one exists; otherwise the region's <see cref="CollisionType"/>.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public TileCollisionType GetFrameCollisionType(int x, int y)
+    {
+        ThrowIfDisposed();
+
+        if (!IsFrameCoordinateValid(x, y))
+            return _collisionType;
+
+        return _frameCollisionTypes.TryGetValue((x, y), out var collisionType)
+            ? collisionType
+            : _collisionType;
+    }
+
+    /// <summary>
+    /// Attempts to get the explicit collision type assigned to the frame at the specified grid
+    /// coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <param name="collisionType">
+    /// When this method returns <see langword="true"/>, the frame's explicit override; otherwise
+    /// an unspecified value.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when an explicit frame-level override exists; <see langword="false"/>
+    /// when the frame inherits <see cref="CollisionType"/> or the coordinates are out of range.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    public bool TryGetFrameCollisionTypeOverride(int x, int y, out TileCollisionType collisionType)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            collisionType = default;
+            return false;
+        }
+
+        return _frameCollisionTypes.TryGetValue((x, y), out collisionType);
+    }
+
+    /// <summary>
+    /// Records an explicit collision type for the frame at the specified grid coordinates.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <param name="collisionType">The collision type to record for the frame.</param>
+    /// <remarks>
+    /// The frame is marked as explicitly overridden even when <paramref name="collisionType"/>
+    /// currently equals the region default, so a later change to <see cref="CollisionType"/>
+    /// leaves it untouched.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the coordinates fall outside the region.</exception>
+    public void SetFrameCollisionType(int x, int y, TileCollisionType collisionType)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(x),
+                $"Frame coordinates ({x}, {y}) are outside region '{Name}'.");
+        }
+
+        _frameCollisionTypes[(x, y)] = collisionType;
+    }
+
+    /// <summary>
+    /// Removes the explicit collision type from the frame at the specified grid coordinates so that
+    /// it once again inherits <see cref="CollisionType"/>.
+    /// </summary>
+    /// <param name="x">The column index of the frame.</param>
+    /// <param name="y">The row index of the frame.</param>
+    /// <returns>
+    /// <see langword="true"/> when an explicit frame override was removed; otherwise,
+    /// <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the coordinates fall outside the region.</exception>
+    public bool ClearFrameCollisionTypeOverride(int x, int y)
+    {
+        ThrowIfDisposed();
+
+        if (_tileCache == null)
+            BuildTileCache();
+
+        if (!IsFrameCoordinateValid(x, y))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(x),
+                $"Frame coordinates ({x}, {y}) are outside region '{Name}'.");
+        }
+
+        return _frameCollisionTypes.Remove((x, y));
+    }
+
     #endregion public methods
 
     #region internal methods
@@ -334,6 +646,9 @@ public sealed class TilesheetRegion : IDisposable
         if (xTiles <= 0 || yTiles <= 0)
             return;
 
+        PruneFrameCollisionAdjustments(xTiles, yTiles);
+        PruneFrameCollisionTypes(xTiles, yTiles);
+
         _tileCache = new TilesheetRegionSlice?[xTiles, yTiles];
 
         var regionArea = Area;
@@ -353,7 +668,7 @@ public sealed class TilesheetRegion : IDisposable
                 if (!bitmapBounds.Contains(srcRect.ToSKRectI()))
                     continue;
 
-                var slice = CreateSlice(srcRect);
+                var slice = CreateSlice(srcRect, GetStoredFrameCollisionAdjust(x, y));
 
                 if (slice.HasValue)
                     _tileCache[x, y] = slice.Value;
@@ -394,7 +709,7 @@ public sealed class TilesheetRegion : IDisposable
         return new Rectangle(x + _tilePadding.Left, y + _tilePadding.Top, _tileSize.Width, _tileSize.Height);
     }
 
-    private TilesheetRegionSlice? CreateSlice(Rectangle srcRect)
+    private TilesheetRegionSlice? CreateSlice(Rectangle srcRect, CollisionAdjust collisionAdjust)
     {
         var srcInfo = Tilesheet.SkBitmap.Info;
 
@@ -415,7 +730,55 @@ public sealed class TilesheetRegion : IDisposable
 
         var img = SKImage.FromBitmap(bmp);
 
-        return new TilesheetRegionSlice(bmp, img);
+        return new TilesheetRegionSlice(bmp, img, collisionAdjust);
+    }
+
+    private CollisionAdjust GetStoredFrameCollisionAdjust(int x, int y) =>
+        _frameCollisionAdjustments.TryGetValue((x, y), out var collisionAdjust)
+            ? collisionAdjust
+            : _collisionAdjust;
+
+    private bool IsFrameCoordinateValid(int x, int y) =>
+        _tileCache != null &&
+        (uint)x < (uint)_tileCache.GetLength(0) &&
+        (uint)y < (uint)_tileCache.GetLength(1);
+
+    private void ApplyDefaultCollisionAdjustToCache()
+    {
+        if (_tileCache == null)
+            return;
+
+        for (int y = 0; y < _tileCache.GetLength(1); y++)
+        {
+            for (int x = 0; x < _tileCache.GetLength(0); x++)
+            {
+                if (_frameCollisionAdjustments.ContainsKey((x, y)))
+                    continue;
+
+                var slice = _tileCache[x, y];
+
+                if (slice.HasValue)
+                    _tileCache[x, y] = slice.Value.WithCollisionAdjust(_collisionAdjust);
+            }
+        }
+    }
+
+    private void PruneFrameCollisionAdjustments(int columns, int rows)
+    {
+        foreach (var key in _frameCollisionAdjustments.Keys.ToArray())
+        {
+            if ((uint)key.x >= (uint)columns || (uint)key.y >= (uint)rows)
+                _frameCollisionAdjustments.Remove(key);
+        }
+    }
+
+    private void PruneFrameCollisionTypes(int columns, int rows)
+    {
+        foreach (var key in _frameCollisionTypes.Keys.ToArray())
+        {
+            if ((uint)key.x >= (uint)columns || (uint)key.y >= (uint)rows)
+                _frameCollisionTypes.Remove(key);
+        }
     }
 
     private void ThrowIfDisposed()
@@ -439,6 +802,8 @@ public sealed class TilesheetRegion : IDisposable
         _disposed = true;
 
         ClearTileCache();
+        _frameCollisionAdjustments.Clear();
+        _frameCollisionTypes.Clear();
     }
 
     #endregion IDisposable

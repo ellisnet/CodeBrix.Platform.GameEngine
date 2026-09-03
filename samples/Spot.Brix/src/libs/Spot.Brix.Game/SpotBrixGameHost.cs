@@ -21,6 +21,8 @@ using CodeBrix.Platform.GameEngine.SkiaSharp;
 using CodeBrix.Platform.GameEngine.Timers;
 using Spot.Brix.Game;
 
+using EngineTimer = CodeBrix.Platform.GameEngine.Timers.Timer;
+
 namespace Spot.Brix;
 
 /// <summary>
@@ -29,10 +31,20 @@ namespace Spot.Brix;
 /// </summary>
 public sealed class SpotBrixGameHost : CodeBrixGameHost
 {
+    private bool _initialGameStarted = false;
     private bool _handleHumanInput = false;
     private bool _showScores = true;
+    private bool _startupPresentationShown = false;
 
     private ParticleSurface? _particleSurface;
+
+    // The AI turn schedules two one-shot timers (select, then move). They are held in fields so a
+    // new game can cancel a turn that is still pending: with local timers a move scheduled in the
+    // previous game fired 0.6 s into the new one and acted on cells that no longer exist.
+    private EngineTimer? _pendingComputerSelectTimer;
+    private EngineTimer? _pendingComputerMoveTimer;
+
+    private SplashOverlay? _splash;
 
     internal TextBlock? _player1Text;
     internal DirectRectangle? _player1Rectangle;
@@ -66,6 +78,18 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     internal SpotGame SpotGame { get; private set; } = null!;
 
     private static readonly Random _rng = new();
+
+    /// <summary>The image the start-up splash is built around.</summary>
+    private const string SplashIconFileName = "icon-codebrix-128.png";
+
+    /// <summary>The edge length, in pixels, of the square splash title card.</summary>
+    private const int SplashSizePx = 768;
+
+    /// <summary>The wording drawn under the icon on the splash title card.</summary>
+    private const string SplashTitle = "Spot.Brix";
+
+    /// <summary>The file the finished board is written to when a game ends.</summary>
+    private const string SaveGameFileName = "savegame.json";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SpotBrixGameHost"/> class.
@@ -162,37 +186,14 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
 
     protected override void CreateDirectDrawings()
     {
-        Tilesheet tilesheet;
-
-        if (TilesheetRegistry.Instance.TryGet("splash", out tilesheet))
-        {
-            var directImage = new DirectImage(
-                tilesheet.SkBitmap,
-                RenderSurface.Host,
-                Scene[0],
-                new Rectangle(0, 0, 769, 769));
-
-            directImage.ZOrder = 100;
-            directImage.SetScaleMode(DirectImage.ScaleMode.Fit);
-        }
-
-        var particleSurface = new ParticleSurface(
-            RenderSurface.Host,
-            Scene[0],
-            new Rectangle(0, 0, 769, 769));
-
-        particleSurface.CullingMarginX = 1300f;
-        particleSurface.ZOrder = 50;
-        particleSurface.Emitters.Add(GetSpots(769, 769));
+        // The opening screen (title art + drifting spots) and the music belong to the post-splash
+        // phase, so that the splash overlay is the only thing on screen while it plays. See
+        // BeginPostSplashStartup, which the splash raises once it has faded out.
     }
 
     protected override void OnEngineStarted()
     {
-        if (_music != null)
-        {
-            _music.Volume = 0.2f;
-            _music.Play();
-        }
+        ShowSplash();
     }
 
     protected override void OnMouseAdapterInitialized()
@@ -221,10 +222,164 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
         if (Engine.Input.KeyboardEventPoller is not null)
             Engine.Input.KeyboardEventPoller.KeyDown -= KeyboardEventPoller_KeyDown;
 
+        CancelPendingComputerTurn();
+
+        _splash?.Dispose();
+        _splash = null;
+
+        NewGameRequested = null;
+
         UnhookSpotGameEvents();
     }
 
     #endregion CodeBrixGameHost overrides
+
+    #region splash and opening screen
+
+    /// <summary>
+    /// Raised when the player asks for a new game from inside the game surface — that is, on the very
+    /// first left click while the opening screen is showing. The UI layer handles this by opening its
+    /// New Game dialog. The event is raised on the UI thread, so a handler may touch XAML directly.
+    /// </summary>
+    public event Action? NewGameRequested;
+
+    /// <summary>
+    /// Creates the start-up splash overlay. When no splash image can be produced the opening screen is
+    /// shown straight away instead, so the game never gets stuck behind a missing asset.
+    /// </summary>
+    private void ShowSplash()
+    {
+        if (RenderSurface.Host.ViewManager.Views.Count == 0)
+        {
+            BeginPostSplashStartup();
+            return;
+        }
+
+        using var imageStream = CreateSplashImageStream();
+
+        if (imageStream is null)
+        {
+            BeginPostSplashStartup();
+            return;
+        }
+
+        _splash = SplashOverlay.TryCreate(imageStream,
+                                          RenderSurface.Host,
+                                          RenderSurface.Host.ViewManager.Views[0],
+                                          holdSeconds: 1.5f,
+                                          onSplashCompleted: OnSplashCompleted,
+                                          nickname: "spot-splash");
+
+        if (_splash is null)
+            BeginPostSplashStartup();
+        else
+            Engine.Logger.LogInformation("Spot.Brix splash overlay started.");
+    }
+
+    private void OnSplashCompleted()
+    {
+        // The overlay disposes itself before raising this, so only the reference has to be dropped.
+        _splash = null;
+
+        BeginPostSplashStartup();
+    }
+
+    /// <summary>
+    /// Paints the splash title card: the CodeBrix icon over the game's name, drawn at the board's
+    /// design size so it stays crisp instead of being stretched from a small icon file.
+    /// </summary>
+    /// <returns>A PNG stream the caller owns, or <see langword="null"/> when the icon file is missing.</returns>
+    private Stream? CreateSplashImageStream()
+    {
+        var iconPath = GetAssetPath(SplashIconFileName);
+
+        if (!File.Exists(iconPath))
+            return null;
+
+        using var icon = SKBitmap.Decode(iconPath);
+
+        if (icon is null)
+            return null;
+
+        var info = new SKImageInfo(SplashSizePx, SplashSizePx, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+        using var surface = SKSurface.Create(info);
+        var canvas = surface.Canvas;
+        canvas.Clear(SKColors.Transparent);
+
+        float iconLeft = (SplashSizePx - icon.Width) / 2f;
+        float iconTop = (SplashSizePx / 2f) - icon.Height;
+        var iconRect = new SKRect(iconLeft, iconTop, iconLeft + icon.Width, iconTop + icon.Height);
+
+        using (var iconPaint = new SKPaint { IsAntialias = true })
+        {
+            canvas.DrawBitmap(icon, iconRect, SKSamplingOptions.Default, iconPaint);
+        }
+
+        using var titleFont = new SKFont(_font, 64f);
+        using var shadow = new SKPaint { Color = new SKColor(0, 0, 0, 140), IsAntialias = true };
+        using var title = new SKPaint { Color = SKColors.White, IsAntialias = true };
+
+        float baseline = (SplashSizePx / 2f) + 72f;
+
+        canvas.DrawText(SplashTitle, (SplashSizePx / 2f) + 3f, baseline + 3f, SKTextAlign.Center, titleFont, shadow);
+        canvas.DrawText(SplashTitle, SplashSizePx / 2f, baseline, SKTextAlign.Center, titleFont, title);
+
+        canvas.Flush();
+
+        using var image = surface.Snapshot();
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+
+        return new MemoryStream(encoded.ToArray());
+    }
+
+    /// <summary>
+    /// Builds the opening screen (title art plus the drifting spots) and starts the music. Called once,
+    /// after the splash has finished; a second call is ignored.
+    /// </summary>
+    public void BeginPostSplashStartup()
+    {
+        if (_startupPresentationShown)
+            return;
+
+        _startupPresentationShown = true;
+
+        if (Scene is null || Scene.SceneLayers.Count == 0)
+            return;
+
+        if (TilesheetRegistry.Instance.TryGet("splash", out Tilesheet tilesheet))
+        {
+            var directImage = new DirectImage(
+                tilesheet.SkBitmap,
+                RenderSurface.Host,
+                Scene[0],
+                new Rectangle(0, 0, 769, 769));
+
+            directImage.ZOrder = 100;
+            directImage.SetScaleMode(DirectImage.ScaleMode.Fit);
+        }
+
+        var particleSurface = new ParticleSurface(
+            RenderSurface.Host,
+            Scene[0],
+            new Rectangle(0, 0, 769, 769));
+
+        particleSurface.CullingMarginX = 1300f;
+        particleSurface.ZOrder = 50;
+        particleSurface.Emitters.Add(GetSpots(769, 769));
+
+        if (MusicEnabled && _music is not null)
+        {
+            _music.Volume = 0.2f;
+
+            if (!_music.IsPlaying)
+                _music.Play();
+        }
+
+        Engine.Logger.LogInformation("Spot.Brix opening screen shown; click the board or the New Game button to start.");
+    }
+
+    #endregion splash and opening screen
 
     #region game settings
 
@@ -256,7 +411,9 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     public void SetJiggleEnabled(bool enabled)
     {
         JiggleEnabled = enabled;
-        if (!enabled)
+
+        // The toggles are applied to the host before Initialize() runs, so the game may not exist yet.
+        if (!enabled && SpotGame is not null)
         {
             foreach (var player in SpotGame.Players)
             {
@@ -277,18 +434,36 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
         }
         else
         {
-            _particleSurface?.Dispose();
+            DisposeParticleSurface();
         }
     }
 
     /// <summary>
-    /// Starts a new game with the supplied options, clearing the current scene first.
+    /// Starts a new game with the supplied options, clearing the current scene first. Any computer turn
+    /// still pending from the previous game is cancelled before the board is rebuilt.
     /// </summary>
-    internal void StartNewGame(NewGameOptions options)
+    /// <param name="options">The board size and player line-up to start with.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    public void StartNewGame(NewGameOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
+        CancelPendingComputerTurn();
+
+        _initialGameStarted = true;
+
+        // Pre-null the reference: ClearAll() disposes the particle surface, and a later
+        // DisposeParticleSurface() would otherwise dispose the same object a second time.
+        _particleSurface = null;
+
         Engine.Managers.DirectDrawings.ClearAll();
         Engine.Managers.Sprites.Clear();
         Scene.RemoveAllLayers();
+
+        // ClearAll() disposed the score/banner overlays. Drop the stale references as well: a game with
+        // fewer players does not recreate them all, and OnRenderSurfaceResized / SetScoreVisible would
+        // otherwise reach into disposed drawings.
+        ClearOverlayFields();
 
         SetPlayerFrames(options.Players);
 
@@ -304,10 +479,27 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     }
 
     /// <summary>
+    /// Queues <see cref="StartNewGame"/> onto the engine thread. This is what a UI event handler should
+    /// call: the scene may only be rebuilt from the thread that runs the engine cycle.
+    /// </summary>
+    /// <param name="options">The board size and player line-up to start with.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    public void StartNewGameOnEngineThread(NewGameOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        Engine.EngineDispatcher.Post(() => StartNewGame(options));
+    }
+
+    /// <summary>
     /// Starts a default 4-player game (1 human, 3 AI) on an 8×8 board.
     /// Useful as a quick-start shortcut; production UI should call
     /// <see cref="StartNewGame"/> with user-configured <see cref="NewGameOptions"/> instead.
     /// </summary>
+    /// <remarks>
+    /// Safe to call from any thread: the work is queued onto the engine thread, and runs inline when
+    /// the caller is already on it.
+    /// </remarks>
     public void StartDefaultGame()
     {
         var players = new List<Player>
@@ -325,12 +517,42 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
             Players     = players,
         };
 
-        StartNewGame(options);
+        StartNewGameOnEngineThread(options);
     }
 
     #endregion game settings
 
     #region private methods
+
+    /// <summary>
+    /// Cancels the computer turn that is waiting to select or to move, if there is one.
+    /// </summary>
+    private void CancelPendingComputerTurn()
+    {
+        _pendingComputerSelectTimer?.Dispose();
+        _pendingComputerSelectTimer = null;
+
+        _pendingComputerMoveTimer?.Dispose();
+        _pendingComputerMoveTimer = null;
+    }
+
+    /// <summary>
+    /// Forgets the score and game-over overlays without disposing them; the caller has already cleared
+    /// the direct drawings that owned them.
+    /// </summary>
+    private void ClearOverlayFields()
+    {
+        _player1Text = null;
+        _player1Rectangle = null;
+        _player2Text = null;
+        _player2Rectangle = null;
+        _player3Text = null;
+        _player3Rectangle = null;
+        _player4Text = null;
+        _player4Rectangle = null;
+        _gameMessageText = null;
+        _gameMessageRectangle = null;
+    }
 
     private void KeyboardEventPoller_KeyDown(KeyDownEventArgs args)
     {
@@ -344,6 +566,13 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
 
     private void MouseEventPoller_MouseEvent(CodeBrix.Platform.GameEngine.Input.Mouse.MouseEventArgs args)
     {
+        // While the opening screen is showing, the first click is the invitation to set a game up.
+        if (!_initialGameStarted && args.LeftButtonJustPressed)
+        {
+            RaiseNewGameRequested();
+            return;
+        }
+
         if (!_handleHumanInput)
             return;
 
@@ -371,6 +600,25 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
                     SpotGame.ExecuteMove(playerMovement.Value);
             }
         }
+    }
+
+    /// <summary>
+    /// Raises <see cref="NewGameRequested"/> on the UI thread. The mouse poller runs on the engine
+    /// thread, and the handler puts a dialog on screen.
+    /// </summary>
+    private void RaiseNewGameRequested()
+    {
+        var handler = NewGameRequested;
+
+        if (handler is null)
+            return;
+
+        Engine.Logger.LogInformation("Spot.Brix new game requested from the game surface.");
+
+        if (Engine.UiDispatcher is not null && !Engine.UiDispatcher.IsOnUIThread)
+            Engine.UiDispatcher.Post(() => handler());
+        else
+            handler();
     }
 
     private void SetPlayerFrames(List<Player> players)
@@ -470,10 +718,24 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
         };
     }
 
-    private void AddClouds()
+    /// <summary>
+    /// Disposes the cloud particle surface, if one exists. This is the only place the surface is
+    /// disposed, so the reference can never outlive the object it names.
+    /// </summary>
+    private void DisposeParticleSurface()
     {
         _particleSurface?.Dispose();
         _particleSurface = null;
+    }
+
+    private void AddClouds()
+    {
+        // Clouds live on the background game field, which only exists once a game has been started.
+        if (SpotGame is null || SpotGame.Players.Length == 0)
+            return;
+
+        DisposeParticleSurface();
+
         _particleSurface = new ParticleSurface(
             RenderSurface.Host,
             SpotGame.BackgroundGameField,
@@ -801,7 +1063,10 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
 
     private void OnGameStarted(SpotGame game)
     {
-        Engine.Logger.LogDebug("Game started with players: {0}", string.Join(", ", game.Players.Select(p => p.Name)));
+        Engine.Logger.LogInformation("Spot.Brix game started on a {0}x{1} board with players: {2}",
+            game.SpotGameField.GridColumnCount,
+            game.SpotGameField.GridRowCount,
+            string.Join(", ", game.Players.Select(p => p.Name)));
 
         if (MusicEnabled)
         {
@@ -826,22 +1091,33 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
         {
             _handleHumanInput = false;
 
-            // start a short timer before the computer moves
-            var timer = CodeBrix.Platform.GameEngine.Timers.Timer.Add(TimerType.PostCycle, TimerCycles.Once, 0.6);
-            timer.Tick += () =>
+            // Start a short timer before the computer moves. Both timers are held in fields so that
+            // StartNewGame can cancel a turn that has not fired yet.
+            CancelPendingComputerTurn();
+
+            _pendingComputerSelectTimer = EngineTimer.Add(TimerType.PostCycle, TimerCycles.Once, 0.6);
+            _pendingComputerSelectTimer.Tick += () =>
             {
-                timer.Dispose();
+                _pendingComputerSelectTimer?.Dispose();
+                _pendingComputerSelectTimer = null;
 
                 var moves = SpotGame.SpotGameField.GetBestMovesForPlayer(player);
+
+                // The board can fill up between scheduling this turn and running it.
+                if (moves.Count == 0)
+                    return;
+
                 var bestMove = moves[_rng.Next(moves.Count)];
 
                 SpotGame.AttemptSelectCell(bestMove.FromCell, out _);
 
                 // small delay before executing move to allow for selection animation
-                var moveTimer = CodeBrix.Platform.GameEngine.Timers.Timer.Add(TimerType.PostCycle, TimerCycles.Once, 0.6);
-                moveTimer.Tick += () =>
+                _pendingComputerMoveTimer = EngineTimer.Add(TimerType.PostCycle, TimerCycles.Once, 0.6);
+                _pendingComputerMoveTimer.Tick += () =>
                 {
-                    moveTimer.Dispose();
+                    _pendingComputerMoveTimer?.Dispose();
+                    _pendingComputerMoveTimer = null;
+
                     SpotGame.ExecuteMove(bestMove);
                 };
             };
@@ -858,6 +1134,11 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     {
         Engine.Logger.LogDebug("Cell at ({0}, {1}) selected by player {2}", cell.X, cell.Y, cell.OccupiedBy!.Name);
 
+        // Only a human selection gets the pop; the computer's own selections would otherwise chirp
+        // once per AI turn.
+        if (SoundEffectsEnabled && SpotGame.CurrentPlayer.Type == PlayerType.Human)
+            _spotSelected?.Play();
+
         var sprite = cell.Sprite!;
         sprite.StopJiggle();
         sprite.CurrentFrame = cell.OccupiedBy.ActiveFrame;
@@ -867,6 +1148,9 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     private void OnSpotDeselected(SpotGameField.Cell cell)
     {
         Engine.Logger.LogDebug("Cell at ({0}, {1}) deselected", cell.X, cell.Y);
+
+        if (SoundEffectsEnabled)
+            _spotDeselected?.Play();
 
         var sprite = cell.Sprite!;
         sprite.StartJiggle(loop: true);
@@ -887,6 +1171,9 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     private void OnInvalidMoveAttempted(SpotGameField.Cell cell)
     {
         Engine.Logger.LogDebug("Invalid move attempted to cell ({0}, {1})", cell.X, cell.Y);
+
+        if (SoundEffectsEnabled)
+            _knock?.Play();
     }
 
     private void OnPlayerMoveStarted(PlayerMovement movement)
@@ -948,9 +1235,11 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
 
     private void OnGameOver()
     {
-        Engine.Logger.LogDebug("Game over");
+        Engine.Logger.LogInformation("Spot.Brix game over.");
 
         _handleHumanInput = false;
+
+        CancelPendingComputerTurn();
 
         SetScoreVisible(true);
         SetPlayerScores();
@@ -978,6 +1267,28 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
                 else
                     _gameLose?.Play();
             }
+        }
+
+        SaveFinishedGame();
+    }
+
+    /// <summary>
+    /// Writes the finished board out with the engine's own save API, next to the executable. This is a
+    /// showcase of the save round-trip rather than a feature: nothing reloads the file, and a failure
+    /// is logged and swallowed so the end-of-game presentation is never interrupted.
+    /// </summary>
+    private void SaveFinishedGame()
+    {
+        var savePath = Path.Combine(AppContext.BaseDirectory, SaveGameFileName);
+
+        try
+        {
+            Engine.State.SaveToFile(savePath, false, true);
+            Engine.Logger.LogInformation("Finished game saved to {0}", savePath);
+        }
+        catch (Exception ex)
+        {
+            Engine.Logger.LogWarning(ex, "The finished game could not be saved to {0}.", savePath);
         }
     }
 

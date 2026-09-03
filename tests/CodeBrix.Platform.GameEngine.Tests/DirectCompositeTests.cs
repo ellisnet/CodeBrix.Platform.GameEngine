@@ -14,7 +14,7 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 
 /// <summary>
 /// Covers the two <see cref="DirectComposite"/> child-bookkeeping defects carried over from the
-/// Gondwana 2.5.0 source and fixed upstream in 2.5.1: disposing a composite that still held
+/// upstream 2.5.0 source and fixed upstream in 2.5.1: disposing a composite that still held
 /// children threw, and <c>Remove</c> left the composite subscribed to the removed child.
 /// <para>
 /// The unsubscribe half is covered indirectly, by asserting that disposing a removed child

@@ -2,7 +2,9 @@ using System.Collections;
 using System.Collections.ObjectModel;
 using System.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Coordinates;
+using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
+using CodeBrix.Platform.GameEngine.Rendering;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CodeBrix.Json.Extensions.References;
@@ -40,7 +42,13 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
 {
     [JsonInclude]
     private readonly List<SceneLayer> _sceneLayers = [];
-    
+
+    // Runtime-only binding state: never serialized. The save contract resolver only picks up
+    // fields carrying [JsonInclude]/[JsonPropertyName], so these two stay out of the save graph.
+    private readonly object _renderSurfaceHostSync = new();
+
+    private RenderSurfaceHostBase? _boundRenderSurfaceHost;
+
     #region Scene events
 
     /// <summary>
@@ -115,6 +123,12 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
     /// </summary>
     internal void RehydrateAfterDeserialization()
     {
+        // The deserializer builds the scene through CreateForDeserialization, which bypasses the
+        // constructor that would otherwise supply these registries; a save file written before
+        // collision profiles existed also carries no CollisionProfiles member.
+        CollisionGroups ??= new CollisionGroupRegistry();
+        CollisionProfiles ??= new CollisionProfileRegistry();
+
         foreach (var sceneLayer in _sceneLayers)
         {
             sceneLayer.RehydrateAfterDeserialization();
@@ -126,11 +140,13 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
 
     internal Scene(List<SceneLayer>? sceneLayers,
                     string? id,
-                    CollisionGroupRegistry? collisionGroups)
+                    CollisionGroupRegistry? collisionGroups,
+                    CollisionProfileRegistry? collisionProfiles = null)
     {
         _sceneLayers = sceneLayers ?? new List<SceneLayer>();
         ID = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id;
         CollisionGroups = collisionGroups ?? new CollisionGroupRegistry();
+        CollisionProfiles = collisionProfiles ?? new CollisionProfileRegistry();
         ValueBag = new TypedValueBag();
 
         Init();
@@ -200,6 +216,29 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
     /// </remarks>
     [JsonIgnore]
     public int Count => _sceneLayers?.Count ?? 0;
+
+    /// <summary>
+    /// Gets the render surface host currently bound to this scene, or <c>null</c> when the
+    /// scene is not bound to one.
+    /// </summary>
+    /// <remarks>
+    /// A scene may be actively bound to at most one render surface host. Multiple camera
+    /// perspectives into the same scene should be represented by multiple views on that host.
+    /// </remarks>
+    internal RenderSurfaceHostBase? BoundRenderSurfaceHost
+    {
+        get
+        {
+            lock (_renderSurfaceHostSync)
+                return _boundRenderSurfaceHost;
+        }
+    }
+
+    /// <summary>
+    /// Gets whether the scene's current host consumes dirty-region refresh queues.
+    /// Unbound scenes retain invalidations for a future dirty-region (bitmap) host.
+    /// </summary>
+    internal bool UsesDirtyRegionRendering => BoundRenderSurfaceHost?.Backbuffer?.IsGlThreadRendered != true;
 
     /// <summary>
     /// Gets or sets a value indicating whether the entire scene needs to be refreshed on the next render.
@@ -298,9 +337,79 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
     [JsonInclude]
     public CollisionGroupRegistry CollisionGroups { get; private set; } = new();
 
+    /// <summary>
+    /// Gets the named collision-filtering profiles used by the layers and sprites in this scene.
+    /// </summary>
+    /// <remarks>
+    /// Profiles resolve their group names through <see cref="CollisionGroups"/>, so a profile is a
+    /// stable, save-file-friendly way to describe a collision role. Every scene starts with the
+    /// standard <c>World</c>, <c>Actor</c>, <c>Projectile</c> and <c>Sensor</c> profiles.
+    /// </remarks>
+    [JsonInclude]
+    public CollisionProfileRegistry CollisionProfiles { get; private set; } = new();
+
     #endregion public properties
 
     #region internal properties and methods
+
+    /// <summary>
+    /// Claims this scene for the specified render surface host.
+    /// </summary>
+    /// <param name="host">The render surface host taking ownership of this scene.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="host"/> is <c>null</c>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the scene is already bound to a different host.
+    /// </exception>
+    internal void BindRenderSurfaceHost(RenderSurfaceHostBase host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+
+        // Scene.Empty is a shared null-object placeholder and is never treated as an
+        // actively rendered scene for binding ownership purposes.
+        if (ReferenceEquals(this, Empty))
+            return;
+
+        lock (_renderSurfaceHostSync)
+        {
+            if (_boundRenderSurfaceHost is not null &&
+                !ReferenceEquals(_boundRenderSurfaceHost, host))
+            {
+                throw new InvalidOperationException(
+                    $"Scene '{ID}' is already bound to another RenderSurfaceHost.");
+            }
+
+            _boundRenderSurfaceHost = host;
+        }
+
+        // A full-frame (GL-thread-rendered) host redraws everything and never consumes
+        // RefreshQueue. Remove anything accumulated before binding; future additions are
+        // rejected by the queue's scene-policy callback.
+        if (!UsesDirtyRegionRendering)
+        {
+            foreach (var layer in _sceneLayers)
+                layer.RefreshQueue.ClearRefreshQueue();
+        }
+    }
+
+    /// <summary>
+    /// Releases this scene when it is currently owned by the specified host.
+    /// Calls from any other host are ignored.
+    /// </summary>
+    /// <param name="host">The render surface host releasing this scene.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="host"/> is <c>null</c>.</exception>
+    internal void UnbindRenderSurfaceHost(RenderSurfaceHostBase host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+
+        if (ReferenceEquals(this, Empty))
+            return;
+
+        lock (_renderSurfaceHostSync)
+        {
+            if (ReferenceEquals(_boundRenderSurfaceHost, host))
+                _boundRenderSurfaceHost = null;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether any visible layer in this scene has pending updates
@@ -545,6 +654,8 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
     protected virtual void OnSceneLayerAdded(SceneLayer sceneLayer)
     {
         sceneLayer.Scene = this;
+        sceneLayer.ApplyDefaultTileCollisionProfile();
+        SpriteManager.Instance.RefreshCollisionProfiles(sceneLayer);
 
         sceneLayer.Disposing += sceneLayerDisposing;
         sceneLayer.VisibleChanged += visChgDel;

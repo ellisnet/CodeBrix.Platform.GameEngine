@@ -193,8 +193,15 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
         _keyboardAdapter = new CodeBrixKeyboardAdapter(RenderSurface);
         KeyboardEventPoller.Initialize(_keyboardAdapter);
         MouseEventPoller.Initialize(new CodeBrixMouseAdapter(RenderSurface));
-        TouchEventPoller.Initialize(new CodeBrixTouchInputAdapter(RenderSurface));
+        TouchEventPoller.Initialize(new CodeBrixTouchInputAdapter(RenderSurface, EmulateMouseAsTouch));
     }
+
+    /// <summary>
+    /// Gets a value indicating whether primary mouse input should also be delivered as touch
+    /// contact ID 0. The default is <c>false</c>, so a desktop click raises mouse events only.
+    /// Override and return <c>true</c> for a game that drives everything from the touch stream.
+    /// </summary>
+    protected virtual bool EmulateMouseAsTouch => false;
 
     /// <summary>
     /// Gamepads are opt-in: override and attach a gamepad manager here when the game supports

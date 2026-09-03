@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Drawing;
 using System.Numerics;
-using System.Runtime.Serialization;
 using CodeBrix.Platform.GameEngine.Physics.Movement;
 using CodeBrix.Platform.GameEngine.Scenes;
 using System.Text.Json;
@@ -21,7 +20,6 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Sprites; //was previously: Gondwa
 /// </summary>
 public class CompositeSprite : IMovableOnSceneLayer
 {
-    [JsonInclude]
     private readonly List<Sprite> _children = new();
 
     /// <summary>
@@ -55,13 +53,6 @@ public class CompositeSprite : IMovableOnSceneLayer
     {
     }
 
-    [OnDeserialized]
-    private void OnDeserialized(StreamingContext context)
-    {
-        foreach (var sprite in _children)
-            sprite.Disposing += sprite_Disposing;
-    }
-
     #endregion ctor
 
     #region IMovable / IMovableOnSceneLayer
@@ -90,21 +81,25 @@ public class CompositeSprite : IMovableOnSceneLayer
     }
 
     /// <summary>
-    /// Gets the current position of the composite sprite based on its anchor mode.
+    /// Gets the current position of the composite sprite in scene-layer grid coordinates,
+    /// based on its anchor mode.
     /// </summary>
-    /// <returns>The position of the composite's anchor point.</returns>
+    /// <returns>The grid-space position of the composite's anchor point.</returns>
     public Vector2 GetPosition()
     {
         Rectangle r = Range;
         if (r == Rectangle.Empty)
             return Vector2.Zero;
 
-        return AnchorMode switch
+        PointF anchorWorldPx = AnchorMode switch
         {
-            CompositeAnchorMode.TopLeft => new Vector2(r.Left, r.Top),
-            CompositeAnchorMode.Center => new Vector2(r.Left + (r.Width / 2f), r.Top + (r.Height / 2f)),
-            _ => new Vector2(r.Left, r.Top)
+            CompositeAnchorMode.TopLeft => new PointF(r.Left, r.Top),
+            CompositeAnchorMode.Center => new PointF(r.Left + (r.Width / 2f), r.Top + (r.Height / 2f)),
+            _ => new PointF(r.Left, r.Top)
         };
+
+        PointF anchorGrid = SceneLayer.WorldPxToGrid(anchorWorldPx);
+        return new Vector2(anchorGrid.X, anchorGrid.Y);
     }
 
     /// <summary>
@@ -183,7 +178,7 @@ public class CompositeSprite : IMovableOnSceneLayer
 
     /// <summary>
     /// Add a sprite and place it by offset from the composite anchor.
-    /// Offset is interpreted relative to the CURRENT composite anchor (derived from Range).
+    /// Offset is interpreted in grid coordinates relative to the current composite anchor.
     /// </summary>
     /// <param name="sprite">The sprite to add to this composite.</param>
     /// <param name="offsetFromCompositeAnchor">The offset from the composite's anchor point.</param>

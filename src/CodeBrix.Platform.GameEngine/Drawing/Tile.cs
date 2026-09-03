@@ -51,6 +51,15 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
 
     protected ICollider? _collider;
 
+    private CollisionAdjust _adjustCollisionArea = CollisionAdjust.None;
+    private bool _adjustCollisionAreaByFrame;
+    private bool _hasAssignedFrame;
+    private bool _collisionAdjustExplicitlySet;
+    private TileCollisionType _collisionType = TileCollisionType.None;
+    private bool _collisionTypeByFrame;
+    private bool _collisionTypeExplicitlySet;
+    private string? _collisionProfileName;
+
     #endregion fields
 
     #region abstract properties
@@ -164,6 +173,12 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
     /// Gets or sets the current frame being displayed for this tile.
     /// Setting this property triggers a refresh of both the old and new tile areas to handle size changes.
     /// </summary>
+    /// <remarks>
+    /// The first frame assigned to a tile supplies its default <see cref="AdjustCollisionArea"/>
+    /// and <see cref="CollisionType"/>, unless the tile has already been given them explicitly.
+    /// Later frame changes update those values only when the matching by-frame option
+    /// (<see cref="AdjustCollisionAreaByFrame"/>, <see cref="CollisionTypeByFrame"/>) is enabled.
+    /// </remarks>
     [JsonInclude]
     public virtual Frame CurrentFrame
     {
@@ -172,7 +187,27 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         {
             // animation might change Tile size, so add before and after
             SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
+
             frame = value;
+
+            bool hasFrame = value.Tilesheet is not null;
+
+            if (hasFrame &&
+                (_adjustCollisionAreaByFrame ||
+                 (!_hasAssignedFrame && !_collisionAdjustExplicitlySet)))
+            {
+                SetCollisionAdjustFromFrame(value);
+            }
+
+            if (hasFrame &&
+                (_collisionTypeByFrame ||
+                 (!_hasAssignedFrame && !_collisionTypeExplicitlySet)))
+            {
+                SetCollisionTypeFromFrame(value);
+            }
+
+            _hasAssignedFrame = hasFrame;
+
             SceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
         }
     }
@@ -201,18 +236,7 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
     /// incorporating any adjustments specified by <see cref="AdjustCollisionArea"/>.
     /// </summary>
     [JsonIgnore]
-    public virtual Rectangle CollisionArea
-    {
-        get
-        {
-            Rectangle rect = DrawLocationWorld;
-            rect.Y += AdjustCollisionArea.Top;
-            rect.X += AdjustCollisionArea.Left;
-            rect.Height += AdjustCollisionArea.Bottom - AdjustCollisionArea.Top;
-            rect.Width += AdjustCollisionArea.Right - AdjustCollisionArea.Left;
-            return rect;
-        }
-    }
+    public virtual Rectangle CollisionArea => AdjustCollisionArea.ApplyTo(DrawLocationWorld);
 
     /// <summary>
     /// Gets or sets a value indicating whether fog of war rendering is enabled for this tile.
@@ -237,36 +261,139 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
     public virtual Point[] OutlinePointsWorld => SceneLayer.CoordinateSystem.GetPolygonPts(this, false);
 
     /// <summary>
-    /// Gets or sets the collision area adjustment values that modify the tile's collision boundaries.
-    /// Use this to fine-tune the collision detection area relative to the tile's visual bounds.
+    /// Gets or sets a value indicating whether a frame change replaces the tile's collision
+    /// adjustment with the newly selected frame's adjustment.
     /// </summary>
+    /// <remarks>
+    /// The default is <see langword="false"/>, which keeps the collision area static across
+    /// animation frames after the first frame has supplied its default value.
+    /// </remarks>
     [JsonInclude]
-    public virtual CollisionDetectionAdjustment AdjustCollisionArea { get; set; } = CollisionDetectionAdjustment.None;
+    public virtual bool AdjustCollisionAreaByFrame
+    {
+        get => _adjustCollisionAreaByFrame;
+        set
+        {
+            _adjustCollisionAreaByFrame = value;
+
+            if (value && frame.Tilesheet is not null)
+                SetCollisionAdjustFromFrame(frame);
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the collision area adjustment values that modify the tile's collision boundaries.
+    /// Use this to fine-tune the collision detection area relative to the tile's visual bounds;
+    /// a positive value on any edge insets that edge, a negative value expands it.
+    /// </summary>
+    /// <remarks>
+    /// Assigning this property marks the adjustment as explicitly set, so the tile's first frame
+    /// no longer overwrites it.
+    /// </remarks>
+    [JsonInclude]
+    public virtual CollisionAdjust AdjustCollisionArea
+    {
+        get => _adjustCollisionArea;
+        set
+        {
+            _adjustCollisionArea = value;
+            _collisionAdjustExplicitlySet = true;
+        }
+    }
 
     private bool _collisionsEnabled = false;
+
+    /// <summary>
+    /// Gets or sets the tile's collision behaviour. The value is seeded from the first assigned
+    /// frame and may subsequently be overridden per tile.
+    /// </summary>
+    /// <remarks>
+    /// Assigning this property marks the collision type as explicitly set, so the tile's first
+    /// frame no longer overwrites it, and it keeps <see cref="CollisionsEnabled"/> in step:
+    /// <see cref="TileCollisionType.None"/> disables collisions, any other value enables them and
+    /// sets the collider's response type.
+    /// </remarks>
+    [JsonInclude]
+    public virtual TileCollisionType CollisionType
+    {
+        get => _collisionType;
+        set
+        {
+            _collisionTypeExplicitlySet = true;
+            SetCollisionTypeCore(value);
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a frame change replaces the tile's collision type
+    /// with the newly selected frame's effective collision type.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see langword="false"/>, which keeps the collision behaviour static across
+    /// animation frames after the first frame has supplied its default value.
+    /// </remarks>
+    [JsonInclude]
+    public virtual bool CollisionTypeByFrame
+    {
+        get => _collisionTypeByFrame;
+        set
+        {
+            _collisionTypeByFrame = value;
+
+            if (value && frame.Tilesheet is not null)
+                SetCollisionTypeFromFrame(frame);
+        }
+    }
+
+    /// <summary>
+    /// Gets the name of the scene-level collision profile currently associated with this tile,
+    /// or <see langword="null"/> when no profile has been applied.
+    /// </summary>
+    /// <remarks>
+    /// Use <see cref="SetCollisionProfile"/> to change it. A name assigned while the tile's layer
+    /// is not yet attached to a scene is retained and resolved once it is.
+    /// </remarks>
+    [JsonInclude]
+    public string? CollisionProfileName
+    {
+        get => _collisionProfileName;
+        private set => _collisionProfileName = value;
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether collision detection is enabled for this tile.
     /// When set to true, the tile's collider is registered with the scene layer's collision system.
     /// When set to false, the collider is unregistered and collisions will not be detected.
     /// </summary>
+    /// <remarks>
+    /// This flag is a projection of <see cref="CollisionType"/>: enabling collisions on a tile whose
+    /// type is <see cref="TileCollisionType.None"/> promotes it to
+    /// <see cref="TileCollisionType.Trigger"/> when its collider already responds as a trigger, and
+    /// to <see cref="TileCollisionType.Blocking"/> otherwise; disabling collisions resets the type
+    /// to <see cref="TileCollisionType.None"/>.
+    /// </remarks>
     [JsonInclude]
     public bool CollisionsEnabled
     {
         get => _collisionsEnabled;
         set
         {
-            _collisionsEnabled = value;
+            _collisionTypeExplicitlySet = true;
 
-            // A deserialized tile has no collider yet; SceneLayer.RehydrateAfterDeserialization
-            // rebuilds it and registers per this flag.
-            if (_collider is null)
-                return;
+            if (value)
+            {
+                var enabledType = _collisionType == TileCollisionType.None
+                    ? _collider?.ResponseType == CollisionResponseType.Trigger
+                        ? TileCollisionType.Trigger
+                        : TileCollisionType.Blocking
+                    : _collisionType;
 
-            if (_collisionsEnabled)
-                SceneLayer?.ColliderRegistry?.Register(_collider);
+                SetCollisionTypeCore(enabledType);
+            }
             else
-                SceneLayer?.ColliderRegistry?.Unregister(_collider);
+            {
+                SetCollisionTypeCore(TileCollisionType.None);
+            }
         }
     }
 
@@ -276,6 +403,177 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
     /// </summary>
     [JsonIgnore]
     public TypedValueBag ValueBag { get; } = new();
+
+    /// <summary>
+    /// Applies a named collision profile from this tile's parent scene, which supplies the
+    /// collider's collision group and interaction mask.
+    /// </summary>
+    /// <param name="profileName">The name of a profile in the scene's collision profile registry.</param>
+    /// <remarks>
+    /// When the tile's layer is not yet attached to a scene the name is simply retained, and it is
+    /// resolved later — when the layer joins a scene, or when a collider is attached.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profileName"/> is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">
+    /// Thrown when the tile's scene has no profile registered under that name, or the profile names
+    /// a collision group the scene does not define.
+    /// </exception>
+    public void SetCollisionProfile(string profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName))
+            throw new ArgumentException("Collision profile name cannot be empty.", nameof(profileName));
+
+        var scene = SceneLayer?.Scene;
+
+        if (scene is not null)
+        {
+            var profile = scene.CollisionProfiles.Get(profileName);
+            _ = profile.ResolveCollisionGroup(scene.CollisionGroups);
+            _ = profile.ResolveCollidesWith(scene.CollisionGroups);
+        }
+
+        CollisionProfileName = profileName;
+        ApplyCollisionProfileToCollider();
+    }
+
+    /// <summary>
+    /// Resolves the retained profile name again after the tile's layer becomes attached to a scene.
+    /// </summary>
+    internal void RefreshCollisionProfile() => ApplyCollisionProfileToCollider();
+
+    /// <summary>
+    /// Copies the collision behaviour, profile and effective collision adjustment from another
+    /// tile, so that a clone collides exactly like its source.
+    /// </summary>
+    /// <param name="source">The tile whose collision settings are copied.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is null.</exception>
+    protected void CopyCollisionSettingsFrom(Tile source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        _adjustCollisionArea = source._adjustCollisionArea;
+        _adjustCollisionAreaByFrame = source._adjustCollisionAreaByFrame;
+        _hasAssignedFrame = frame.Tilesheet is not null;
+        _collisionAdjustExplicitlySet = source._collisionAdjustExplicitlySet;
+        _collisionType = source._collisionType;
+        _collisionTypeByFrame = source._collisionTypeByFrame;
+        _collisionTypeExplicitlySet = source._collisionTypeExplicitlySet;
+        _collisionsEnabled = source._collisionsEnabled;
+        _collisionProfileName = source._collisionProfileName;
+    }
+
+    /// <summary>
+    /// Restores the frame-driven collision state a deserialized tile is missing. The save file
+    /// carries <see cref="AdjustCollisionArea"/>, <see cref="AdjustCollisionAreaByFrame"/>,
+    /// <see cref="CollisionType"/> and <see cref="CollisionTypeByFrame"/> but not the private
+    /// flags, so a by-frame tile re-derives those values from its current frame.
+    /// </summary>
+    internal void RehydrateCollisionAdjustAfterDeserialization()
+    {
+        _hasAssignedFrame = frame.Tilesheet is not null;
+
+        if (_adjustCollisionAreaByFrame && _hasAssignedFrame)
+            SetCollisionAdjustFromFrame(frame);
+
+        if (_collisionTypeByFrame && _hasAssignedFrame)
+            SetCollisionTypeFromFrame(frame);
+    }
+
+    /// <summary>
+    /// Attaches this tile's collider and applies the collision state that was configured before
+    /// the collider became available: the retained profile, the collision type, and registration
+    /// with the layer's collider registry.
+    /// </summary>
+    /// <param name="collider">The collider to attach.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="collider"/> is null.</exception>
+    protected void AttachCollider(ICollider collider)
+    {
+        ArgumentNullException.ThrowIfNull(collider);
+
+        if (_collider is not null)
+            SceneLayer?.ColliderRegistry?.Unregister(_collider);
+
+        _collider = collider;
+
+        ApplyCollisionProfileToCollider();
+        ApplyCollisionTypeToCollider();
+        SynchronizeColliderRegistration();
+    }
+
+    private void SetCollisionAdjustFromFrame(Frame value)
+    {
+        // Deliberately bypass the public setter: following a frame must not mark the
+        // adjustment as an explicit tile-level override.
+        _adjustCollisionArea = value.CollisionAdjust;
+    }
+
+    private void SetCollisionTypeFromFrame(Frame value)
+    {
+        // Deliberately bypass the public setter: following a frame must not mark the
+        // collision type as an explicit tile-level override.
+        SetCollisionTypeCore(value.CollisionType);
+    }
+
+    private void SetCollisionTypeCore(TileCollisionType collisionType)
+    {
+        _collisionType = collisionType;
+
+        ApplyCollisionTypeToCollider();
+        SetCollisionsEnabledCore(collisionType != TileCollisionType.None);
+    }
+
+    private void ApplyCollisionTypeToCollider()
+    {
+        if (_collider is null)
+            return;
+
+        switch (_collisionType)
+        {
+            case TileCollisionType.Blocking:
+                _collider.ResponseType = CollisionResponseType.Solid;
+                break;
+
+            case TileCollisionType.Trigger:
+                _collider.ResponseType = CollisionResponseType.Trigger;
+                break;
+        }
+    }
+
+    private void SetCollisionsEnabledCore(bool enabled)
+    {
+        _collisionsEnabled = enabled;
+
+        SynchronizeColliderRegistration();
+    }
+
+    private void SynchronizeColliderRegistration()
+    {
+        // A deserialized tile has no collider yet; SceneLayer.RehydrateAfterDeserialization
+        // rebuilds it and AttachCollider registers per this flag.
+        if (_collider is null)
+            return;
+
+        if (_collisionsEnabled)
+            SceneLayer?.ColliderRegistry?.Register(_collider);
+        else
+            SceneLayer?.ColliderRegistry?.Unregister(_collider);
+    }
+
+    private void ApplyCollisionProfileToCollider()
+    {
+        if (_collider is null || string.IsNullOrWhiteSpace(_collisionProfileName))
+            return;
+
+        var scene = SceneLayer?.Scene;
+
+        if (scene is null)
+            return;
+
+        var profile = scene.CollisionProfiles.Get(_collisionProfileName);
+
+        _collider.CollisionGroup = profile.ResolveCollisionGroup(scene.CollisionGroups);
+        _collider.CollidesWith = profile.ResolveCollidesWith(scene.CollisionGroups);
+    }
 
     #region IComparable<Tile> Members
 
@@ -336,7 +634,9 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         if (animator != null)
             animator.Dispose();
 
-        SceneLayer.ColliderRegistry.Unregister(_collider!);
+        if (_collider is not null)
+            SceneLayer?.ColliderRegistry?.Unregister(_collider);
+
         _collider = null;
     }
 

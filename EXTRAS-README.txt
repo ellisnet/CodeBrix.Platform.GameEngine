@@ -8,12 +8,12 @@ builds as part of the library build, the test run or the packaging build. None
 of it is in CodeBrix.Platform.GameEngine.slnx, deliberately: that solution holds
 only the product projects and their tests.
 
-  samples/    seven complete games/demos — the living reference for the engine
+  samples/    nine complete games/demos — the living reference for the engine
   tools/      two hand-run developer utilities
 
 SAMPLES
 =======
-samples/ holds seven complete CodeBrix.Platform applications. Each has the same
+samples/ holds nine complete CodeBrix.Platform applications. Each has the same
 shape: a shared .UI shared-project (App.xaml, Views/MainPage.xaml), a .Core
 library holding the view models and the engine reference, a .Game library
 holding the game itself, and three executable heads — LinuxX11, Win32Skia and
@@ -32,6 +32,43 @@ tilesheets, engine mouse and keyboard input, the toolbar/focus recipe
 (src/Spot.Brix.UI/Views/MainPage.xaml.cs) and per-move callbacks
 (src/libs/Spot.Brix.Game/SpotBrixGameHost.cs). Start here to see what a normal
 game host looks like.
+
+It is also the reference for a finished game's start-up and settings shape: a
+SplashOverlay title card whose completion callback starts the music and the
+opening screen; a CodeBrix.Platform XAML ContentDialog for New Game (2-4
+players, per-player name / human-or-computer / colour with automatic
+de-duplication, board 3x3 to 12x12) reached from the toolbar button or from the
+first left click on the opening screen, driving the engine from the UI thread
+through Engine.EngineDispatcher.Post; option persistence (music, sound effects,
+jiggle, clouds, GPU) in the "spot" section of a gameengine.json pinned to
+AppContext.BaseDirectory; and EngineState.SaveToFile("savegame.json") when a
+game ends. The GPU option takes effect on the next start.
+
+samples/Platformer.Brix
+-----------------------
+Mode A via CodeBrixGameHost at a pinned 960x576 render resolution
+(GameSurfaceCanvas.SetRenderResolution) — a side-view platform game and the
+reference consumer for fixed layer-tile colliders. Collision profiles and
+Tile.CollisionType on the world tiles, CollisionAdjust in its INSET form on the
+player, hazards and relics, a foot probe through ColliderRegistry.QueryAabb,
+integrated velocity + gravity movement, horizontal camera follow with a dead
+zone, a view-bound DirectRectangle + TextBlock HUD, and a procedural tilesheet
+painted in code (TilesheetRegistry.LoadFromBitmap), so the sample ships no
+image assets. A/D or the arrow keys move, W / Up / Space jump, R restarts, Esc
+quits.
+
+samples/SpaceDuel.Brix
+----------------------
+Mode A via CodeBrixGameHost on the GPU tier. Sprite.Rotation on ships and
+lasers, MovementController.WrapX/WrapY for a wrap-around world, two parallax
+star layers, ParticleSurface explosion bursts, AI raiders, a per-ship HealthBar,
+a SplashOverlay title card, explicit Actor and Projectile collision profiles
+with CollisionAdjust insets, TargetFPS 0 / VSync off / MSAA 4 set from
+Engine.InitializationComplete, and a view-space HUD fed by CPSCalculated
+(GpuFps ?? NetCPS). Set SPACEDUEL_USE_CPU=1 to run the identical game on the CPU
+path. All of its art — ships, effects and the title card — is generated in code,
+so the sample ships no image assets; samples/SpaceDuel.Brix/README.md explains
+how to drop in licensed ship art if you have some.
 
 samples/Slider
 --------------

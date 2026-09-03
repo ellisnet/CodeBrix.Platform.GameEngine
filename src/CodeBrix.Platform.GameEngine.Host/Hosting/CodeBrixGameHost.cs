@@ -63,11 +63,18 @@ public abstract class CodeBrixGameHost : GameHostBase
     }
 
     /// <summary>
+    /// Gets a value indicating whether primary mouse input should also be delivered as touch
+    /// contact ID 0. The default is <c>false</c>, so a desktop click raises mouse events only.
+    /// Override and return <c>true</c> for a game that drives everything from the touch stream.
+    /// </summary>
+    protected virtual bool EmulateMouseAsTouch => false;
+
+    /// <summary>
     /// Configures the touch adapter for the render surface.
     /// </summary>
     protected sealed override void ConfigureTouch()
     {
-        Engine.InitializeCodeBrixTouchAdapter(RenderSurface);
+        Engine.InitializeCodeBrixTouchAdapter(RenderSurface, EmulateMouseAsTouch);
         OnTouchAdapterInitialized();
     }
 
@@ -87,7 +94,8 @@ public abstract class CodeBrixGameHost : GameHostBase
         // size-anchored content — HUD/score overlays and the like — can be repositioned.
         RenderSurface.RenderSurfaceAdapter.Resized += OnRenderSurfaceAdapterResized;
 
-        OnSceneBound();
+        // OnSceneBound() is raised by GameHostBase.InitializeGameContent() immediately after this
+        // method returns; raising it here as well made every subclass hook see the scene twice.
     }
 
     private void OnRenderSurfaceAdapterResized(RenderSurfaceAdapterResizedEventArgs args)

@@ -3,10 +3,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Spot.Brix.ViewModels;
+using System;
+using System.Threading.Tasks;
 
 namespace Spot.Brix.Views;
 
-public sealed partial class MainPage : Page
+public sealed partial class MainPage : Page, IShowNewGameDialog
 {
     private IManageGameCanvas _gameCanvasManager;
 
@@ -17,6 +19,7 @@ public sealed partial class MainPage : Page
             //Give the view model's SimpleDialog helpers a XamlRoot to attach dialogs to
             (DataContext as IXamlRootGetter)?.SetXamlRootGetter(() => XamlRoot);
             _gameCanvasManager = DataContext as IManageGameCanvas;
+            (DataContext as MainViewModel)?.SetNewGameDialogHost(this);
         };
 
         this.InitializeComponent();
@@ -43,4 +46,28 @@ public sealed partial class MainPage : Page
     // the click that (re)took focus.
     private void FocusGameCanvas() =>
         DispatcherQueue.TryEnqueue(() => GameCanvas.Focus(FocusState.Programmatic));
+
+    /// <summary>
+    /// Shows the New Game dialog over this page and waits for the player to start or cancel.
+    /// </summary>
+    /// <param name="viewModel">The choices to show, and the ones the player edits.</param>
+    /// <returns>
+    /// The options to start a game with, or <see langword="null"/> when the player cancelled.
+    /// </returns>
+    public async Task<Spot.Brix.NewGameOptions> ShowNewGameDialogAsync(NewGameViewModel viewModel)
+    {
+        var dialog = new NewGameDialog(viewModel) { XamlRoot = XamlRoot };
+
+        try
+        {
+            var result = await dialog.ShowAsync();
+
+            return result == ContentDialogResult.Primary ? viewModel.CreateOptions() : null;
+        }
+        finally
+        {
+            //The game reads the keyboard from the surface, which lost focus to the dialog.
+            FocusGameCanvas();
+        }
+    }
 }

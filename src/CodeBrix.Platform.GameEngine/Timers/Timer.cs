@@ -58,10 +58,23 @@ public sealed class Timer : IDisposable
 
     private Timer(TimerType type, TimerCycles cycles, long startTick, double length)
     {
+        if (!double.IsFinite(length) || length <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                length,
+                "Timer length must be finite and greater than zero.");
+
+        double lengthInTicks = length * HighResTimer.TicksPerSecond;
+        if (lengthInTicks < 1 || lengthInTicks >= long.MaxValue)
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                length,
+                "Timer length must convert to at least one high-resolution tick and fit in a positive Int64.");
+
         Type = type;
         Cycles = cycles;
         _lastEventTick = startTick;
-        Length = (long)(length * HighResTimer.TicksPerSecond);
+        Length = (long)lengthInTicks;
         Paused = false;
     }
 
@@ -125,8 +138,12 @@ public sealed class Timer : IDisposable
     /// <param name="timerID">A unique identifier for the timer. Cannot be null or empty.</param>
     /// <param name="type">Gets the type of the timer, indicating whether it is a pre-cycle or post-cycle timer.</param>
     /// <param name="cycles">Gets the current timer cycles, representing whether the timer is set to run once or repeatedly.</param>
-    /// <param name="length">The duration of the timer in seconds.</param>
+    /// <param name="length">The duration of the timer in seconds. Must be finite, greater than zero, and long
+    /// enough to convert to at least one high-resolution tick.</param>
     /// <returns>The newly created <see cref="Timer"/> instance.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="length"/> is not a finite number, is less
+    /// than or equal to zero, converts to less than one high-resolution tick, or does not fit in a positive
+    /// <see cref="long"/>.</exception>
     public static Timer Add(string timerID, TimerType type, TimerCycles cycles, double length)
     {
         var timer = new Timer(type, cycles, HighResTimer.GetCurrentTick(), length)
@@ -142,8 +159,12 @@ public sealed class Timer : IDisposable
     /// </summary>
     /// <param name="type">Gets the type of the timer, indicating whether it is a pre-cycle or post-cycle timer.</param>
     /// <param name="cycles">Gets the current timer cycles, representing whether the timer is set to run once or repeatedly.</param>
-    /// <param name="length">The duration of the timer in seconds.</param>
+    /// <param name="length">The duration of the timer in seconds. Must be finite, greater than zero, and long
+    /// enough to convert to at least one high-resolution tick.</param>
     /// <returns>A <see cref="Timer"/> instance representing the newly created timer.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="length"/> is not a finite number, is less
+    /// than or equal to zero, converts to less than one high-resolution tick, or does not fit in a positive
+    /// <see cref="long"/>.</exception>
     public static Timer Add(TimerType type, TimerCycles cycles, double length)
     {
         string timerID = Guid.NewGuid().ToString();
@@ -244,7 +265,10 @@ public sealed class Timer : IDisposable
 
                 // check for any expired timers
                 if (timer.Cycles == TimerCycles.Once)
+                {
                     expired.Add(key);
+                    break;
+                }
             }
         }
 

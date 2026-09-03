@@ -660,4 +660,25 @@ public sealed class DirectImage : DirectDrawingMovableBase
 
         return new SKRect(x, y, x + w2, y + h2);
     }
+
+    private bool _paintDisposed;
+
+    /// <summary>
+    /// Releases the cached <see cref="SKPaint"/> deterministically. The <see cref="SKImage"/> or
+    /// <see cref="SKBitmap"/> handed to the constructor stays caller-owned and is never disposed here.
+    /// </summary>
+    /// <param name="disposing"><see langword="true"/> when called from <see cref="DirectDrawingBase.Dispose()"/>.</param>
+    protected override void Dispose(bool disposing)
+    {
+        // Unhook from the drawing manager first (base raises Disposing), so a concurrent engine-thread
+        // draw cannot pick up a paint that is about to be released.
+        base.Dispose(disposing);
+
+        if (disposing && !_paintDisposed)
+        {
+            _paintDisposed = true;
+            _paint.ColorFilter = null;
+            _paint.Dispose();
+        }
+    }
 }

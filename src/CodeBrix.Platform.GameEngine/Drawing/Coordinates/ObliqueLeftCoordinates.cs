@@ -11,8 +11,8 @@ using System.Threading.Tasks;
 namespace CodeBrix.Platform.GameEngine.Drawing.Coordinates; //was previously: Gondwana.Drawing.Coordinates;
 
 /// <summary>
-/// Oblique projection using a right-receding, sheared square lattice.
-/// Columns remain horizontal while rows advance down and to the right,
+/// Oblique projection using a left-receding, sheared square lattice.
+/// Columns remain horizontal while rows advance down and to the left,
 /// producing a parallelogram tile footprint rather than an isometric diamond.
 /// </summary>
 /// <remarks>
@@ -27,7 +27,7 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Coordinates; //was previously: Go
 /// using transparency in the unused corners of the tile's bounding box.
 /// </para>
 /// </remarks>
-internal sealed class ObliqueCoordinates : ISceneLayerCoordinates
+internal sealed class ObliqueLeftCoordinates : ISceneLayerCoordinates
 {
     /// <summary>
     /// Gets the anchor pixel position for a tile at the specified scene layer coordinates.
@@ -42,7 +42,7 @@ internal sealed class ObliqueCoordinates : ISceneLayerCoordinates
 
         float x = -sceneLayer.OriginPx.X
                   + layerPoint.X * faceWidth
-                  + layerPoint.Y * skewX;
+                  - layerPoint.Y * skewX;
 
         float y = -sceneLayer.OriginPx.Y
                   + layerPoint.Y * H;
@@ -63,7 +63,7 @@ internal sealed class ObliqueCoordinates : ISceneLayerCoordinates
         GetGeometry(sceneLayer, out _, out int H, out int skewX, out int faceWidth);
 
         float row = (pixelPt.Y + sceneLayer.OriginPx.Y) / H;
-        float col = (pixelPt.X + sceneLayer.OriginPx.X - row * skewX) / faceWidth;
+        float col = (pixelPt.X + sceneLayer.OriginPx.X + row * skewX) / faceWidth;
 
         return new PointF(col, row);
     }
@@ -244,19 +244,19 @@ internal sealed class ObliqueCoordinates : ISceneLayerCoordinates
         return new[]
         {
             new Point(
-                anchor.X - overhang.Left,
-                anchor.Y - overhang.Top),
-
-            new Point(
-                anchor.X + faceWidth + overhang.Right,
+                anchor.X + skewX - overhang.Left,
                 anchor.Y - overhang.Top),
 
             new Point(
                 anchor.X + W + overhang.Right,
+                anchor.Y - overhang.Top),
+
+            new Point(
+                anchor.X + faceWidth + overhang.Right,
                 anchor.Y + H + overhang.Bottom),
 
             new Point(
-                anchor.X + skewX - overhang.Left,
+                anchor.X - overhang.Left,
                 anchor.Y + H + overhang.Bottom)
         };
     }

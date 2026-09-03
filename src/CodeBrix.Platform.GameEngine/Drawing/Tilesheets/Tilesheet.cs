@@ -2,6 +2,7 @@ using System.Drawing;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine.Assets;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -105,6 +106,9 @@ public sealed class Tilesheet : IDisposable
     /// Initializes a new instance of the <see cref="Tilesheet"/> class by copying settings from a base tilesheet
     /// and loading a new image from a file.
     /// </summary>
+    /// <remarks>
+    /// Region-level and per-frame collision adjustments are copied along with the region layout.
+    /// </remarks>
     /// <param name="baseSheet">The tilesheet whose settings should be copied.</param>
     /// <param name="name">The name to assign to this tilesheet.</param>
     /// <param name="file">The path to the image file.</param>
@@ -124,13 +128,27 @@ public sealed class Tilesheet : IDisposable
         // do not add DefaultRegion since we'll copy the regions from the base sheet
         foreach (var region in baseSheet.Regions)
         {
-            AddRegion(
+            var copiedRegion = AddRegion(
                 region.Name,
                 region.Area,
                 region.TileSize,
                 region.TilePadding,
                 region.RegionMargin,
-                region.Overhang);
+                region.Overhang,
+                region.CollisionAdjust,
+                region.CollisionType);
+
+            for (int y = 0; y < region.Rows; y++)
+            {
+                for (int x = 0; x < region.Columns; x++)
+                {
+                    if (region.TryGetFrameCollisionAdjustOverride(x, y, out var frameCollisionAdjust))
+                        copiedRegion.SetFrameCollisionAdjust(x, y, frameCollisionAdjust);
+
+                    if (region.TryGetFrameCollisionTypeOverride(x, y, out var frameCollisionType))
+                        copiedRegion.SetFrameCollisionType(x, y, frameCollisionType);
+                }
+            }
         }
     }
 
@@ -211,6 +229,14 @@ public sealed class Tilesheet : IDisposable
     /// <param name="tilePadding">The horizontal and vertical spacing between tiles in this region.</param>
     /// <param name="regionMargin">The margin around the region.</param>
     /// <param name="overhangPixels">The overhang dimensions for tiles in this region.</param>
+    /// <param name="collisionAdjust">
+    /// The collision adjustment every frame in the region inherits until it is given an explicit
+    /// override. Defaults to <see cref="CollisionAdjust.None"/>.
+    /// </param>
+    /// <param name="collisionType">
+    /// The collision type every frame in the region inherits until it is given an explicit
+    /// override. Defaults to <see cref="TileCollisionType.None"/>.
+    /// </param>
     /// <returns>The newly created <see cref="TilesheetRegion"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the region name is null, whitespace, or already exists.</exception>
     public TilesheetRegion AddRegion(
@@ -219,7 +245,9 @@ public sealed class Tilesheet : IDisposable
         Size tileSize,
         Spacing? tilePadding = null,
         Spacing? regionMargin = null,
-        Spacing? overhangPixels = null)
+        Spacing? overhangPixels = null,
+        CollisionAdjust? collisionAdjust = null,
+        TileCollisionType collisionType = TileCollisionType.None)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Region name must be a non-empty string.", nameof(name));
@@ -234,7 +262,9 @@ public sealed class Tilesheet : IDisposable
             tileSize,
             tilePadding ?? Spacing.None,
             regionMargin ?? Spacing.None,
-            overhangPixels ?? Spacing.None);
+            overhangPixels ?? Spacing.None,
+            collisionAdjust ?? CollisionAdjust.None,
+            collisionType);
 
         Regions.Add(region);
 
@@ -390,6 +420,58 @@ public sealed class Tilesheet : IDisposable
     }
 
     /// <summary>
+    /// Persists this tilesheet's source image to a file and promotes the tilesheet from a
+    /// runtime-only bitmap to a file-backed tilesheet.
+    /// </summary>
+    /// <param name="imageFilePath">The destination image file path.</param>
+    /// <param name="format">The image format to encode to. Defaults to PNG.</param>
+    /// <param name="quality">The encoding quality (0-100). Defaults to 100 (highest quality).</param>
+    /// <remarks>
+    /// When masking or alpha premultiplication has transformed the runtime bitmap, the original
+    /// source bitmap is persisted; the matching definition metadata reapplies that transformation
+    /// when the tilesheet is loaded again. Any existing <see cref="AssetIdentifier"/> is cleared.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this instance has been disposed.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="imageFilePath"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="quality"/> is outside 0-100.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the tilesheet has no valid bitmap to persist.</exception>
+    public void PersistImageToFile(
+        string imageFilePath,
+        SKEncodedImageFormat format = SKEncodedImageFormat.Png,
+        int quality = 100)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(Tilesheet));
+
+        if (string.IsNullOrWhiteSpace(imageFilePath))
+            throw new ArgumentException("Image file path must be a non-empty string.", nameof(imageFilePath));
+
+        if (quality is < 0 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quality),
+                quality,
+                "Image encoding quality must be between 0 and 100.");
+        }
+
+        if (SkBitmap == null || SkBitmap.IsEmpty)
+            throw new InvalidOperationException("Tilesheet does not contain a valid bitmap to persist.");
+
+        var fullPath = Path.GetFullPath(imageFilePath);
+        var directory = Path.GetDirectoryName(fullPath);
+
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        var sourceBitmap = SkBitmapOriginal ?? SkBitmap;
+
+        File.WriteAllBytes(fullPath, sourceBitmap.EncodeBitmapToBytes(format, quality));
+
+        ImageFilePath = fullPath;
+        AssetIdentifier = null;
+    }
+
+    /// <summary>
     /// Retrieves the SkiaSharp image for the tile at the specified region and coordinates.
     /// </summary>
     /// <param name="regionName">The name of the tilesheet region.</param>
@@ -535,19 +617,25 @@ public sealed class Tilesheet : IDisposable
     /// <param name="tilePadding">The padding between tiles in the default region.</param>
     /// <param name="regionMargin">The margin around the default region.</param>
     /// <param name="overhangPixels">The overhang dimensions for tiles in the default region.</param>
+    /// <param name="collisionAdjust">The collision adjustment inherited by every frame in the default region.</param>
+    /// <param name="collisionType">The collision type inherited by every frame in the default region.</param>
     private void AddDefaultRegion(
         Size? tileSize = null,
         Spacing? tilePadding = null,
         Spacing? regionMargin = null,
-        Spacing? overhangPixels = null)
+        Spacing? overhangPixels = null,
+        CollisionAdjust? collisionAdjust = null,
+        TileCollisionType collisionType = TileCollisionType.None)
     {
         AddRegion(
             TilesheetRegion.DefaultRegionName,
             new Rectangle(0, 0, SkBitmap.Width, SkBitmap.Height),
-            tileSize ?? Size.Empty, 
+            tileSize ?? Size.Empty,
             tilePadding ?? Spacing.None,
             regionMargin ?? Spacing.None,
-            overhangPixels ?? Spacing.None);
+            overhangPixels ?? Spacing.None,
+            collisionAdjust ?? CollisionAdjust.None,
+            collisionType);
     }
 
     #endregion private methods

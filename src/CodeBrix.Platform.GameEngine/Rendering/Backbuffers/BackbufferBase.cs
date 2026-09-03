@@ -322,13 +322,21 @@ public abstract class BackbufferBase : IDisposable
                 continue;
 
             var destRectScreen = drawable.GetDrawLocationScreen(view);
-            if (drawable is Sprite sprite)
+            var sprite = drawable as Sprite;
+
+            if (sprite is not null)
             {
                 destRectScreen = sprite.ApplyJiggleToDestRect(destRectScreen);
             }
             drawable.Draw(this, destRectScreen);
 
-            AddToBackbufferDirtyRectangle(destRectScreen.ToPixelAlignedRect());
+            // A rotated sprite paints outside its destination rectangle, so the presented
+            // dirty region has to cover the rotated bounds instead.
+            var dirtyRectScreen = sprite is not null
+                ? sprite.GetVisualBoundsScreen(destRectScreen)
+                : destRectScreen;
+
+            AddToBackbufferDirtyRectangle(dirtyRectScreen.ToPixelAlignedRect());
 
             if (drawable is Tile tile)
                 tiles.Add(tile);
@@ -379,7 +387,7 @@ public abstract class BackbufferBase : IDisposable
             if (tile.SceneLayer.ShowGridLines && tile.Visible && tile.IsPositionFixed)
                 Canvas.DrawPoints(SKPointMode.Polygon, Enclose(ptsScreen), GridLinePaint);
 
-            if (tile.SceneLayer.ShowCollisionBoxes && tile.Visible)
+            if (tile.SceneLayer.ShowCollisionBoxes && tile.Visible && tile.CollisionsEnabled)
             {
                 var colRectScreen = tile.GetCollisionAreaScreen(view).ToSKRect();
                 Canvas.DrawRect(colRectScreen, CollisionBoxPaint);

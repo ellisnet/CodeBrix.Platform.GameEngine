@@ -22,10 +22,11 @@ The package carries TWO assemblies that mirror the classic core/host split:
         (GPU) render-surface adapters, keyboard/mouse/touch input adapters, a
         UI dispatcher, and the game-host base classes games derive from.
 
-The engine core is a vendored port of the open-source Gondwana game engine
-version 2.5.0 (MIT, (c) 2025 Michael Adkins). Its namespaces are
+The engine core is a vendored port of an open-source, MIT-licensed game engine
+(MIT, (c) 2025 Michael Adkins). Its namespaces are
 CodeBrix.Platform.GameEngine[.*]; do not use the upstream namespaces. See
-THIRD-PARTY-NOTICES.txt (shipped in the package) for the notices.
+THIRD-PARTY-NOTICES.txt (shipped in the package) for the notices, the upstream
+project name and the exact revision this port tracks.
 
 OTHER PACKAGES FROM THE SAME REPOSITORY
 ---------------------------------------
@@ -91,7 +92,8 @@ KEY NAMESPACES / USINGS
     using CodeBrix.Platform.GameEngine.Configuration;   // EngineConfiguration[File]
     using CodeBrix.Platform.GameEngine.Drawing;         // Tile, ImageFilterQuality, SvgResource
     using CodeBrix.Platform.GameEngine.Drawing.Sprites; // Sprite, CompositeSprite, SpriteManager
-    using CodeBrix.Platform.GameEngine.Drawing.Direct;  // DirectImage, TextBlock, particles...
+    using CodeBrix.Platform.GameEngine.Drawing.Direct;  // DirectImage, TextBlock, particles,
+                                                        //   lighting, SplashOverlay, HealthBar
     using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;     // Tilesheet, TilesheetRegistry
     using CodeBrix.Platform.GameEngine.Drawing.Tilesheets.GTS; // TilesheetDefinition (.gts)
     using CodeBrix.Platform.GameEngine.Drawing.Animation;      // Cycle, FrameSequence, Animator
@@ -103,7 +105,11 @@ KEY NAMESPACES / USINGS
     using CodeBrix.Platform.GameEngine.Scenes;          // Scene, SceneLayer, SceneLayerTile
     using CodeBrix.Platform.GameEngine.Physics.Movement;       // MovementController, easing
     using CodeBrix.Platform.GameEngine.Physics.Movement.Easing; // EasingFunctions, EasingKind
-    using CodeBrix.Platform.GameEngine.Physics.Collisions;     // ICollider, Aabb, registries
+    using CodeBrix.Platform.GameEngine.Physics.Collisions;     // ICollider, Aabb, registries,
+                                                        //   CollisionAdjust, TileCollisionType,
+                                                        //   CollisionProfile[Names|Registry]
+    using CodeBrix.Platform.GameEngine.Effects;         // EffectsManager, DisplayEffect, fades,
+                                                        //   wipes, slides, zooms, earthquake
     using CodeBrix.Platform.GameEngine.Input;           // InputPump, InputEventConfigurationBase
     using CodeBrix.Platform.GameEngine.Input.Keyboard;  // KeyboardEventPoller, KeyAction
     using CodeBrix.Platform.GameEngine.Input.Mouse;     // MouseEventPoller, MouseButton
@@ -338,9 +344,10 @@ The Paused event contract (the "do-this-if-Pause()-is-issued" hook):
 
 Resume() and time:
   Every time baseline in the engine (repeating Timers, sprite movement,
-  animators, direct drawings, particles, the cycle clocks) is shifted past the
-  paused interval BEFORE the loops wake — the pause is invisible to game time.
-  No sprite teleports, no timer bursts, no animation churn.
+  animators, direct drawings, particles, display effects, radial-light flicker,
+  the cycle clocks) is shifted past the paused interval BEFORE the loops wake —
+  the pause is invisible to game time. No sprite teleports, no timer bursts, no
+  animation churn, no effect that bursts to completion on the first resumed frame.
   TotalTicksEngineRunning / TotalSecondsEngineRunning EXCLUDE paused time (the
   value holds still while paused). FixedRateGameLoop re-baselines its schedule
   on resume: no catch-up burst, nothing counted in DroppedTics.
@@ -391,6 +398,9 @@ Key members:
                                BitmapBackbuffer (CpuRendering) or GpuBackbuffer
                                (GpuRendering). Host.Bind(Scene newScene, bool
                                limitCameraToWorldBoundPx = true) connects a scene.
+                               ONE HOST PER SCENE: Bind throws
+                               InvalidOperationException if that scene is already
+                               bound to a different host (see VIEWS AND CAMERAS).
     RenderSurfaceAdapter    -- the RenderSurfaceAdapterBase in use (CPU or GPU).
     UsePixelFramePresenter()-- switches the canvas to presenter mode (Mode B);
                                returns the PixelFramePresenter.
@@ -434,6 +444,12 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
   * EngineConfiguration.MsaaSampleCount applies (surface re-init on change);
     VSync has no effect on this adapter (no swap chain — pacing comes from
     TargetFPS); CPSCalculated reports the actual rendered GPU FPS (GpuFps).
+  * Dirty-region rendering is OFF for a scene bound to a GPU host: binding
+    clears every layer's refresh queue and closes it, so nothing accumulates,
+    and DirectDrawing.ForceRefresh() is a no-op there (correct — the GL path
+    repaints the whole viewport every frame anyway). Scene.UsesDirtyRegionRendering
+    reports which regime a scene is in. Games that call ForceRefresh() every
+    frame in a view-mode drawable are safe under either backbuffer.
   * RenderBackbufferPostScene and custom DirectDrawingBase.OnDraw run on the
     UI thread with the GRContext current under GpuRendering — never marshal that
     canvas elsewhere; keep OnDraw a pure function of engine time/game state.
@@ -491,9 +507,19 @@ you need, in the order it fires:
     StartEngine        -> OnEngineStarted       (cycle thread now running)
     OnInitialized
 
+Each hook in that sequence fires EXACTLY ONCE per host, OnSceneBound included:
+build the game object graph there without a re-entry guard.
+
 Members you get: Engine (=> Engine.Instance), Scene, RenderSurface (the
 GameSurfaceCanvas), OnRenderSurfaceResized(int width, int height),
 OnEnginePaused() / OnEngineResumed(), OnDisposing() / OnDisposed(), Dispose().
+
+ConfigureTouch is sealed. To make desktop mouse input ALSO arrive as touch
+contact 0 (it does not by default), override the protected virtual property:
+
+    protected override bool EmulateMouseAsTouch => true;
+
+SoftwareRenderedGameHostBase carries the same override (see INPUT).
 
 Minimal game skeleton (the Spot.Brix sample is the full worked example):
 
@@ -643,9 +669,16 @@ inside the cycle:
     static void Remove(string timerID);  static void ClearAll();  static bool PausedAll
 
   * TimerType.PreCycle fires at step 3 (before input/movement); PostCycle at
-    step 15 (after rendering). TimerCycles.Once auto-removes after firing.
+    step 15 (after rendering). TimerCycles.Once auto-removes after firing, and
+    fires EXACTLY ONCE even when the engine was stalled long enough for several
+    of its intervals to elapse.
   * Repeating timers are schedule-preserving: a late cycle does not shift the
     next due time (no drift), and a missed interval fires as soon as possible.
+  * `length` is VALIDATED: both Timer.Add overloads throw
+    ArgumentOutOfRangeException when it is not finite (NaN, +/-Infinity), is
+    zero or negative, is shorter than one high-resolution tick, or is so large
+    it does not fit a positive Int64 of ticks. (Timer.Add(..., 0) used to spin
+    the engine thread.)
   * Per-timer Paused property and static Timer.PausedAll pause timer events
     while the engine keeps running (distinct from the global engine pause,
     which parks everything and shifts timer schedules on resume).
@@ -702,6 +735,18 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   Start/StopMonitoring* registrations are queued and applied at the next
   poll — not instantaneous.
 
+  THE MOUSE THROTTLE IS REAL (it silently did nothing in earlier versions).
+  With the 0.03 s default, at most one mouse event per 30 ms reaches the game.
+  Set Configuration.TimeBetweenMouseEvents = 0 for an event on every cycle
+  (mouse-look, drawing tools, anything sampling the pointer path). A press and
+  release that both fall inside one 30 ms window are collapsed. Automated UI
+  tests must therefore HOLD the button for ~300 ms or more — a synthetic click
+  as short as xdotool's default (~12 ms press-to-release) is dropped entirely.
+  Human clicks are far longer and are unaffected.
+  Also gone: the phantom "scroll delta 0" event that used to follow every real
+  scroll. A scroll event is raised only when the delta is non-zero AND differs
+  from the previous poll's delta.
+
   POLLING: IKeyboardAdapter.IsDown(int keyCode) (reach it via
   KeyboardEventPoller.Adapter or your own adapter reference) is lock-free and
   valid from any thread at any time — the per-tic gameplay path for held keys
@@ -727,21 +772,59 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   TouchPoint(int Id, Point Position, TouchPhase Phase) is a readonly record
   struct; TouchPhase = Began, Moved, Stationary, Ended, Cancelled.
   TouchEventArgs: Touch (TouchPoint), Tick (long).
+
+  TOUCH LIFECYCLE EVENTS ARE NEVER THROTTLED. TimeBetweenTouchEvents paces
+  TouchMoved only; Began, Ended and Cancelled always get through, so a tap that
+  starts and finishes between two polls is no longer lost. A contact the poller
+  first sees mid-gesture is normalized to Began before anything else sees it.
+  Pausing or stopping the poller CLEARS contact and recognizer state, so a
+  finger held across Pause/Resume cannot complete into a phantom tap or swipe.
+
   Recognizers (each is constructed over an ITouchInput and is IDisposable;
-  the poller owns its three, so a game normally just subscribes):
+  the poller owns its three, so a game normally just subscribes). All timing is
+  engine-tick based, so paused time never counts toward a gesture, and a second
+  contact CANCELS a pending tap or swipe candidate:
       TapGestureRecognizer   -- MaxTapDurationSeconds (0.3), MaxTapMovementPixels
                                 (20); event Tapped : EventHandler<TappedEventArgs>
-                                (Position, TouchId)
-      SwipeGestureRecognizer -- MinimumSwipeSpeedPixelsPerSecond (200);
-                                event Swiped : EventHandler<SwipedEventArgs>
+                                (Position, TouchId). The movement test is applied
+                                at the END position too, so a drag that produced
+                                no TouchMoved event is still rejected; a swipe
+                                that qualifies wins the arbitration.
+      SwipeGestureRecognizer -- MinimumSwipeSpeedPixelsPerSecond (200) AND
+                                MinimumSwipeDistancePixels (30) must both be met,
+                                so a short fast tap is no longer also reported as
+                                a swipe; event Swiped : EventHandler<SwipedEventArgs>
                                 (Direction : SwipeDirection Right/Left/Up/Down,
                                 StartPosition, EndPosition, SpeedPixelsPerSecond)
-      PinchGestureRecognizer -- event PinchUpdated : EventHandler<PinchedEventArgs>
-                                (ScaleDelta, CurrentDistance)
+      PinchGestureRecognizer -- a full lifecycle: PinchStarted, PinchUpdated and
+                                PinchEnded, all EventHandler<PinchedEventArgs>.
+                                PinchedEventArgs carries Phase (PinchPhase
+                                Began/Updated/Ended), TouchIds, Center,
+                                StartingDistance, PreviousDistance, CurrentDistance,
+                                ScaleDelta and TotalScale (current / starting
+                                distance). The old two-argument constructor
+                                (scaleDelta, currentDistance) is still there.
   GestureEventArgs wraps one of them: GestureType (Tap/Swipe/Pinch), IsTap/
   IsSwipe/IsPinch, and the Tap/Swipe/Pinch payload (the others null).
-  The engine-side seam is ITouchAdapter (ActiveTouches; ConsumeEndedTouches());
-  the Host's CodeBrixTouchInputAdapter implements it over a UIElement.
+  The engine-side seam is ITouchAdapter — ActiveTouches, ConsumeEndedTouches()
+  and ConsumeBeganTouches() (a default-interface method, so existing custom
+  adapters still compile; implement it to report begins that ended before the
+  next poll). The Host's CodeBrixTouchInputAdapter implements all three over a
+  UIElement.
+
+  DESKTOP MOUSE IS NOT TOUCH by default. CodeBrixTouchInputAdapter(UIElement
+  element, bool emulateMouse = false) ignores mouse pointers unless emulateMouse
+  is true; a desktop click raises mouse events only. To opt back in, pass
+  emulateMouse: true to the adapter or to
+  Engine.InitializeCodeBrixTouchAdapter(element, emulateMouse), or override
+  EmulateMouseAsTouch on CodeBrixGameHost / SoftwareRenderedGameHostBase.
+
+  POLLER TEARDOWN: MouseEventPoller and TouchEventPoller are both IDisposable
+  and both expose a static Reset() that disposes the current instance (and its
+  adapter) and clears the singleton. Engine.Dispose() calls both, so the
+  platform adapters really unsubscribe from the canvas; assigning
+  Engine.Instance.Input.TouchAdapter = null tears the touch poller down on its
+  own. Initialize(...) on either poller disposes whatever was there before.
 
   INPUT EVENT CONFIGURATION: every registration is an
   InputEventConfigurationBase (TimeBetweenEvents in seconds; IsPaused):
@@ -764,7 +847,8 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
       Engine.Instance.InitializeCodeBrixKeyboardAdapter(UIElement element);
       Engine.Instance.InitializeCodeBrixMouseAdapter(UIElement element,
                                   MouseEventConfiguration? mouseEventConfiguration = null);
-      Engine.Instance.InitializeCodeBrixTouchAdapter(UIElement element);
+      Engine.Instance.InitializeCodeBrixTouchAdapter(UIElement element,
+                                  bool emulateMouse = false);
   CodeBrixGameHost and SoftwareRenderedGameHostBase do this for you. The
   adapter classes themselves are public if you need them directly:
       CodeBrixKeyboardAdapter(UIElement element) : IKeyboardAdapter, IDisposable
@@ -773,8 +857,9 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
       CodeBrixMouseAdapter(UIElement element) : IMouseAdapter, IDisposable
           CurrentPosition; PressedButtons; CurrentKeyboardModifiers;
           ScrollDelta (reading it returns the accumulated delta and resets it)
-      CodeBrixTouchInputAdapter(UIElement element) : ITouchAdapter, IDisposable
-          ActiveTouches; ConsumeEndedTouches()
+      CodeBrixTouchInputAdapter(UIElement element, bool emulateMouse = false)
+          : ITouchAdapter, IDisposable
+          ActiveTouches; ConsumeEndedTouches(); ConsumeBeganTouches()
   Or pass your own adapters to Engine.Initialize(...) (see LIFECYCLE).
 
   FOCUS: keyboard input reaches the canvas only while it HAS focus. Call
@@ -1073,15 +1158,32 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     (debug overlays). Prefer SetTileSize(w,h) over setting TileWidth and
     TileHeight separately (one refresh instead of two). Nearly every layer
     property setter forces a full scene refresh — batch changes.
-  * Coordinate systems per layer: Orthogonal, IsometricRhombic,
-    IsometricAxial, HexAxialFlatTop, HexAxialPointedTop, Oblique (a sheared
-    square lattice — columns stay horizontal while rows advance down and to
-    the right, giving a parallelogram tile footprint rather than an isometric
-    diamond; tile art fits that footprint with transparent bounding-box
-    corners). The CoordinateTest sample exercises the first five. Conversions:
-    layer.GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile,
+  * Coordinate systems per layer (CoordinateSystemTypes): Orthogonal (0),
+    IsometricRhombic (1), IsometricAxial (2), HexAxialFlatTop (3),
+    HexAxialPointedTop (4), ObliqueRight (5), ObliqueLeft (6). The two oblique
+    systems are sheared square lattices — columns stay horizontal while rows
+    advance down and to the RIGHT (ObliqueRight) or down and to the LEFT
+    (ObliqueLeft), giving a parallelogram tile footprint rather than an
+    isometric diamond; tile art fits that footprint with transparent
+    bounding-box corners. The CoordinateTest sample exercises the first five.
+    Conversions: layer.GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile,
     CardinalDirections); tile indexers return null out of bounds (no
     auto-wrap — call WrapGrid first when wrapping).
+    NAMING NOTE: the member formerly called `Oblique` is now `ObliqueRight`.
+    Its numeric value is still 5 and the enum serializes as an int, so saved
+    layers are unaffected — only source has to be retargeted.
+    ISOMETRICAXIAL PACKING FIXED. IsometricAxial now uses a true affine basis
+    (px = gx*W + gy*W/2, py = gy*H/2), so its rows pack edge to edge as real
+    diamonds. It previously stepped anchors by the full tile size, laying the
+    layer out like an orthogonal grid — so TILE ANCHORS MOVE, and hand-placed
+    content on an IsometricAxial layer shifts. Re-check any such layer.
+    HEX layers map FRACTIONAL grid positions to interpolated pixel anchors
+    (including a half stagger) instead of snapping to the nearest cell, so a
+    sprite tweening across a hex layer moves smoothly. Integer positions are
+    unchanged.
+  * Scene.CollisionProfiles is the scene's CollisionProfileRegistry and
+    SceneLayer.DefaultTileCollisionProfile ("World") the profile applied to a
+    layer's fixed tiles — see MOVEMENT, EASING, AND COLLISIONS.
   * SceneLayerTile: cells are created with the layer; assigning CurrentFrame
     places a tilesheet frame. Set EnableAnimator = true only on tiles that
     animate (it allocates an Animator per tile).
@@ -1114,16 +1216,42 @@ rectangle + zoom) with a Camera (world position):
     FollowCenteredX/Y (axis lock), Follow(func), ClearFollow().
     FollowLerpPerSecond (default 8) sets follow snappiness; DeadZonePx gives
     the target wiggle room. Camera.PositionPx is read-only — move via methods.
-  * Viewport: Zoom (>1 in, <1 out), SnapZoom, ZoomTo(lerp),
-    ZoomToOverDuration(seconds); View.ZoomAroundScreenPoint gives map-style
-    wheel zoom (zoom + pan together). MinZoom 0.1, MaxZoom 8 per view.
+  * Viewport zoom: Zoom > 1 magnifies (zooms IN), < 1 zooms out — the world
+    rectangle a view shows is TargetRectPx / Zoom (VisibleWorldSizePx).
+    All four View conversions, TextBlock's scene-layer text scale and
+    ZoomAroundScreenPoint follow that sense. (Earlier versions applied the
+    factor the other way round, against their own documentation; a game that
+    compensated for the old direction must drop the compensation.)
+        void SnapZoom(float zoom)                       -- immediate
+        void ZoomTo(float targetZoom, float lerpPerSecond)      -- ease-to
+        void ZoomToOverDuration(float targetZoom, float durationSeconds)
+    ZoomToOverDuration is a true fixed-duration eased tween: it takes exactly
+    that many seconds and LANDS EXACTLY on the target (no asymptotic crawl and
+    no end-of-tween snap).
+    View.ZoomAroundScreenPoint(layer, screenPoint, targetZoom, durationSeconds)
+    gives map-style wheel zoom: the View owns the anchor and re-derives the
+    camera every update, so the world point under the cursor stays under the
+    cursor for the whole animation. It cancels an explicit camera pan but
+    leaves camera FOLLOW intact. MinZoom 0.1, MaxZoom 8 per view.
   * Picking: view.ScreenPxToGrid(layer, screenPoint) turns a pointer position
     into a grid cell (Spot.Brix does exactly this for click handling); plus
-    ScreenPxToWorldPx / WorldPxToScreenPx / WorldRectToScreenRect, all
-    parallax-aware.
+    ScreenPxToWorldPx / WorldPxToScreenPx / WorldRectToScreenRect /
+    ScreenRectToWorldRect, all parallax-aware.
+    Called from INSIDE a render pass for that view (a custom
+    DirectDrawingBase.OnDraw, RenderBackbufferPostScene), the conversions read
+    the render pass's SNAPSHOT of camera position, viewport rect, screen offset
+    and zoom, so one frame is never drawn with two different transforms. Game
+    code on the engine thread keeps seeing live values.
   * host.Bind(scene, limitCameraToWorldBoundPx) auto-creates one full-surface
     view if none exist; ConfigureSingleFullView throws before the adapter
     exists — bind/configure from FirstStarted onward, on the UI thread.
+  * ONE RENDER-SURFACE HOST PER SCENE. Bind throws InvalidOperationException if
+    the scene is already bound to a different host, and a failed bind leaves
+    both hosts on the scenes they already had. For several camera perspectives
+    into one scene, add VIEWS to the one host (ViewManager.AddView), not a
+    second host. Disposing a host — or the scene bound to it — releases the
+    binding and unsubscribes the host from the scene's SceneDisposing event; a
+    disposed host's Scene reverts to Scene.Empty.
   * host.RedrawDirtyRectangleOnly (default true) presents only dirty regions;
     host.Backbuffer.ClearColor sets the letterbox/background color.
   * host.RenderBackbufferPostScene (event Action<SKCanvas>) is a post-scene
@@ -1154,11 +1282,45 @@ relative image paths resolve against the .gts directory.
     Frame frame = sheet[0, 0];                  // or sheet[regionName, x, y]
 
 Sheets can carry multiple named Regions (AddRegion with area, tile size,
-padding, margin, overhang; GetRegion(name); RemoveRegion(name, dispose);
-this[regionName]); Frame is the (sheet, cell) handle everything else consumes
-(GetFrame(x, y) / GetFrame(regionName, x, y)). ApplyMask(SKColor? maskColor =
-null, byte tolerance = 5) sets MaskColor/MaskTolerance; GetImage/GetBitmap
-(regionName, x, y) hand back one cell.
+padding, margin, overhang, and the two collision defaults below; GetRegion(name);
+RemoveRegion(name, dispose); this[regionName]); Frame is the (sheet, cell)
+handle everything else consumes (GetFrame(x, y) / GetFrame(regionName, x, y)).
+ApplyMask(SKColor? maskColor = null, byte tolerance = 5) sets
+MaskColor/MaskTolerance; GetImage/GetBitmap(regionName, x, y) hand back one cell.
+
+    TilesheetRegion AddRegion(string name, Rectangle area, Size tileSize,
+                              Spacing? tilePadding = null, Spacing? regionMargin = null,
+                              CollisionAdjust? collisionAdjust = null,
+                              TileCollisionType collisionType = TileCollisionType.None)
+
+COLLISION METADATA ON A TILESHEET. A region carries defaults that every tile
+drawn from it inherits, and any individual cell may override them:
+    region.CollisionAdjust   (CollisionAdjust, default None) region default inset
+    region.CollisionType     (TileCollisionType, default None) region default type
+    region.CollisionArea                              -- the region default applied
+    CollisionAdjust GetFrameCollisionAdjust(int x, int y)
+    bool TryGetFrameCollisionAdjustOverride(int x, int y, out CollisionAdjust value)
+    void SetFrameCollisionAdjust(int x, int y, CollisionAdjust value)
+    bool ClearFrameCollisionAdjustOverride(int x, int y)
+    Rectangle GetFrameCollisionArea(int x, int y)
+    TileCollisionType GetFrameCollisionType(int x, int y)
+    bool TryGetFrameCollisionTypeOverride(int x, int y, out TileCollisionType value)
+    void SetFrameCollisionType(int x, int y, TileCollisionType value)
+    bool ClearFrameCollisionTypeOverride(int x, int y)
+  * Assigning a FRAME value ALWAYS records an override, even when it equals the
+    region default. Changing the region default re-applies only to frames that
+    have no override — so hand-tuned cells survive a region-wide edit.
+  * Frame mirrors the same view of one cell: Frame.CollisionAdjust,
+    Frame.CollisionArea, Frame.HasCollisionAdjustOverride,
+    Frame.ClearCollisionAdjustOverride(), Frame.CollisionType,
+    Frame.HasCollisionTypeOverride, Frame.ClearCollisionTypeOverride().
+  * Tilesheet's copy constructor copies both region defaults and every
+    per-frame override.
+    void PersistImageToFile(string imageFilePath,
+                            SKEncodedImageFormat format = SKEncodedImageFormat.Png,
+                            int quality = 100)
+    promotes a bitmap-only (runtime-generated) tilesheet to a file-backed one:
+    it writes the sheet's source bitmap and clears the asset identifier.
 
 THE TILESHEET DEFINITION MODEL (.gts) — namespace ...Drawing.Tilesheets.GTS:
     TilesheetDefinition          Name, Image (TilesheetImageDefinition),
@@ -1168,7 +1330,12 @@ THE TILESHEET DEFINITION MODEL (.gts) — namespace ...Drawing.Tilesheets.GTS:
     TilesheetImageDefinition     FilePath, or AssetsFilePath + AssetEntryName
     TilesheetRegionDefinition    Name (default region name), Area (Rectangle),
                                  TileSize (Size), TilePadding / RegionMargin /
-                                 Overhang (Spacing)
+                                 Overhang (Spacing), CollisionAdjust
+                                 (CollisionAdjust, default None), CollisionType
+                                 (TileCollisionType, default None),
+                                 Frames (List<TilesheetFrameDefinition>)
+    TilesheetFrameDefinition     XTile, YTile, CollisionAdjust? (null = inherit
+                                 the region default), CollisionType? (same rule)
     TilesheetMaskDefinition      Red, Green, Blue, Alpha (255), Tolerance (5)
     TilesheetDefinitionSource    Kind (TilesheetDefinitionSourceKind: None,
                                  LooseDefinitionFile, PackedDefinitionFile,
@@ -1190,19 +1357,53 @@ Round trip: build a Tilesheet in code, Save(path, sheet) writes the .gts; the
 save system's separateGtsFiles option and LoadFromDefinitionFile use the same
 format.
 
+  * The .gts collision members are ADDITIVE and backward compatible: a file
+    written before they existed loads with CollisionAdjust.None,
+    TileCollisionType.None and an empty Frames list. TileCollisionType is
+    written as a STRING ("None" / "Blocking" / "Trigger") in both .gts files
+    and engine save files.
+  * Save(filePath, Tilesheet, ...) MUTATES a bitmap-only tilesheet: a sheet with
+    neither an image file path nor an asset identifier gets its bitmap
+    auto-persisted as a sibling .png next to the .gts (same base name), and the
+    sheet's ImageFilePath is re-pointed at that file, so the definition is
+    loadable. File-backed and asset-backed sheets are left untouched. Pass a
+    path you are happy to have a .png appear beside.
+  * FromTilesheet writes one Frames record per frame coordinate, so a large
+    region produces a large .gts (a 100x100 region = 10,000 records).
+
 SPRITES: create ONLY via the manager (the constructor is not public):
 
     var sprite = SpriteManager.Instance.CreateSprite(sceneLayer, new Frame(sheet, 0, 0), "hero");
     sprite.Visible = true;
     sprite.SetPosition(new Vector2(5, 0));      // GRID cells, not pixels
 
-    Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null)
+    Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null,
+                        string? collisionProfileName = null)
     Sprite CloneSprite(Sprite sprite) / CloneSprite(Sprite sprite, SceneLayer sceneLayer)
     Sprite? CloneSprite(string id, SceneLayer sceneLayer);  Sprite? GetSpriteByID(string ID)
     List<Sprite> GetSpritesAtViewPixel(...);  bool SizeNewSpritesToSceneLayer
+    string DefaultCollisionProfile      -- "Actor"; see COLLISIONS below
 
   * Sprite positions are GRID coordinates on their scene layer; RenderSize,
     NudgeX/NudgeY, and CollisionArea are pixels.
+  * ROTATION: Sprite.Rotation (float degrees, clockwise about the centre of the
+    sprite's render rectangle, normalised to 0 <= r < 360; a non-finite value
+    throws ArgumentOutOfRangeException). It is a RENDERING property — the
+    collision rectangle stays axis-aligned — and it round-trips through save
+    files. Sprite.VisualBoundsWorld and Sprite.GetVisualBoundsScreen(View) are
+    the axis-aligned bounds that ENCLOSE the rotated sprite; dirty-region
+    invalidation, SpriteManager's hit tests
+    (GetSpritesInWorldRectRange / GetSpritesInViewRectRange /
+    GetSpritesAtViewPixel) and the SceneLayer sprite query all use them, so a
+    rotated sprite is picked and repainted correctly.
+  * CompositeSprite.GetPosition() returns GRID coordinates, matching
+    SetPosition and AddChildWithOffset (it used to return world pixels).
+  * CloneSprite(sprite, layer) binds the clone's MovementController and collider
+    to the DESTINATION layer (so wrapping and bounds use the right grid), copies
+    the source's rotation and collision settings, and registers the clone with
+    SpriteManager only once it is fully built.
+  * TranslateWorldPx applies a GRID-SPACE delta, so a collision push-out no
+    longer snaps a sprite to whole pixels on both axes.
   * SpriteManager.SizeNewSpritesToSceneLayer (default true) sizes new sprites
     to the layer's tile size, not the frame's native size — set RenderSize
     (or the flag) for native-size sprites.
@@ -1244,6 +1445,14 @@ PIXELS for direct drawings (MovementSpace.Grid / MovementSpace.Pixel); all
 durations are seconds. Per-frame priority: Follow > Scripted > Integrated
 physics.
 
+DIRECT-DRAWING MOVEMENT RUNS IN REAL TIME. It advances once per engine update
+by the real elapsed delta; there is no fixed-step accumulator and no per-update
+cap, so MoveTo/MoveBy/Follow on a direct drawing keep the wall-clock duration
+they were given at any update rate (they used to slow down below ~30 Hz). The
+flip side: a non-pause stall — a debugger break, a very long GC — advances
+movement by the real elapsed time rather than slowing it down. Engine.Pause()
+is unaffected: paused time is shifted out on resume, as always.
+
   SCRIPTED (tweens):
     sprite.Movement.MoveTo(target, 0.4f, EasingKind.SmootherStep);
     sprite.Movement.MoveBy(delta, 10f, EasingFunctions.EaseInOutQuad);
@@ -1273,30 +1482,93 @@ physics.
     SetLinearDamping. Setting velocity/acceleration cancels a script;
     starting a script zeroes velocity/acceleration.
   FOLLOW: FollowPixelSoft/Hard(getPos, speed, offset),
-    FollowTileSoft/Hard(target), Unfollow().
+    FollowTileSoft/Hard(target), Unfollow(). StopAllMovement() also clears
+    follow state (its doc comment always said so; now it does).
+    WrapX / WrapY have public setters.
   EASING: EasingFunctions.Linear, EaseIn/Out/InOutQuad|Cubic|Quart|Quint,
     SmoothStep, SmootherStep — or the EasingKind enum.
 
 COLLISIONS:
-  * Nothing collides until tile.CollisionsEnabled = true (default false).
-    Sprites auto-create a TileCollider with all-groups masks; customize with
-    TileCollider(Tile tile, int collisionGroup, int collidesWith,
-    CollisionResponseType responseType = CollisionResponseType.Solid).
-  * Groups are bitmasks — allocate named bits via the scene's
+  * A tile collides when its Tile.CollisionType is not None. CollisionsEnabled
+    is a PROJECTION of that type: enabling collisions on a None tile promotes it
+    to Blocking (or Trigger, if its collider already responds as a trigger);
+    disabling resets the type to None. Both directions keep the collider's
+    response type in step.
+        TileCollisionType : None, Blocking, Trigger
+        (serialized as a STRING in .gts files and engine save files)
+  * COLLISION PROFILES name a group/mask pair so games do not hand-assemble
+    bitmasks. Scene.CollisionProfiles is a CollisionProfileRegistry carrying
+    four standard profiles (CollisionProfileNames.World / Actor / Projectile /
+    Sensor):
+        "World"       group WorldStatic  collides with Actors, Projectiles
+        "Actor"       group Actors       collides with WorldStatic, Actors,
+                                         Projectiles, Triggers
+        "Projectile"  group Projectiles  collides with WorldStatic, Actors
+        "Sensor"      group Triggers     collides with Actors
+    CollisionProfileRegistry: CollisionProfile Define(string name,
+    string collisionGroup, IEnumerable<string>? collidesWith = null,
+    bool collidesWithAll = false); Get(name); TryGet(name, out profile);
+    GetProfileNames(). CollisionProfile exposes Name, CollisionGroup,
+    CollidesWith, CollidesWithAll and resolves through the scene's group
+    registry (ResolveCollisionGroup / ResolveCollidesWith). The registry is
+    persisted with the scene; a save file written before profiles existed loads
+    with the four standard profiles installed.
+  * DEFAULTS CHANGED. New sprites take SpriteManager.Instance.DefaultCollisionProfile
+    ("Actor") instead of the old all-groups/all-masks collider, and a layer's
+    fixed tiles take SceneLayer.DefaultTileCollisionProfile ("World") instead of
+    none/none. Override per object with Tile.SetCollisionProfile(string
+    profileName) or per creation with
+    SpriteManager.CreateSprite(..., collisionProfileName: "Projectile").
+    UPSTREAM-PARITY QUIRK: adding a layer to a scene — which also happens during
+    a load — re-applies that layer's DefaultTileCollisionProfile to every fixed
+    tile, so a per-tile SetCollisionProfile on a LAYER TILE does not survive a
+    save/load or a re-add. Sprites are unaffected.
+  * Groups are still bitmasks underneath — allocate named bits via the scene's
     CollisionGroups registry (CollisionGroupRegistry: int Define(string name),
-    int Get(string name), GetGroupNames(); preset bits WorldStatic, Actors,
-    Projectiles, Triggers). CollisionMasks.None (0) and CollisionMasks.All
-    (~0) are the two constants.
+    int Get(string name), int GetMask(IEnumerable<string> names),
+    GetGroupNames(); preset bits WorldStatic, Actors, Projectiles, Triggers).
+    CollisionMasks.None (0) and CollisionMasks.All (~0) are the two constants.
+    TileCollider(Tile tile, int collisionGroup, int collidesWith,
+    CollisionResponseType responseType = CollisionResponseType.Solid) is still
+    the way to build one by hand.
   * Resolution is AUTOMATIC, once per cycle, per layer: Solid vs Solid gets
     a minimum-axis push-out with velocity canceled on the hit axis (slide);
     Trigger reports without push-out. (Overlap events are currently
     engine-internal — collision response is automatic-only; query manually
     via SceneLayer.ColliderRegistry.QueryAabb for game logic.)
   * SceneLayer.ShowCollisionBoxes = true overlays collision bounds for
-    debugging.
-  * Tile.AdjustCollisionArea (CollisionDetectionAdjustment: Top, Bottom,
-    Left, Right in pixels; CollisionDetectionAdjustment.None) shrinks or grows
-    a tile's collision rectangle relative to its render bounds.
+    debugging — for tiles whose collisions are actually enabled, only.
+
+  COLLISION AREA ADJUSTMENT — Tile.AdjustCollisionArea is a CollisionAdjust
+  (namespace ...Physics.Collisions; Top, Bottom, Left, Right in pixels;
+  CollisionAdjust.None; ApplyTo(Rectangle), IEquatable, == / !=), and
+  Tile.CollisionArea is exactly AdjustCollisionArea.ApplyTo(DrawLocationWorld).
+
+      THE CONVENTION IS INSET ON EVERY EDGE. A POSITIVE value on ANY of the four
+      edges moves that edge INWARD and shrinks the collision box; a NEGATIVE
+      value moves it outward and grows the box. Positive Bottom raises the
+      bottom edge, positive Right moves the right edge left. Concretely:
+          Rectangle.FromLTRB(L + Left, T + Top, R - Right, B - Bottom)
+      (This differs from the earlier CollisionDetectionAdjustment type, where
+      positive Bottom/Right pushed the far edges OUTWARD. Saved files are
+      unaffected — the member names Top/Bottom/Left/Right did not change — but
+      any hand-written value must be re-read under the inset rule.)
+
+      var feet = new CollisionAdjust(top: 40, bottom: 0, left: 6, right: 6);
+      hero.AdjustCollisionArea = feet;   // only the boots collide
+
+  BY-FRAME COLLISION. The FIRST frame assigned to a tile SEEDS its collision
+  adjustment and collision type from that frame's tilesheet metadata, unless
+  the tile set one explicitly first. Later frame changes move them only when
+  the matching by-frame flag is on:
+      Tile.AdjustCollisionAreaByFrame  (bool, default false, persisted)
+      Tile.CollisionTypeByFrame        (bool, default false, persisted)
+  Turn one on for an animation whose collision shape genuinely changes between
+  frames (a crouch, a sword swing); leave it off — the default — to keep one
+  stable collision box across a walk cycle.
+  Tile.SetCollisionProfile(name), the protected Tile.AttachCollider(ICollider)
+  and the protected Tile.CopyCollisionSettingsFrom(Tile) round the API out;
+  a sprite clone carries the source's adjustment, type and profile.
 
 THE COLLISION MODEL TYPES (namespace ...Physics.Collisions):
     ICollisionEntity            Rectangle CollisionArea
@@ -1313,10 +1585,16 @@ THE COLLISION MODEL TYPES (namespace ...Physics.Collisions):
                                 MinX/MinY/MaxX/MaxY, Width, Height, Center (PointF),
                                 Intersects(in Aabb other), ToRectangle(),
                                 static FromRectangle(Rectangle) / FromRectangleF(RectangleF)
-    CollisionResult(ICollider primary, ICollider other, CollisionDirectionFrom direction)
-                                Primary, Other, Direction
-    CollisionDirectionFrom      N, NE, E, SE, S, SW, W, NW, Center;
-                                CollisionDirectionHelper.FromCenters(Aabb primary, Aabb other)
+    TileCollisionType           None, Blocking, Trigger
+    CollisionAdjust             Top, Bottom, Left, Right (pixel INSETS), None,
+                                ApplyTo(Rectangle)
+    CollisionProfile            Name, CollisionGroup, CollidesWith, CollidesWithAll,
+                                ResolveCollisionGroup(CollisionGroupRegistry),
+                                ResolveCollidesWith(CollisionGroupRegistry)
+    CollisionProfileNames       World, Actor, Projectile, Sensor (string constants)
+    CollisionProfileRegistry    Define(name, collisionGroup, collidesWith,
+                                collidesWithAll), Get(name), TryGet(name, out),
+                                GetProfileNames()
     ColliderRegistry            (one per SceneLayer) StaticColliders, DynamicColliders,
                                 Register(ICollider), Unregister(ICollider),
                                 void QueryAabb(in Aabb area, int layerMask,
@@ -1341,6 +1619,9 @@ and self-register with DirectDrawingManager (dispose to remove).
         .SetStrokeWidth(6f).SetStrokeAlign(...).SetAlpha(128)
         .SetBlendMode(SKBlendMode.Screen).PulseFill(a, b, seconds)
         .PulseBorder(a, b, seconds)
+        .SetFillPattern(bitmap, scale, ...) / .ClearFillPattern()
+        .SetFillImage(bitmap|image, mode, scale, offsetPx, filterQuality)
+        .ClearFillImage()
     TextBlock(host, viewOrLayer, bounds)
         .SetFont(SKTypeface.FromFamilyName("..."), 16f, minSize: 14f)
         .SetColors(fore, back).SetAlignment(SKTextAlign.Center, VerticalAlign.Center)
@@ -1350,7 +1631,8 @@ and self-register with DirectDrawingManager (dispose to remove).
     DirectComposite(host, DirectDrawingMode.View)
         .Add(child1).Add(child2)      // group; has .Movement (pixel space)
         .SetOpacity/FadeTo/FadeIn/FadeOut
-    ImageInstanceLayer                // many ImageInstance copies of one image
+    ImageInstanceLayer                // many ImageInstance copies of one image;
+                                      //   View mode OR SceneLayer mode
     ParticleSurface(host, layerOrView, bounds, nickname, maxParticles)
         .Emitters.Add(new ParticleEmitter {
             Position, EmitRate, LifeRange, VelocityRangeX/Y, SizeRange,
@@ -1369,6 +1651,243 @@ TextBlock; the glowing pulsing text box it animates upward is a
 DirectComposite of a DirectRectangle and a TextBlock moved with
 Movement.MoveBy(new Vector2(0, -500), 10f, EasingFunctions.EaseInOutQuad).
 ZOrder orders direct drawings among themselves per drawing mode.
+
+DIRECTRECTANGLE IMAGE FILLS. A rectangle can be filled with a bitmap or an
+SKImage instead of (or after) a solid colour:
+
+    DirectRectangle SetFillImage(SKBitmap bitmap, ImageFillMode mode = Stretch,
+                                 float scale = 1f, SKPoint? offsetPx = null,
+                                 ImageFilterQuality filterQuality = Medium)
+    DirectRectangle SetFillImage(SKImage image, ...)     // same parameters
+    DirectRectangle ClearFillImage()
+
+  * DirectRectangle.ImageFillMode: Stretch (fill, ignore aspect), Fit (whole
+    image inside, aspect kept), Fill (cover, aspect kept, overflow clipped),
+    Center (native size, centred, clipped), PixelPerfect (largest whole-number
+    scale that fits, never below native size), Repeat (tiled).
+  * `scale` and `offsetPx` apply to Repeat only. `scale` must be finite and
+    greater than zero and `mode` must be a defined enum value, or the call
+    throws ArgumentOutOfRangeException; a null source throws
+    ArgumentNullException. A rejected call leaves the existing fill intact.
+  * The fill is clipped to the rectangle INCLUDING its rounded corners, and
+    setting an image fill enables filled mode.
+  * The image source stays CALLER-OWNED — the rectangle never disposes it.
+  * Image fill and pattern fill are mutually exclusive: setting one clears the
+    other. SetFillPattern validates its scale the same way.
+  * DirectRectangle and DirectImage now release their cached SKPaint (and the
+    pattern shader) deterministically in Dispose, instead of leaving them to
+    the finalizer.
+
+IMAGEINSTANCELAYER IN SCENE-LAYER MODE. Two constructors bind the layer to a
+View (screen space, the original behaviour) and two to a SceneLayer (world
+space), each with a plain form and a callbacks form:
+
+    ImageInstanceLayer(host, View view, Rectangle screenBounds, string? nickname = null)
+    ImageInstanceLayer(host, SceneLayer sceneLayer, Rectangle worldBounds,
+                       string? nickname = null)
+    ImageInstanceLayer(host, view|sceneLayer, bounds,
+                       Func<Rectangle, Random, IEnumerable<ImageInstance>>? initializer,
+                       Func<ImageInstance, Rectangle, bool>? shouldRecycle = null,
+                       Func<ImageInstance, Rectangle, Random, ImageInstance>? recycleInstance = null,
+                       Action<ImageInstance, float>? updateInstance = null,
+                       string? nickname = null)
+
+  * In SceneLayer mode the instances live in WORLD pixels, so they scroll with
+    the camera and follow the layer's parallax and the view's zoom; the
+    initializer / should-recycle / recycle callbacks receive WorldBounds, and
+    dirty rectangles go to that layer's own refresh queue. In View mode the
+    callbacks receive ScreenBounds, exactly as before.
+  * ImageInstance.Bounds is world pixels in SceneLayer mode and screen pixels
+    in View mode.
+  * View-mode drawing now maps instance bounds INTO the destination rectangle
+    rather than using absolute screen coordinates; with matching origins and
+    equal sizes (the ordinary case) the output is identical, and a letterboxed
+    or scaled destination now renders correctly.
+
+LIGHTING (Mode A)
+--------------------------------------------------------------------------------
+Two independent halves, usable together or alone: LIGHTS that ADD glow, and
+DARKNESS OVERLAYS that subtract it and are punched through by reveal sources.
+Everything draws through the backbuffer canvas, so both work on CpuRendering
+and GpuRendering.
+
+    DirectRadialLight(Color lightColor, RenderSurfaceHostBase host,
+                      SceneLayer sceneLayer, PointF centerWorldPx,
+                      float radiusWorldPx, string? nickname = null)
+        CenterWorldPx, RadiusWorldPx, LightColor, Intensity, EffectiveIntensity,
+        BlendMode (SKBlendMode, Screen for a torch), HotspotRadiusRatio,
+        MidpointRadiusRatio, MidpointIntensityRatio, IsAntialias,
+        FlickerEnabled, FlickerAmount, FlickerRefreshHz, event Changed;
+        fluent MoveTo(centerWorldPx) / SetRadius(r) / SetIntensity(i)
+
+    DirectLightLayer(RenderSurfaceHostBase host, SceneLayer sceneLayer)
+        the logical owner of a group of lights on ONE layer:
+        AddTorchLight(PointF centerWorldPx, float radiusWorldPx,
+                      Color? color = null, string? nickname = null),
+        Remove(light), Clear(), Lights, DefaultZOrder (10,000),
+        events LightAdded / LightRemoving; IDisposable
+
+    DirectDarknessOverlay(host, View view, SceneLayer projectionLayer,
+                          string? nickname = null)
+        a VIEW-mode darkness quad over the whole viewport (player vision, fog of
+        war). It needs the projectionLayer to map world points to screen.
+    DirectSceneLayerDarknessOverlay(host, SceneLayer sceneLayer,
+                                    Rectangle worldBounds, string? nickname = null)
+        the SCENE-LAYER sibling: a world-bounded darkness region
+        (DarknessWorldBounds) that scrolls with its layer and is visible to
+        every view looking at that part of the world (swamp fog, a dark room).
+        It refuses lights that belong to a different layer.
+
+    Both overlays share the same surface:
+        DarknessColor, DarknessOpacity, InnerClearRadiusRatio,
+        MidpointRadiusRatio, MidpointStrength, RevealSources
+        RevealSource AddRevealSource(PointF centerWorldPx, float radiusWorldPx,
+                                     string? nickname = null)
+        RevealSource TrackLight(DirectRadialLight light, ...)
+        void TrackLightLayer(DirectLightLayer lightLayer, ...)
+        bool UntrackLight(light);  bool RemoveRevealSource(source);  ClearRevealSources()
+        fluent SetDarknessColor / SetDarknessOpacity / SetInnerClearRadiusRatio /
+               SetMidpointRadiusRatio / SetMidpointStrength
+               (+ SetDarknessWorldBounds on the scene-layer overlay)
+
+A torchlit room, end to end:
+
+    var lights = new DirectLightLayer(host, dungeonLayer);
+    var torch  = lights.AddTorchLight(new PointF(520, 320), 110f, nickname: "torch-01");
+    torch.FlickerEnabled = true;
+
+    var darkness = new DirectDarknessOverlay(host, mainView, dungeonLayer, "dungeon-darkness")
+                      .SetDarknessColor(Color.Black)
+                      .SetDarknessOpacity(190);
+    darkness.TrackLightLayer(lights);       // every present and future light carves a hole
+    torch.MoveTo(playerWorldCenterPx);      // glow and reveal move together
+
+  * Tracking is IDEMPOTENT per light and per light layer. To change a tracked
+    light's radiusScale / intensityScale / trackIntensity, UntrackLight first,
+    then TrackLight again. A tracked light that is disposed drops its hole.
+  * Lights default to ZOrder 10,000 (DirectLightLayer.DefaultZOrder) and
+    overlays to 20,000, so darkness composites over the lights.
+  * Flicker is pause-safe: a flickering torch does not jump phase across
+    Engine.Pause() / Resume().
+
+DISPLAY EFFECTS (Mode A)
+--------------------------------------------------------------------------------
+Presentation-level transitions over a whole View or a whole SceneLayer, driven
+by the render surface host. Effects change PRESENTATION only — they never move
+world objects, alter collision geometry, or change a layer's origin.
+
+    host.Effects                              -- EffectsManager on RenderSurfaceHostBase
+        TEffect Run<TEffect>(View target, TEffect effect)
+        TEffect Run<TEffect>(SceneLayer target, TEffect effect)
+        void Cancel(DisplayEffect effect);  void CancelAll()
+        ReadOnlyCollection<DisplayEffect> ActiveEffects
+
+    // fade the HUD view in over 400 ms, then wipe the map layer away
+    host.Effects.Run(hudView, new FadeInEffect(0.4f));
+    host.Effects.Run(mapLayer, new EraseEffect(EffectDirection.FromLeftToRight, 0.8f));
+
+The effect types (namespace CodeBrix.Platform.GameEngine.Effects):
+    FadeInEffect(float durationSeconds, EasingKind easing = Linear)      view or layer
+    FadeOutEffect(float durationSeconds, EasingKind easing = Linear)     view or layer
+    SlideInEffect(EffectDirection, float durationSeconds,
+                  EasingKind easing = EaseOutCubic)                      view or layer
+    SlideOutEffect(EffectDirection, float durationSeconds,
+                  EasingKind easing = EaseInCubic)                       view or layer
+    FillEffect(EffectDirection, float durationSeconds,
+               EasingKind easing = Linear)                               view or layer
+    EraseEffect(EffectDirection, float durationSeconds,
+               EasingKind easing = Linear)                               view or layer
+    ZoomInEffect(float targetZoom, float durationSeconds)                VIEW only
+    ZoomOutEffect(float targetZoom, float durationSeconds)               VIEW only
+    EarthquakeEffect(float durationSeconds, float intensityPx = 8f,
+                     bool decay = true, int? randomSeed = null)          VIEW only
+
+    EffectDirection: None, FromLeftToRight, FromRightToLeft, FromTopToBottom,
+        FromBottomToTop, FromTopLeftToBottomRight, FromTopRightToBottomLeft,
+        FromBottomLeftToTopRight, FromBottomRightToTopLeft
+
+Every DisplayEffect carries Id, DurationSeconds, Easing, Status
+(EffectStatus: Pending -> Running -> Completed | Cancelled), Progress, the
+events Completed and Cancelled, and Cancel().
+
+RULES WORTH KNOWING:
+  * ONE EFFECT PER TARGET PER CHANNEL. The channels are Transform (slides,
+    earthquake), Opacity (fades), Reveal (fill/erase) and Zoom. Running a
+    second effect on the same target+channel REPLACES the first WITHOUT
+    restoring its state, so the new effect continues from the value the old one
+    had reached. Cancel / CancelAll / disposing the host DO restore the state.
+  * An effect INSTANCE runs once. Construct a new one for the next run.
+  * An effect whose target the host no longer owns (a removed view, a layer of
+    a scene that has been unbound) is dropped silently.
+  * A view running a presentation effect no longer CLIPS the views beneath it,
+    so a translucent, wiped or slid view reveals what is below.
+  * While ANY view-level effect is running, the CPU dirty-rectangle
+    optimisation is suspended for its duration and the surface is recomposed in
+    full each frame. Layer-only effects keep dirty-rect rendering.
+  * View-mode direct drawings shift with their view's effect offset.
+  * Effects advance on the FOREGROUND (render) cadence, so Engine.Pause()
+    freezes one mid-effect and Resume() shifts its time baseline — nothing
+    bursts to completion across a pause.
+  * ZoomInEffect / ZoomOutEffect delegate the animation to
+    Viewport.ZoomToOverDuration; the effect owns lifecycle only, and View.Update
+    still drives the zoom.
+
+SPLASH AND HUD COMPONENTS (Mode A)
+--------------------------------------------------------------------------------
+Two ready-made DirectComposite subclasses, so common game furniture does not
+have to be rebuilt per game.
+
+SPLASHOVERLAY — a view-sized splash that fades in, holds, fades out and
+disposes itself:
+
+    static SplashOverlay? TryCreate(string imagePath | Stream imageStream,
+                                    RenderSurfaceHostBase host, View view,
+                                    float fadeInSeconds = 0.45f,
+                                    float holdSeconds = 3f,
+                                    float fadeOutSeconds = 0.45f,
+                                    Action? onHolding = null,
+                                    Func<Task>? onHoldingAsync = null,
+                                    Action? onSplashCompleted = null,
+                                    string? nickname = null)
+    Image (the DirectImage), Phase (SplashPhase: Hidden, FadingIn, Holding,
+    FadingOut, Completed), FadeInSeconds / HoldSeconds / FadeOutSeconds
+
+  * TryCreate returns NULL and logs a warning when the file is missing or the
+    stream does not decode, or when the host has no views — so a game can start
+    without a splash instead of throwing. A negative duration throws
+    ArgumentOutOfRangeException.
+  * The image is drawn with ScaleMode.Fit at ZOrder int.MaxValue and
+    re-stretches when the viewport's target rectangle changes.
+  * onHolding / onHoldingAsync run on the engine thread when the hold phase
+    starts — the place to load content behind the splash. THE HOLD ENDS WHEN
+    THE HOLD TIMER AND THAT WORK ARE BOTH FINISHED, whichever is later.
+  * onSplashCompleted is raised on the engine thread AFTER the fade-out and
+    after the overlay has disposed itself. Start music and show the title
+    screen there.
+  * The hold uses an engine Timer, so it is pause-shifted like everything else.
+
+HEALTHBAR — a world-space bar that tracks a sprite:
+
+    HealthBar(RenderSurfaceHostBase host, Sprite target, float maxValue,
+              Size? size = null, Point? offsetPx = null, string? nickname = null)
+    HealthBar(RenderSurfaceHostBase host, SceneLayer sceneLayer, Sprite target,
+              float maxValue, int width, int height, int offsetY = 0,
+              string? nickname = null)
+    Target, Value, MaxValue, Fraction, BarSize, OffsetPx,
+    FillColor / WarningColor / CriticalColor, WarningFraction / CriticalFraction,
+    UseThresholdColors, TrackBoundsWorld, FillBoundsWorld
+    fluent SetValue(v), SetFillColor(c), SetTrackColors(background, border),
+           SetThresholdColors(warning, critical), SetThresholds(warningFraction,
+           criticalFraction), Show(), Hide(); RefreshPosition()
+
+  * It is a SceneLayer-mode composite of two DirectRectangles (track + fill,
+    StrokeAlign.Inside on the track), centred above its target with OffsetPx,
+    and it follows the sprite's SpriteMoved event.
+  * Threshold colours are OPT-IN: set UseThresholdColors (or call
+    SetThresholdColors) to have the bar switch to warning/critical colours.
+  * It disposes itself with its target sprite. maxValue must be greater than
+    zero and the bar big enough to draw, or the constructor throws
+    ArgumentOutOfRangeException.
 
 SAVE / LOAD: EngineState (Mode A)
 --------------------------------------------------------------------------------
@@ -1478,6 +1997,10 @@ Engine.Instance.Configuration (loaded by Initialize; default file
     SamplingTimeForCPS = 1.5          -- seconds between CPSCalculated events
     TimeBetweenKeyboardEvents = 0.03  -- repeat-event throttle floors (seconds)
     TimeBetweenMouseEvents / TouchEvents / GamepadEvents = 0.03
+                                      -- these ARE enforced (the mouse one used
+                                         to be ignored). 0 = an event every
+                                         cycle. TimeBetweenTouchEvents paces
+                                         TouchMoved only. See INPUT.
     TimeBetweenGamepadStateUpdates = 0.008
                                       -- how often gamepad DEVICE state is re-read
                                          (and hotplug detected), in both modes;
@@ -1495,8 +2018,50 @@ Engine.Instance.Configuration (loaded by Initialize; default file
                                          Get/Set/Has/Remove helpers and
                                          config[section, key] indexers
 
-EngineConfigurationFile.CreateNew/Load/Save manage the file; AutoSave writes
-on Dispose.
+EngineConfigurationFile.CreateNew/Load/Save manage the file:
+
+    static EngineConfigurationFile CreateNew(string? configFileName = null,
+                                             bool? autoSave = null)
+    static EngineConfigurationFile Load(string? configFileName = null,
+                                        bool? autoSave = null)
+    string FileName;  string FilePath;  bool AutoSave;
+    EngineConfiguration EngineConfig;  void Save();  void Save(string jsonPath);
+    void Dispose()
+
+THE JSON ROOT KEY IS "EngineConfig". A gameengine.json whose settings sit under
+any other root object is read as an empty configuration — no error, just
+defaults. The shipped file looks like this:
+
+    {
+      "EngineConfig": {
+        "TargetFPS": 60,
+        "SamplingTimeForCPS": 1.5,
+        "TimeBetweenKeyboardEvents": 0.03,
+        "TimeBetweenGamepadEvents": 0.03,
+        "TimeBetweenMouseEvents": 0.03
+      }
+    }
+
+  * AUTO-SAVE WORKS. With autoSave true (Engine.Initialize(..., autoSaveConfig:
+    true), or AutoSave on the file object) the configuration — including
+    anything the game put in ConfigurationSections — is written back when the
+    file is disposed, and Engine.Dispose() disposes it before the logging
+    system shuts down. Earlier versions accepted the flag and never wrote.
+  * THE DEFAULT PATH IS RELATIVE. Load()/Initialize() with no path resolve
+    "gameengine.json" against the PROCESS WORKING DIRECTORY, which is not
+    necessarily where the executable lives. Pass an absolute path for a
+    predictable location:
+
+        var configPath = Path.Combine(AppContext.BaseDirectory, "gameengine.json");
+        host.Initialize(configPath: configPath, autoSaveConfig: true);
+
+  * THE FILE IS READ ONCE. Load materialises the settings and releases the
+    configuration root immediately — no reload-on-change watcher is left
+    behind, and an EngineConfigurationFile obtained from Load does not track
+    later edits to the file on disk. Call Load again to pick them up.
+  * Configuration.LoggingQueueCapacity is honoured at Initialize, and shutdown
+    stops asynchronous logging whenever it is asynchronous, flushing according
+    to FlushAsyncLogsOnShutdown.
 
 PLUGINS, LOGGING, DI, VALUE BAGS, FONTS AND SVG
 --------------------------------------------------------------------------------
@@ -1530,8 +2095,22 @@ EngineLogger.GetLogger<MyGame>(). Configuration.LoggingMode /
 LoggingQueueCapacity / FlushAsyncLogsOnShutdown govern the async queue.
 
 DI: ServiceCollectionExtensions.AddEngineLogging(this IServiceCollection
-services) registers the engine's logger factory into an application's service
-collection so app code and engine code share one logging pipeline.
+services) makes the application and the engine share ONE logging pipeline.
+
+    services.AddLogging(b => b.AddConsole());
+    services.AddEngineLogging();          // engine logs now go through it too
+    var provider = services.BuildServiceProvider();
+
+  * If the collection already registers an ILoggerFactory, that factory becomes
+    the engine's: an ImplementationInstance is adopted directly, and a factory
+    or type registration is re-registered at the SAME lifetime around the
+    original one. Resolving ILoggerFactory no longer recurses into itself
+    (AddEngineLogging used to produce a circular registration that threw on the
+    first resolve).
+  * Once an application-supplied factory is in use, EngineLogger.SetLogLevel is
+    a NO-OP — the application's own filters own the level, and
+    GameHostBase.Initialize(logLevel:) will not override them. Configure the
+    level through the application's logging builder instead.
 
 VALUE BAGS: TypedValueBag is a typed, key-safe property bag carried by
 EngineState (State.ValueBag), Scene, SceneLayer and every Tile/Sprite
@@ -1901,9 +2480,30 @@ API TRAPS
   [] OnBeginning(...) throws if no scripted move is active (a move that
      snapped instantly). OnComplete is safe.
   [] Configuration.TimeBetween*Events are SECONDS (0.03), whatever older doc
-     comments say.
+     comments say — and the mouse one is now enforced. Set
+     TimeBetweenMouseEvents = 0 for a mouse event every cycle, and make
+     SYNTHETIC clicks in UI automation hold the button ~300 ms or more; a
+     ~12 ms press-and-release (xdotool's default) falls inside one 30 ms
+     throttle window and is dropped.
   [] Start/StopMonitoring* registrations apply at the NEXT poll, not
      instantly; keys must be registered before KeyDown fires for them.
+  [] Desktop mouse does NOT arrive as touch contact 0 any more. Pass
+     emulateMouse: true, or override EmulateMouseAsTouch on the host base, for
+     a game that reads only the touch stream.
+  [] CollisionAdjust INSETS on every edge: positive shrinks the box on that
+     edge, negative grows it. Positive Bottom/Right no longer push outward.
+  [] One render-surface host per Scene — Bind throws if the scene is already
+     bound elsewhere. Use several Views on the one host instead.
+  [] Viewport.Zoom > 1 zooms IN. Code written against the older, inverted
+     behaviour has to drop its compensation.
+  [] Timer.Add validates its length: zero, negative, NaN, infinite and
+     sub-tick lengths throw instead of hanging the engine thread.
+  [] TilesheetDefinitionSerializer.Save(path, tilesheet) MUTATES a bitmap-only
+     tilesheet — it writes a sibling .png and re-points the sheet at it.
+  [] gameengine.json's root key is "EngineConfig", and the default path is
+     RELATIVE to the process working directory. Pass an absolute path.
+  [] An EffectsManager effect instance runs once, and a second effect on the
+     same target+channel replaces the first WITHOUT restoring its state.
   [] Keyboard focus: a toolbar click steals focus from the canvas and the
      engine poller then sees nothing. Call EnsureFocus() and hand focus back
      after toolbar interactions.
@@ -1957,15 +2557,44 @@ WORKING EXAMPLES ON GITHUB
 ==========================
 Repository root: https://github.com/ellisnet/CodeBrix.Platform.GameEngine
 
-SAMPLES — seven complete games/demos, each with LinuxX11, Win32Skia and MacOS
+SAMPLES — nine complete games/demos, each with LinuxX11, Win32Skia and MacOS
 heads plus a shared .UI project and a .Game library; each is the reference
-consumer for the subsystems it exercises:
+consumer for the subsystems it exercises. None of them is in the repository
+.slnx: each sample carries its OWN .slnx and is built and run on its own.
 
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/Spot.Brix
       Mode A via CodeBrixGameHost: scenes, sprites, tilesheets, engine
       mouse+keyboard input, the toolbar/focus recipe (src/Spot.Brix.UI/Views/
       MainPage.xaml.cs), per-move callbacks (src/libs/Spot.Brix.Game/
-      SpotBrixGameHost.cs).
+      SpotBrixGameHost.cs). It also demonstrates the whole start-up shape a
+      finished game wants: a SplashOverlay title card whose completion callback
+      starts the music and the opening screen; a CodeBrix.Platform XAML
+      ContentDialog (New Game: 2-4 players, names/colours, human or computer,
+      board 3x3 to 12x12) driving the engine from the UI thread through
+      Engine.EngineDispatcher.Post; option persistence (music, sound effects,
+      jiggle, clouds, GPU) in the "spot" section of a gameengine.json pinned to
+      AppContext.BaseDirectory; and EngineState.SaveToFile("savegame.json") when
+      a game ends.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/Platformer.Brix
+      Mode A via CodeBrixGameHost, at a pinned 960x576 render resolution
+      (GameSurfaceCanvas.SetRenderResolution): a side-view platform game and the
+      reference consumer for fixed layer-tile colliders. Collision profiles and
+      Tile.CollisionType on world tiles, CollisionAdjust in its INSET form on
+      the player/hazards/relics, a foot probe through
+      ColliderRegistry.QueryAabb, integrated velocity + gravity movement,
+      horizontal camera follow with a dead zone, a view-bound
+      DirectRectangle + TextBlock HUD, and a procedural tilesheet painted in
+      code (TilesheetRegistry.LoadFromBitmap), so the sample ships no image
+      assets.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/SpaceDuel.Brix
+      Mode A via CodeBrixGameHost on the GPU tier: Sprite.Rotation on ships and
+      lasers, MovementController.WrapX/WrapY for a wrap-around world, two
+      parallax star layers, ParticleSurface explosion bursts, AI raiders, a
+      per-ship HealthBar, a SplashOverlay title card, explicit Actor/Projectile
+      collision profiles with CollisionAdjust insets, TargetFPS 0 / VSync off /
+      MSAA 4 set from Engine.InitializationComplete, and a view-space HUD fed by
+      CPSCalculated (GpuFps ?? NetCPS). SPACEDUEL_USE_CPU=1 runs the identical
+      game on CpuRendering. All of its art is generated in code.
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/Slider
       Mode A, direct Engine: sprites built on the engine thread via
       EngineDispatcher.Post, engine mouse events, rebuild-while-running.
@@ -2000,15 +2629,42 @@ consumer for the subsystems it exercises:
       MusicAssetFactory.cs: stems, two tracks, a stinger, an SFZ instrument
       and a MIDI file with markers), so the sample runs anywhere.
 
-TESTS — headless unit tests that double as usage references:
+TESTS — headless unit tests that double as usage references (456 in the engine
+core suite, 45 in the gamepad suite, 2 in the host suite):
 
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests
       EngineStateRoundTripTests.cs / EngineStateSaveTests.cs — populated-graph
           save/load round-trips (scenes/layers/tile grids, shared sprite
           references, cycles, loose-file and asset-pack audio, compression,
-          merge semantics)
+          merge semantics), plus a legacy-save regression that strips the newer
+          collision members from a real save file and reloads it
+      SpriteRotationRoundTripTests.cs, CollisionProfileRoundTripTests.cs — the
+          rotation and collision-profile/type members through save and load
       EnginePauseTests.cs — park/resume semantics, no-burst time shifting,
           audio suspend rules, snapshot capture
+      TimerTests.cs — length validation, schedule preservation, one-shot timers
+      ViewTests.cs, ViewportTests.cs, TextBlockTests.cs — zoom direction,
+          anchored zoom, fixed-duration zoom tweens, the render-pass snapshot
+      HexAxialCoordinatesTests.cs, SceneLayerCoordinateSystemTests.cs — the
+          seven coordinate systems and fractional hex anchors
+      SpriteTests.cs, SpriteRotationTests.cs, CompositeSpriteTests.cs,
+          SpriteManagerTests.cs, TileTests.cs, SceneLayerTileTests.cs
+      TilesheetCollisionAdjustTests.cs, TilesheetCollisionTypeTests.cs,
+          TilesheetFactoryTests.cs, TilesheetDefinitionSerializerTests.cs,
+          CollisionProfileTests.cs — the collision metadata and .gts round trip
+      MouseEventPollerTests.cs, TouchEventPollerTests.cs,
+          TapGestureRecognizerTests.cs, SwipeGestureRecognizerTests.cs,
+          PinchGestureRecognizerTests.cs — throttling, touch lifecycle, gestures
+      EffectsManagerTests.cs, EffectGeometryTests.cs, EffectsRenderingTests.cs —
+          the effects subsystem, including its pause behaviour
+      DirectRadialLightTests.cs, DirectDarknessOverlayTests.cs,
+          DirectSceneLayerDarknessOverlayTests.cs — lighting, sampled from a
+          rendered backbuffer
+      SplashOverlayTests.cs, HealthBarTests.cs — the two ready-made components
+      DirectRectangleTests.cs, DirectImageTests.cs, ImageInstanceLayerTests.cs,
+          DirectDrawingMovableBaseTests.cs, ParticleSurfaceTests.cs,
+          MovementControllerTests.cs, RefreshQueueTests.cs,
+          RenderSurfaceHostTests.cs
       CachedSoundTests.cs / SfxVoicePoolTests.cs — decode-once preload and the
           pool's cull-policy selection (nothing opens the audio device)
       AudioMixerTests.cs, MusicManagerTests.cs, MusicStemSetTests.cs,
@@ -2017,7 +2673,8 @@ TESTS — headless unit tests that double as usage references:
           by hand and MIDI fixtures built in code
       FixedRateGameLoopTests.cs, PixelFramePresenterTests.cs — Mode B
       InputPumpGamepadTests.cs — the Mode-B gamepad refresh path
-      EngineConfigurationTests.cs, PlatformAudioFactoryTests.cs (the .opus
+      EngineConfigurationTests.cs, ServiceCollectionExtensionsTests.cs,
+          EngineLoggerTests.cs, PlatformAudioFactoryTests.cs (the .opus
           registration proof), DirectCompositeTests.cs, GpuBackbufferTests.cs,
           ImageFilterQualityTests.cs, SpacingTests.cs, VariableRateSampleProviderTests.cs,
           AudioResourceDisposalTests.cs, AudioResourceManagerPcmTests.cs
@@ -2054,24 +2711,26 @@ HOST (CodeBrix.Platform.GameEngine.Host.*)
         void Initialize(string? configPath = null, bool? autoSaveConfig = null,
                         LogLevel logLevel = LogLevel.Warning)
         overrides: LoadAssets, LoadTilesheets, LoadAnimationCycles, Scene CreateInitialScene,
-                   CreateInitialViews, CreateSprites, CreateDirectDrawings, OnEngineInitialized,
-                   OnEngineStarted, OnEnginePaused, OnEngineResumed, OnConfigureGamepads,
-                   OnKeyboardAdapterInitialized, OnMouseAdapterInitialized,
-                   OnTouchAdapterInitialized, OnRenderSurfaceResized(int, int), OnDisposing
+                   CreateInitialViews, CreateSprites, CreateDirectDrawings, OnSceneBound,
+                   OnEngineInitialized, OnEngineStarted, OnEnginePaused, OnEngineResumed,
+                   OnConfigureGamepads, OnKeyboardAdapterInitialized, OnMouseAdapterInitialized,
+                   OnTouchAdapterInitialized, OnRenderSurfaceResized(int, int), OnDisposing,
+                   bool EmulateMouseAsTouch (default false)
     abstract class SoftwareRenderedGameHostBase
         ctor(GameSurfaceCanvas renderSurface, int ticsPerSecond)
         void Initialize(LogLevel logLevel = LogLevel.Warning)
         PixelFramePresenter Presenter;  FixedRateGameLoop GameLoop;  GameSurfaceCanvas RenderSurface
         abstract OnLoadContent(), OnTic(), OnRenderFrame(Span<byte> frameBuffer)
         virtual ConfigureInput(), ConfigureGamepads(), ConfigureAudio(), OnShutdown(),
-                OnEnginePaused(), OnEngineResumed()
+                OnEnginePaused(), OnEngineResumed(), bool EmulateMouseAsTouch (default false)
     static class EngineExtensions
         InitializeCodeBrixKeyboardAdapter(this Engine, UIElement element)
         InitializeCodeBrixMouseAdapter(this Engine, UIElement element,
                                        MouseEventConfiguration? mouseEventConfiguration = null)
-        InitializeCodeBrixTouchAdapter(this Engine, UIElement element)
+        InitializeCodeBrixTouchAdapter(this Engine, UIElement element, bool emulateMouse = false)
     CodeBrixKeyboardAdapter(UIElement) / CodeBrixMouseAdapter(UIElement) /
-    CodeBrixTouchInputAdapter(UIElement);  static int? CodeBrixKeyboardAdapter.GetKeyCodeFromString(string)
+    CodeBrixTouchInputAdapter(UIElement, bool emulateMouse = false);
+    static int? CodeBrixKeyboardAdapter.GetKeyCodeFromString(string)
     RelativeMouseSession(GameSurfaceCanvas): Begin(), End(), (int DeltaX, int DeltaY) ConsumeDelta()
     CodeBrixPlatformUiDispatcher(DispatcherQueue);  static CodeBrixPlatformUiDispatcher? ForCurrentThread()
 
@@ -2093,9 +2752,17 @@ INPUT
     MouseEventPoller: StartMonitoringMouse(bool trackMouseMovement = true,
         double timeBetweenEvents = -1, bool isPaused = false); StopMonitoringMouse();
         event Action<MouseEventArgs> MouseEvent; CurrentPosition; ButtonStates; ScrollDelta
+        (both pollers: IDisposable + static Reset(); Engine.Dispose calls both)
     TouchEventPoller: StartMonitoringTouch(double = -1, bool = false); StopMonitoringTouch();
-        ActiveTouches; TouchBegan/TouchMoved/TouchEnded; event Action<GestureEventArgs> TouchEvent;
-        TapRecognizer.Tapped / SwipeRecognizer.Swiped / PinchRecognizer.PinchUpdated
+        ActiveTouches; TouchBegan/TouchMoved/TouchEnded (never throttled);
+        event Action<GestureEventArgs> TouchEvent;
+        TapRecognizer.Tapped / SwipeRecognizer.Swiped /
+        PinchRecognizer.PinchStarted|PinchUpdated|PinchEnded
+    SwipeGestureRecognizer: MinimumSwipeSpeedPixelsPerSecond (200),
+        MinimumSwipeDistancePixels (30)
+    PinchedEventArgs: Phase (PinchPhase Began/Updated/Ended), TouchIds, Center,
+        StartingDistance, PreviousDistance, CurrentDistance, ScaleDelta, TotalScale
+    ITouchAdapter: ActiveTouches; ConsumeEndedTouches(); ConsumeBeganTouches()
     TouchPoint(int Id, Point Position, TouchPhase Phase)
     GamepadEventPoller: StartMonitoringButton(string gamepadId, string button,
         double timeBetweenEvents = -1, bool isPaused = false); StopMonitoringButton(gamepadId,
@@ -2107,25 +2774,42 @@ INPUT
 TIMERS
     static Timer Timer.Add(string timerID, TimerType type, TimerCycles cycles, double length)
     static Timer Timer.Add(TimerType type, TimerCycles cycles, double length)
+        (length must be finite, > 0, >= 1 high-res tick and fit a positive Int64
+         of ticks, or ArgumentOutOfRangeException)
     static void Timer.Remove(string timerID);  static void Timer.ClearAll();  static bool Timer.PausedAll
     Timer: event Tick; Paused; Dispose()
 
 SCENE GRAPH
     Scene: SceneLayer AddLayer(int columnCount, int rowCount, int width = 32, int height = 32,
         int zOrder = 0, float parallax = 1f, CoordinateSystemTypes coordinateSystem = Orthogonal);
-        AddLayer(SceneLayer); RemoveAllLayers(); FullRefreshNeeded; ValueBag; Dispose()
+        AddLayer(SceneLayer); RemoveAllLayers(); FullRefreshNeeded; CollisionProfiles;
+        CollisionGroups; ValueBag; Dispose()
+    CoordinateSystemTypes: Orthogonal 0, IsometricRhombic 1, IsometricAxial 2,
+        HexAxialFlatTop 3, HexAxialPointedTop 4, ObliqueRight 5, ObliqueLeft 6
     SceneLayer: this[x, y] (SceneLayerTile?), SetTileSize(w, h), ZOrder, Parallax, Visible,
         WrapHorizontally/WrapVertically, OriginPx, ShowGridLines, ShowCollisionBoxes,
+        DefaultTileCollisionProfile ("World"),
         GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile, CardinalDirections),
-        ColliderRegistry, ValueBag
-    Tile (SceneLayerTile, Sprite): CurrentFrame, Visible, CollisionsEnabled, CollisionArea,
-        AdjustCollisionArea, EnableAnimator, TileAnimator, ValueBag
-    RenderSurfaceHost<T>: void Bind(Scene newScene, bool limitCameraToWorldBoundPx = true);
-        ViewManager; Backbuffer; RedrawDirtyRectangleOnly; event Action<SKCanvas> RenderBackbufferPostScene
+        ColliderRegistry, RefreshQueue, ValueBag
+    Tile (SceneLayerTile, Sprite): CurrentFrame, Visible, CollisionsEnabled, CollisionType,
+        CollisionTypeByFrame, CollisionArea, AdjustCollisionArea (CollisionAdjust),
+        AdjustCollisionAreaByFrame, CollisionProfileName, SetCollisionProfile(name),
+        EnableAnimator, TileAnimator, ValueBag
+    RenderSurfaceHost<T>: void Bind(Scene newScene, bool limitCameraToWorldBoundPx = true)
+        (throws InvalidOperationException if the scene is bound to another host);
+        ViewManager; Backbuffer; Effects; RedrawDirtyRectangleOnly;
+        event Action<SKCanvas> RenderBackbufferPostScene
     ViewManager: ConfigureSingleFullView(float zoom = 1f, int zOrder = 0);
         ConfigureVerticalSplit(float leftZoom = 1f, float rightZoom = 1f);
         AddView(Rectangle targetRectPx, float zoom = 1f, int zOrder = 0, RectangleF? worldBoundsPx = null);
         ClearViews(); Views
+    View: Camera; Viewport; ZOrder; MinZoom 0.1; MaxZoom 8;
+        ZoomAroundScreenPoint(layer, screenPoint, targetZoom, durationSeconds);
+        ScreenPxToWorldPx / WorldPxToScreenPx / ScreenPxToGrid /
+        WorldRectToScreenRect / ScreenRectToWorldRect
+    Viewport: Zoom (>1 = zoomed IN); SnapZoom(zoom); ZoomTo(zoom, lerpPerSecond);
+        ZoomToOverDuration(zoom, durationSeconds); TargetRectPx; Resize(w, h);
+        ScreenOffsetPx; VisibleWorldSizePx; events TargetRectChanged, ZoomChanged
 
 TILESHEETS / SPRITES / ANIMATION
     TilesheetRegistry.Instance: LoadFromImageFile(string name, string imageFilePath);
@@ -2133,15 +2817,30 @@ TILESHEETS / SPRITES / ANIMATION
         LoadFromAssetsFile(AssetsFile, string entryName); LoadFromDefinitionFile(string gtsPath);
         LoadFromDefinition(TilesheetDefinition, string? baseDirectory = null);
         LoadFromDefinitionAsset(AssetsFile, string gtsEntryName); TryGet; GetOrNull; this[name]
-    Tilesheet: DefaultRegion, Regions, AddRegion(...), GetRegion(name), this[regionName],
-        this[regionName, x, y], GetFrame(x, y), ApplyMask(SKColor? maskColor = null, byte tolerance = 5)
+    Tilesheet: DefaultRegion, Regions, GetRegion(name), this[regionName],
+        this[regionName, x, y], GetFrame(x, y), ApplyMask(SKColor? maskColor = null, byte tolerance = 5);
+        AddRegion(string name, Rectangle area, Size tileSize, Spacing? tilePadding = null,
+        Spacing? regionMargin = null, CollisionAdjust? collisionAdjust = null,
+        TileCollisionType collisionType = None);
+        PersistImageToFile(string path, SKEncodedImageFormat format = Png, int quality = 100)
+    TilesheetRegion: CollisionAdjust; CollisionType; CollisionArea;
+        Get/TryGet…Override/Set/Clear FrameCollisionAdjust(x, y, …);
+        Get/TryGet…Override/Set/Clear FrameCollisionType(x, y, …); GetFrameCollisionArea(x, y)
+    Frame: CollisionAdjust; CollisionArea; HasCollisionAdjustOverride;
+        ClearCollisionAdjustOverride(); CollisionType; HasCollisionTypeOverride;
+        ClearCollisionTypeOverride()
     TilesheetDefinitionSerializer: Load(string|Stream); Save(string filePath, TilesheetDefinition);
         FromJson(string); ToJson(TilesheetDefinition); FromTilesheet(Tilesheet, string? baseDirectory = null,
         bool makePathsRelative = false); Save(string filePath, Tilesheet, bool makePathsRelative = true)
-    SpriteManager.Instance: Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null);
-        CloneSprite(Sprite[, SceneLayer]); Sprite? GetSpriteByID(string ID);
-        GetSpritesAtViewPixel(...); bool SizeNewSpritesToSceneLayer
-    Sprite: SetPosition(Vector2 pos) (grid); Visible; RenderSize; Movement; TileAnimator;
+        (the Tilesheet overload writes a sibling .png for a bitmap-only sheet
+         and re-points the sheet at it)
+    SpriteManager.Instance: Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null,
+        string? collisionProfileName = null); CloneSprite(Sprite[, SceneLayer]);
+        Sprite? GetSpriteByID(string ID); GetSpritesAtViewPixel(...);
+        GetSpritesInWorldRectRange(...); GetSpritesInViewRectRange(...);
+        bool SizeNewSpritesToSceneLayer; string DefaultCollisionProfile ("Actor")
+    Sprite: SetPosition(Vector2 pos) (grid); Visible; RenderSize; Rotation (degrees, clockwise);
+        VisualBoundsWorld; GetVisualBoundsScreen(View); Movement; TileAnimator;
         ResizeTo / ScaleBy / PulseTo / PulseBy / StopPulse / CancelResize; StartJiggle / JiggleOnce / StopJiggle
     FrameSequence: AddFrame(sheet, x, y); SequenceCycleType (CycleType Simple/Repeating/PingPong)
     Cycle(FrameSequence seq, double throttleSeconds, string key); NextCycle
@@ -2151,13 +2850,43 @@ MOVEMENT / COLLISION
     MovementController: MoveTo(target, seconds, EasingKind|Func); MoveBy(delta, seconds, easing)
         or MoveBy(delta, speed); MoveToward(target, speedPerSec); OnBeginning(Action); OnComplete(Action);
         CancelScript(); StopAllMovement(); SetVelocity / SetAcceleration / SetMaxSpeed / SetLinearDamping;
-        FollowPixelSoft/Hard, FollowTileSoft/Hard, Unfollow(); MovementState; IsScripted
+        FollowPixelSoft/Hard, FollowTileSoft/Hard, Unfollow(); StopAllMovement() also unfollows;
+        WrapX / WrapY (public setters); MovementState; IsScripted
     TileCollider(Tile tile, int collisionGroup, int collidesWith,
                  CollisionResponseType responseType = Solid)
-    CollisionGroupRegistry: int Define(string name); int Get(string name); WorldStatic/Actors/Projectiles/Triggers
+    TileCollisionType: None, Blocking, Trigger   (serialized as a string)
+    CollisionAdjust(int top, int bottom, int left, int right): Top/Bottom/Left/Right are
+        pixel INSETS on their own edge (positive shrinks the box); None; ApplyTo(Rectangle)
+    CollisionProfileNames: World, Actor, Projectile, Sensor
+    CollisionProfileRegistry (Scene.CollisionProfiles): Define(name, collisionGroup,
+        collidesWith, collidesWithAll); Get(name); TryGet(name, out); GetProfileNames()
+    CollisionGroupRegistry: int Define(string name); int Get(string name);
+        int GetMask(IEnumerable<string> names); WorldStatic/Actors/Projectiles/Triggers
     ColliderRegistry.QueryAabb(in Aabb area, int layerMask, int collidesWithMask,
                                List<ICollider> results, ICollider? ignore = null)
     Aabb(float minX, float minY, float maxX, float maxY): Intersects(in Aabb), Center, ToRectangle()
+
+EFFECTS / LIGHTING / COMPONENTS
+    host.Effects (EffectsManager): Run<TEffect>(View|SceneLayer target, TEffect effect);
+        Cancel(effect); CancelAll(); ActiveEffects
+    FadeInEffect / FadeOutEffect(float seconds, EasingKind = Linear)
+    SlideInEffect / SlideOutEffect(EffectDirection, float seconds, EasingKind)
+    FillEffect / EraseEffect(EffectDirection, float seconds, EasingKind = Linear)
+    ZoomInEffect / ZoomOutEffect(float targetZoom, float seconds)          -- View only
+    EarthquakeEffect(float seconds, float intensityPx = 8f, bool decay = true,
+                     int? randomSeed = null)                               -- View only
+    DisplayEffect: Id, DurationSeconds, Easing, Status (EffectStatus), Progress,
+        events Completed / Cancelled, Cancel()
+    DirectRadialLight(Color, host, SceneLayer, PointF centerWorldPx, float radiusWorldPx, nickname)
+    DirectLightLayer(host, SceneLayer): AddTorchLight(centerWorldPx, radiusWorldPx, color, nickname)
+    DirectDarknessOverlay(host, View, SceneLayer projectionLayer, nickname)
+    DirectSceneLayerDarknessOverlay(host, SceneLayer, Rectangle worldBounds, nickname)
+        both: AddRevealSource / TrackLight / TrackLightLayer / UntrackLight / ClearRevealSources
+    SplashOverlay.TryCreate(string|Stream image, host, View, fadeIn 0.45f, hold 3f,
+        fadeOut 0.45f, onHolding, onHoldingAsync, onSplashCompleted, nickname) -> null on failure
+    HealthBar(host, Sprite target, float maxValue, Size? size = null, Point? offsetPx = null,
+        string? nickname = null): SetValue / SetFillColor / SetTrackColors /
+        SetThresholdColors / SetThresholds / Show / Hide
 
 AUDIO / MUSIC
     AudioResourceManager.Instance: LoadFromFile / LoadFromStream / LoadFromPcm(key, data, rate,
@@ -2181,8 +2910,13 @@ SAVE / LOAD / ASSETS / CONFIG
         static MergeFromFile(path, overwriteExisting, parts); SerializerOptions; ValueBag
     AssetsFile.LoadOrCreate(path); Get(AssetTypes, name); this[AssetTypes, name]; Add(AssetTypes, path); Save()
     EngineConfiguration: TargetFPS, VSync, MsaaSampleCount, TimeBetween*Events,
-        TimeBetweenGamepadStateUpdates, PauseSuspendsAudio, PauseShortSoundEffectSeconds,
+        TimeBetweenGamepadStateUpdates, LoggingMode, LoggingQueueCapacity,
+        FlushAsyncLogsOnShutdown, PauseSuspendsAudio, PauseShortSoundEffectSeconds,
         StateFiles, ConfigurationSections
+    EngineConfigurationFile: static CreateNew/Load(string? configFileName = null,
+        bool? autoSave = null); FileName; FilePath; AutoSave; EngineConfig; Save();
+        Save(string jsonPath); Dispose()  -- JSON root key "EngineConfig";
+        the default file name is RELATIVE to the working directory; read once
     TypedValueBag: Set<T>(ValueKey<T>, T); Get<T>(ValueKey<T>, T defaultValue = default);
         TryGet<T>(ValueKey<T>, out T?); Remove<T>; Contains; Clear(); Clone()
 

@@ -24,6 +24,8 @@ public enum TouchPhase
 
     /// <summary>
     /// A finger or pointer is in contact with the surface but has not moved since the last event.
+    /// This conventional phase is retained for adapter and consumer compatibility, but
+    /// <see cref="TouchEventPoller"/> does not raise a separate stationary event.
     /// </summary>
     Stationary,
 

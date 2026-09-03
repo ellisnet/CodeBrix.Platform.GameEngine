@@ -1,5 +1,6 @@
 using System.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing;
+using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine;
@@ -245,7 +246,30 @@ public class GpuBackbuffer : BackbufferBase
     {
         var image = tile.CurrentFrame.SkImage;
         if (image is null || _surface is null) return;
-        _surface.Canvas.DrawImage(image, destRectScreen.ToSKRect(), SKSamplingOptions.Default);
+
+        var canvas = _surface.Canvas;
+
+        if (tile is Sprite { Rotation: not 0f } sprite)
+        {
+            float centerX = destRectScreen.Left + (destRectScreen.Width * 0.5f);
+            float centerY = destRectScreen.Top + (destRectScreen.Height * 0.5f);
+
+            canvas.Save();
+
+            try
+            {
+                canvas.RotateDegrees(sprite.Rotation, centerX, centerY);
+                canvas.DrawImage(image, destRectScreen.ToSKRect(), SKSamplingOptions.Default);
+            }
+            finally
+            {
+                canvas.Restore();
+            }
+
+            return;
+        }
+
+        canvas.DrawImage(image, destRectScreen.ToSKRect(), SKSamplingOptions.Default);
     }
 
     /// <summary>

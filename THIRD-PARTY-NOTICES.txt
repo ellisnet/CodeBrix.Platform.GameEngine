@@ -23,8 +23,13 @@ is not incorporated into these assemblies.
    Project:    Gondwana
    Author:     Michael Adkins (Hidden Worlds Games)
    Source:     https://github.com/Isthimius/Gondwana
-   Version:    v2.5.0 (commit 9da4631d)
+   Version:    master @ de1dcbf3 (2026-09-02)
    License:    MIT
+
+   Vendoring history: the original port matched upstream commit 64fd41df
+   (2026-07-18). The upstream fixes and enhancements published between that
+   commit and de1dcbf3 were merged into this port on 2026-09-03; the pin above
+   records the upstream revision the core now tracks.
 
    The core library CodeBrix.Platform.GameEngine is a port of the Gondwana
    engine's core project. Source files were copied and adapted: namespaces were

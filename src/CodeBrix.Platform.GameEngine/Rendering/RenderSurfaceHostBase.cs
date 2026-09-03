@@ -1,3 +1,4 @@
+using CodeBrix.Platform.GameEngine.Effects;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
@@ -23,9 +24,14 @@ public abstract class RenderSurfaceHostBase : IDisposable
     /// </summary>
     /// <remarks>
     /// Registration ensures the render surface host is tracked for lifecycle management and can be
-    /// enumerated by other system components.
+    /// enumerated by other system components. The host's <see cref="Effects"/> manager is created
+    /// here, so every host has one from the moment it exists.
     /// </remarks>
-    protected RenderSurfaceHostBase() => RenderSurfaceHostRegistry.Register(this);
+    protected RenderSurfaceHostBase()
+    {
+        Effects = new EffectsManager(this);
+        RenderSurfaceHostRegistry.Register(this);
+    }
 
     /// <summary>
     /// Finalizes an instance of the <see cref="RenderSurfaceHostBase"/> class, ensuring resources
@@ -61,6 +67,19 @@ public abstract class RenderSurfaceHostBase : IDisposable
     /// multiple views with independent cameras and viewports.
     /// </remarks>
     public abstract ViewManager ViewManager { get; }
+
+    /// <summary>
+    /// Gets the manager that owns presentation effects for this render surface.
+    /// </summary>
+    /// <value>
+    /// The <see cref="EffectsManager"/> that runs fades, slides, wipes, zooms, and camera shake
+    /// against the views this host owns and the layers of the scene it is bound to.
+    /// </value>
+    /// <remarks>
+    /// Effects change presentation state only; they never move world objects, alter collision
+    /// geometry, or change a scene layer's origin.
+    /// </remarks>
+    public EffectsManager Effects { get; }
 
     /// <summary>
     /// The frame the viewer was seeing at the moment the global engine pause
@@ -187,9 +206,17 @@ public abstract class RenderSurfaceHostBase : IDisposable
     /// <see langword="false"/> to release only unmanaged resources (called from finalizer).
     /// </param>
     /// <remarks>
-    /// This method always unregisters the instance from the registry. Derived classes should override
-    /// this method to release additional resources but must call the base implementation to ensure
-    /// proper unregistration.
+    /// This method always unregisters the instance from the registry, and disposes the
+    /// <see cref="Effects"/> manager when called from <see cref="Dispose()"/> — which cancels every
+    /// running effect and restores the presentation state it captured. Derived classes should
+    /// override this method to release additional resources but must call the base implementation
+    /// to ensure proper unregistration.
     /// </remarks>
-    protected virtual void Dispose(bool disposing) => RenderSurfaceHostRegistry.Unregister(this);
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+            Effects.Dispose();
+
+        RenderSurfaceHostRegistry.Unregister(this);
+    }
 }

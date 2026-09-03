@@ -16,7 +16,7 @@ namespace ParticleTest.Game;
 /// <summary>
 /// Drives the ParticleTest sample: a particle-effects showcase (sparks, rain, a campfire) plus a
 /// glowing, pulsing rounded box with wrapped shadowed text that animates upward. This is a port of the
-/// Gondwana ParticleTest demo onto a CodeBrix.Platform <see cref="GameSurfaceCanvas"/>.
+/// upstream ParticleTest demo onto a CodeBrix.Platform <see cref="GameSurfaceCanvas"/>.
 /// </summary>
 public sealed class ParticleTestGame
 {

@@ -21,8 +21,10 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Touch;
 /// <remarks>
 /// <para>
 /// On physical touch devices, each finger contact is tracked by the pointer ID and exposed as a
-/// unique <see cref="TouchPoint"/>. On desktop platforms with no hardware touch screen, mouse
-/// pointer events are emulated as a single touch point with <c>Id = 0</c>.
+/// unique <see cref="TouchPoint"/>. Mouse pointers are ignored by default so an application that
+/// also initializes a mouse adapter does not receive duplicate mouse and touch input. Pass
+/// <c>emulateMouse: true</c> to the constructor when single-contact mouse emulation is desired,
+/// in which case primary mouse-button input is exposed as touch <c>Id = 0</c>.
 /// </para>
 /// <para>
 /// Dispose this adapter to unsubscribe from all pointer events.
@@ -31,8 +33,10 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Touch;
 public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 {
     private readonly UIElement _element;
+    private readonly bool _emulateMouse;
     private readonly Dictionary<int, TouchPoint> _activeTouches = new();
     private TouchPoint[] _activeTouchesSnapshot = Array.Empty<TouchPoint>();
+    private readonly ConcurrentQueue<TouchPoint> _pendingBegins = new();
     private readonly ConcurrentQueue<TouchPoint> _pendingEnds = new();
     private bool _isDisposed;
 
@@ -46,10 +50,15 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
     /// <param name="element">
     /// The element whose pointer events will be translated into touch events. Must not be <see langword="null"/>.
     /// </param>
+    /// <param name="emulateMouse">
+    /// When <c>true</c>, primary mouse-button input is also exposed as touch ID 0.
+    /// The default is <c>false</c> to keep mouse and physical touch input distinct.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="element"/> is <see langword="null"/>.</exception>
-    public CodeBrixTouchInputAdapter(UIElement element)
+    public CodeBrixTouchInputAdapter(UIElement element, bool emulateMouse = false)
     {
         _element = element ?? throw new ArgumentNullException(nameof(element));
+        _emulateMouse = emulateMouse;
 
         _element.PointerPressed += OnPointerPressed;
         _element.PointerMoved += OnPointerMoved;
@@ -62,6 +71,9 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (IsMouse(e) && !_emulateMouse)
+            return;
+
         var point = e.GetCurrentPoint(_element);
 
         // For mouse pointers, only emulate touch for the primary (left) button.
@@ -73,10 +85,14 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 
         _activeTouches[id] = touch;
         RebuildSnapshot();
+        _pendingBegins.Enqueue(touch);
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (IsMouse(e) && !_emulateMouse)
+            return;
+
         var id = GetTouchId(e);
 
         // Only track movement for contacts that are already active (button/finger held).
@@ -92,6 +108,9 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (IsMouse(e) && !_emulateMouse)
+            return;
+
         var id = GetTouchId(e);
 
         if (!_activeTouches.ContainsKey(id))
@@ -107,6 +126,9 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 
     private void OnPointerCaptureLost(object sender, PointerRoutedEventArgs e)
     {
+        if (IsMouse(e) && !_emulateMouse)
+            return;
+
         // The system cancelled the pointer.
         var id = GetTouchId(e);
 
@@ -117,6 +139,18 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         _activeTouches.Remove(id);
         RebuildSnapshot();
         _pendingEnds.Enqueue(touch);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<TouchPoint> ConsumeBeganTouches()
+    {
+        if (_pendingBegins.IsEmpty)
+            return Array.Empty<TouchPoint>();
+
+        var snapshot = new List<TouchPoint>(_pendingBegins.Count);
+        while (_pendingBegins.TryDequeue(out var touch))
+            snapshot.Add(touch);
+        return snapshot;
     }
 
     /// <inheritdoc />

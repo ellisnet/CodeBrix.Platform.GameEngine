@@ -1,4 +1,5 @@
 using CodeBrix.Platform.GameEngine.Assets;
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System;
@@ -179,6 +180,12 @@ public static class TilesheetDefinitionSerializer
     /// <param name="makePathsRelative">
     /// Whether image and assets file paths should be written relative to the .gts file directory.
     /// </param>
+    /// <remarks>
+    /// When <paramref name="tilesheet"/> has no file or asset source, its source bitmap is
+    /// automatically persisted as a PNG beside the .gts file using the same base file name, so
+    /// that a runtime-only tilesheet can be saved without a separate call to
+    /// <see cref="Tilesheet.PersistImageToFile"/>.
+    /// </remarks>
     public static void Save(
         string filePath,
         Tilesheet tilesheet,
@@ -190,6 +197,10 @@ public static class TilesheetDefinitionSerializer
         ArgumentNullException.ThrowIfNull(tilesheet);
 
         var fullPath = Path.GetFullPath(filePath);
+
+        if (string.IsNullOrWhiteSpace(tilesheet.ImageFilePath) && tilesheet.AssetIdentifier is null)
+            tilesheet.PersistImageToFile(Path.ChangeExtension(fullPath, ".png"));
+
         var baseDirectory = Path.GetDirectoryName(fullPath);
 
         var definition = FromTilesheet(
@@ -243,6 +254,13 @@ public static class TilesheetDefinitionSerializer
 
                 throw new InvalidDataException($"Failed to deserialize {source}. Result was null.");
             }
+
+            // Maintain compatibility with files written before frame-level metadata existed,
+            // and tolerate explicit null collection values from hand-authored JSON.
+            definition.Regions ??= new List<TilesheetRegionDefinition>();
+
+            foreach (var region in definition.Regions)
+                region.Frames ??= new List<TilesheetFrameDefinition>();
 
             return definition;
         }
@@ -307,15 +325,45 @@ public static class TilesheetDefinitionSerializer
     private static TilesheetRegionDefinition CreateRegionDefinition(
         TilesheetRegion region)
     {
-        return new TilesheetRegionDefinition
+        var definition = new TilesheetRegionDefinition
         {
             Name = region.Name,
             Area = region.Area,
             TileSize = region.TileSize,
             TilePadding = region.TilePadding,
             RegionMargin = region.RegionMargin,
-            Overhang = region.Overhang
+            Overhang = region.Overhang,
+            CollisionAdjust = region.CollisionAdjust,
+            CollisionType = region.CollisionType
         };
+
+        // Persist every frame coordinate while retaining the distinction between an inherited
+        // region default (null) and an explicit frame-level override.
+        for (int y = 0; y < region.Rows; y++)
+        {
+            for (int x = 0; x < region.Columns; x++)
+            {
+                CollisionAdjust? collisionAdjust =
+                    region.TryGetFrameCollisionAdjustOverride(x, y, out var frameCollisionAdjust)
+                        ? frameCollisionAdjust
+                        : null;
+
+                TileCollisionType? collisionType =
+                    region.TryGetFrameCollisionTypeOverride(x, y, out var frameCollisionType)
+                        ? frameCollisionType
+                        : null;
+
+                definition.Frames.Add(new TilesheetFrameDefinition
+                {
+                    XTile = x,
+                    YTile = y,
+                    CollisionAdjust = collisionAdjust,
+                    CollisionType = collisionType
+                });
+            }
+        }
+
+        return definition;
     }
 
     private static TilesheetMaskDefinition? CreateMaskDefinition(

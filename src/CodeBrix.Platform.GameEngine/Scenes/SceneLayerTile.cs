@@ -34,9 +34,6 @@ public class SceneLayerTile : Tile
     [JsonInclude]
     internal Point sceneLayerCoordinates;
 
-    [JsonIgnore]
-    internal new ICollider? Collider;
-
     #endregion private / internal fields
 
     #region constructors / finalizer
@@ -46,6 +43,19 @@ public class SceneLayerTile : Tile
         zOrder = 0;
         visible = true;
         parentSceneLayer = sceneLayer;
+    }
+
+    /// <summary>
+    /// Ensures this fixed layer tile has the collider used by the public
+    /// <see cref="Tile.Collider"/> and <see cref="Tile.CollisionsEnabled"/> APIs. Attaching it
+    /// applies any collision profile, collision type and registration the tile already carries.
+    /// </summary>
+    internal void EnsureCollider()
+    {
+        if (_collider is null)
+        {
+            AttachCollider(new TileCollider(this, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None));
+        }
     }
 
     // Deserialization construction: the serializer populates parentSceneLayer (a $ref to the

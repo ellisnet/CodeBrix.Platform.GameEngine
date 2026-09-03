@@ -173,6 +173,26 @@ public sealed class BitmapBackbuffer : BackbufferBase
         if (bmp is null)
             return;
 
+        if (tile is Sprite { Rotation: not 0f } sprite)
+        {
+            float centerX = destRectScreen.Left + (destRectScreen.Width * 0.5f);
+            float centerY = destRectScreen.Top + (destRectScreen.Height * 0.5f);
+
+            Canvas.Save();
+
+            try
+            {
+                Canvas.RotateDegrees(sprite.Rotation, centerX, centerY);
+                Canvas.DrawBitmap(bmp, destRectScreen.ToSKRect(), _filterQuality.ToSamplingOptions(), _bitmapPaint);
+            }
+            finally
+            {
+                Canvas.Restore();
+            }
+
+            return;
+        }
+
         Canvas.DrawBitmap(bmp, destRectScreen.ToSKRect(), _filterQuality.ToSamplingOptions(), _bitmapPaint);
     }
 

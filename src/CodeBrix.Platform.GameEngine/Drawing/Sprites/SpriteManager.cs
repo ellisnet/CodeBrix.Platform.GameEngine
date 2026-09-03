@@ -1,3 +1,4 @@
+using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
@@ -48,6 +49,26 @@ public sealed class SpriteManager : IDisposable
     /// </summary>
     public bool SizeNewSpritesToSceneLayer { get; set; } = true;
 
+    private string _defaultCollisionProfile = CollisionProfileNames.Actor;
+
+    /// <summary>
+    /// Gets or sets the name of the scene collision profile assigned to newly created sprites when
+    /// no profile is specified explicitly.
+    /// </summary>
+    /// <value>Defaults to <see cref="CollisionProfileNames.Actor"/>.</value>
+    /// <exception cref="ArgumentException">Thrown when the value is null or whitespace.</exception>
+    public string DefaultCollisionProfile
+    {
+        get => _defaultCollisionProfile;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new ArgumentException("Default collision profile cannot be empty.", nameof(value));
+
+            _defaultCollisionProfile = value;
+        }
+    }
+
     #region public methods
 
     /// <summary>
@@ -56,10 +77,21 @@ public sealed class SpriteManager : IDisposable
     /// <param name="sceneLayer">The scene layer on which to create the sprite.</param>
     /// <param name="frame">The frame to use for the sprite.</param>
     /// <param name="id">Optional nickname/identifier for the sprite.</param>
+    /// <param name="collisionProfileName">
+    /// Optional scene collision profile name. When omitted, <see cref="DefaultCollisionProfile"/> is used.
+    /// </param>
     /// <returns>The newly created sprite.</returns>
-    public Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null)
+    public Sprite CreateSprite(
+        SceneLayer sceneLayer,
+        Frame frame,
+        string? id = null,
+        string? collisionProfileName = null)
     {
-        var sprite = new Sprite(sceneLayer, frame);
+        var profileName = string.IsNullOrWhiteSpace(collisionProfileName)
+            ? DefaultCollisionProfile
+            : collisionProfileName;
+
+        var sprite = new Sprite(sceneLayer, frame, profileName);
         sprite.Nickname = id;
         SpriteCreated?.Invoke(sprite);
         return sprite;
@@ -80,13 +112,7 @@ public sealed class SpriteManager : IDisposable
     /// <returns>The cloned sprite.</returns>
     public Sprite CloneSprite(Sprite sprite, SceneLayer sceneLayer)
     {
-        Sprite newSprite = new Sprite(sprite);
-
-        if (newSprite.SceneLayer != sceneLayer)
-        {
-            newSprite._sceneLayer = sceneLayer;
-            newSprite._sceneLayer.RefreshQueue.AddWorldRect(newSprite.DrawLocationWorld);
-        }
+        Sprite newSprite = new Sprite(sprite, sceneLayer);
 
         SpriteCreated?.Invoke(newSprite);
         return newSprite;
@@ -203,12 +229,12 @@ public sealed class SpriteManager : IDisposable
             {
                 if (fullEnclosures)
                 {
-                    if (worldRect.Contains(sprite.DrawLocationWorld))
+                    if (worldRect.Contains(sprite.VisualBoundsWorld))
                         retSprites.Add(sprite);
                 }
                 else
                 {
-                    if (sprite.DrawLocationWorld.IntersectsWith(worldRect))
+                    if (sprite.VisualBoundsWorld.IntersectsWith(worldRect))
                         retSprites.Add(sprite);
                 }
             }
@@ -242,7 +268,7 @@ public sealed class SpriteManager : IDisposable
         {
             if ((sceneLayer is null) || (sprite.SceneLayer == sceneLayer))
             {
-                var rectScreen = sprite.GetDrawLocationScreen(view).ToPixelAlignedRect();
+                var rectScreen = sprite.GetVisualBoundsScreen(view).ToPixelAlignedRect();
 
                 if (fullEnclosures)
                 {
@@ -282,7 +308,7 @@ public sealed class SpriteManager : IDisposable
         {
             if ((sceneLayer is null) || (sprite.SceneLayer == sceneLayer))
             {
-                if (sprite.GetDrawLocationScreen(view).Contains(viewPxlPt))
+                if (sprite.GetVisualBoundsScreen(view).Contains(viewPxlPt))
                     retSprites.Add(sprite);
             }
         }
@@ -298,6 +324,28 @@ public sealed class SpriteManager : IDisposable
     {
         lock (_spriteListLock)
             _spriteList.Add(sprite);
+    }
+
+    /// <summary>
+    /// Resolves retained collision profile names for the sprites whose layer has just become
+    /// attached to a scene.
+    /// </summary>
+    /// <param name="sceneLayer">The layer that joined a scene.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="sceneLayer"/> is null.</exception>
+    internal void RefreshCollisionProfiles(SceneLayer sceneLayer)
+    {
+        ArgumentNullException.ThrowIfNull(sceneLayer);
+
+        List<Sprite> snapshot;
+
+        lock (_spriteListLock)
+            snapshot = new List<Sprite>(_spriteList);
+
+        foreach (var sprite in snapshot)
+        {
+            if (ReferenceEquals(sprite.SceneLayer, sceneLayer))
+                sprite.RefreshCollisionProfile();
+        }
     }
 
     /// <summary>

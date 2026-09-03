@@ -2,6 +2,7 @@ using CodeBrix.Platform.GameEngine.Drawing.Animation;
 using CodeBrix.Platform.GameEngine.Drawing.Collisions;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Physics.Movement;
+using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -45,6 +46,7 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     private int _nudgeX;
     private int _nudgeY;
     private Size _renderSize;
+    private float _rotation;
 
     internal bool _pendingDispose = false;
 
@@ -65,6 +67,23 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     /// <param name="frame">The initial frame for the sprite.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="sceneLayer"/> is null.</exception>
     protected internal Sprite(SceneLayer sceneLayer, Frame frame)
+        : this(sceneLayer, frame, SpriteManager.Instance.DefaultCollisionProfile)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Sprite"/> class with the specified scene layer,
+    /// frame and scene collision profile.
+    /// </summary>
+    /// <param name="sceneLayer">The scene layer to attach the sprite to.</param>
+    /// <param name="frame">The initial frame for the sprite.</param>
+    /// <param name="collisionProfileName">
+    /// The name of the scene collision profile that supplies the sprite's collision group and
+    /// interaction mask. The name is retained and resolved later when the layer has no scene yet.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="sceneLayer"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="collisionProfileName"/> is null or whitespace.</exception>
+    protected internal Sprite(SceneLayer sceneLayer, Frame frame, string collisionProfileName)
     {
         if (sceneLayer == null)
             throw new ArgumentNullException(nameof(sceneLayer), "Sprite must be attached to a SceneLayer.");
@@ -76,6 +95,14 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         _vertAlign = VerticalAlignment.Bottom;
         _nudgeX = 0;
         _nudgeY = 0;
+
+        Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
+
+        // The collider is attached BEFORE the first frame is assigned, so that a frame carrying a
+        // collision type can register the sprite with the layer's collider registry right away.
+        AttachCollider(new TileCollider(this, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None));
+
+        SetCollisionProfile(collisionProfileName);
         CurrentFrame = frame;
 
         if (SpriteManager.Instance.SizeNewSpritesToSceneLayer)
@@ -85,35 +112,52 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
 
         zOrder = 1;
 
-        Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
-        _collider = new TileCollider(this, collisionGroup: CollisionMasks.All, collidesWith: CollisionMasks.All);
-        _sceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+        _sceneLayer.RefreshQueue.AddWorldRect(VisualBoundsWorld);
 
         SpriteManager.Instance.AddSprite(this);
     }
 
     /// <summary>
-    /// Private constructor used when calling the Clone() method on a Sprite.
+    /// Copy constructor used when cloning a sprite onto a scene layer. The clone's movement
+    /// controller and collider are built against <paramref name="sceneLayer"/>, so a clone
+    /// placed on a different layer wraps and bounds against that layer rather than the source's.
     /// </summary>
-    internal Sprite(Sprite sprite)
+    /// <param name="sprite">The sprite to copy.</param>
+    /// <param name="sceneLayer">The scene layer the clone is attached to.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="sprite"/> or <paramref name="sceneLayer"/> is null.
+    /// </exception>
+    internal Sprite(Sprite sprite, SceneLayer sceneLayer)
     {
-        animator = new Animator(this);
-        SpriteManager.Instance.AddSprite(this);
+        ArgumentNullException.ThrowIfNull(sprite);
 
-        _sceneLayer = sprite._sceneLayer;
+        _sceneLayer = sceneLayer
+            ?? throw new ArgumentNullException(nameof(sceneLayer), "Sprite must be attached to a SceneLayer.");
+
+        animator = new Animator(this);
+
         frame = sprite.frame;
         _horizAlign = sprite._horizAlign;
         _vertAlign = sprite._vertAlign;
         _nudgeX = sprite._nudgeX;
         _nudgeY = sprite._nudgeY;
         _renderSize = sprite._renderSize;
+        _rotation = sprite._rotation;
         ZOrder = sprite.zOrder;
         visible = sprite.visible;
         _sceneLayerCoordinates = sprite.SceneLayerCoordinates;
 
+        CopyCollisionSettingsFrom(sprite);
+
         Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
-        _collider = new TileCollider(this, collisionGroup: CollisionMasks.All, collidesWith: CollisionMasks.All);
-        _sceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+        AttachCollider(new TileCollider(this, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None));
+
+        if (string.IsNullOrWhiteSpace(CollisionProfileName))
+            SetCollisionProfile(SpriteManager.Instance.DefaultCollisionProfile);
+
+        _sceneLayer.RefreshQueue.AddWorldRect(VisualBoundsWorld);
+
+        SpriteManager.Instance.AddSprite(this);
     }
 
     /// <summary>
@@ -135,10 +179,19 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         animator = new Animator(this);
         pauseAnimation = false;
 
-        Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
-        _collider = new TileCollider(this, collisionGroup: CollisionMasks.All, collidesWith: CollisionMasks.All);
+        RehydrateCollisionAdjustAfterDeserialization();
 
-        _sceneLayer?.RefreshQueue?.AddWorldRect(DrawLocationWorld);
+        Movement = new MovementController(this, MovementState.ForSceneLayer(), this.SceneLayer);
+
+        // AttachCollider re-applies the saved profile, collision type and registration; a save
+        // written before collision profiles existed carries no profile name, so the sprite falls
+        // back to the sprite manager's default.
+        AttachCollider(new TileCollider(this, collisionGroup: CollisionMasks.None, collidesWith: CollisionMasks.None));
+
+        if (string.IsNullOrWhiteSpace(CollisionProfileName))
+            SetCollisionProfile(SpriteManager.Instance.DefaultCollisionProfile);
+
+        _sceneLayer?.RefreshQueue?.AddWorldRect(VisualBoundsWorld);
     }
 
     #endregion constructors / finalizer
@@ -163,13 +216,13 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     public void SetPosition(Vector2 pos)
     {
         PointF oldCoord = _sceneLayerCoordinates;
-        Rectangle oldDraw = DrawLocationWorld;
+        Rectangle oldDraw = VisualBoundsWorld;
 
         // commit the move
         _sceneLayerCoordinates = new PointF(pos.X, pos.Y);
 
         // compute destination draw rect AFTER updating coords
-        Rectangle newDraw = DrawLocationWorld;
+        Rectangle newDraw = VisualBoundsWorld;
 
         Rectangle movementWorldRect = Rectangle.Union(oldDraw, newDraw);
         movementWorldRect.Inflate(5, 5);
@@ -178,6 +231,65 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
 
         SpriteMoved?.Invoke(new SpriteMovedEventArgs(this, oldCoord, _sceneLayerCoordinates));
     }
+
+    /// <summary>
+    /// Gets or sets the clockwise visual rotation, in degrees, around the centre of the
+    /// sprite's render rectangle. Values are normalised into the range 0 (inclusive) to
+    /// 360 (exclusive).
+    /// </summary>
+    /// <remarks>
+    /// Rotation affects rendering and dirty-region bounds only. Collision geometry stays
+    /// axis-aligned and continues to use <see cref="Tile.CollisionArea"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when the supplied value is not a finite number of degrees.
+    /// </exception>
+    [JsonInclude]
+    public float Rotation
+    {
+        get { return _rotation; }
+        set
+        {
+            if (!float.IsFinite(value))
+                throw new ArgumentOutOfRangeException(nameof(value), "Rotation must be a finite number of degrees.");
+
+            float normalized = value % 360f;
+
+            if (normalized < 0f)
+                normalized += 360f;
+
+            if (_rotation.Equals(normalized))
+                return;
+
+            // add to refresh queue before and after property change
+            if (_sceneLayer != null)
+            {
+                var oldBounds = this.VisualBoundsWorld;
+                _rotation = normalized;
+                InvalidateVisualChange(oldBounds, this.VisualBoundsWorld);
+            }
+            else
+                _rotation = normalized;
+        }
+    }
+
+    /// <summary>
+    /// Gets the axis-aligned world-pixel bounds enclosing the rotated sprite. With a
+    /// <see cref="Rotation"/> of zero this is identical to <see cref="DrawLocationWorld"/>.
+    /// </summary>
+    [JsonIgnore]
+    public Rectangle VisualBoundsWorld => GetRotatedBounds(DrawLocationWorld, _rotation);
+
+    /// <summary>
+    /// Gets the axis-aligned screen-pixel bounds enclosing the rotated sprite.
+    /// </summary>
+    /// <param name="view">The view supplying the camera and viewport transformation.</param>
+    /// <returns>The rotated sprite's bounding rectangle in screen space.</returns>
+    public RectangleF GetVisualBoundsScreen(View view) =>
+        GetRotatedBounds(GetDrawLocationScreen(view), _rotation);
+
+    internal RectangleF GetVisualBoundsScreen(RectangleF renderRectScreen) =>
+        GetRotatedBounds(renderRectScreen, _rotation);
 
     /// <summary>
     /// Applies a world-pixel translation. Used by collision resolution.
@@ -189,15 +301,25 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         if (dx == 0 && dy == 0)
             return;
 
-        // Start from current world rect
-        var rect = CollisionArea;
-        rect.X += dx;
-        rect.Y += dy;
+        // Use the integer collision rectangle only to determine how a world-pixel
+        // translation maps into the scene layer's coordinate system.
+        var originalRect = CollisionArea;
+        var translatedRect = originalRect;
 
-        // Convert back to whatever coordinate system Sprite uses internally
-        var sceneCoord = GetSceneLayerCoordsFromSpriteWorldRect(rect);
+        translatedRect.X += dx;
+        translatedRect.Y += dy;
 
-        SetPosition(new Vector2(sceneCoord.X, sceneCoord.Y));
+        var originalSceneCoord = GetSceneLayerCoordsFromSpriteWorldRect(originalRect);
+
+        var translatedSceneCoord = GetSceneLayerCoordsFromSpriteWorldRect(translatedRect);
+
+        var sceneDelta = new Vector2(
+            translatedSceneCoord.X - originalSceneCoord.X,
+            translatedSceneCoord.Y - originalSceneCoord.Y);
+
+        // Apply only the calculated delta to the precise current position.
+        // Do not reconstruct the absolute position from the integer rectangle.
+        SetPosition(GetPosition() + sceneDelta);
     }
 
     /// <inheritdoc/>
@@ -228,10 +350,9 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
             // add to refresh queue before and after property change
             if (_sceneLayer != null)
             {
-                var oldRect = this.DrawLocationWorld;
+                var oldRect = this.VisualBoundsWorld;
                 _horizAlign = value;
-                var newRect = this.DrawLocationWorld;
-                _sceneLayer.RefreshQueue.AddWorldRect(Rectangle.Union(oldRect, newRect));
+                InvalidateVisualChange(oldRect, this.VisualBoundsWorld);
             }
             else
                 _horizAlign = value;
@@ -250,10 +371,9 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
             // add to refresh queue before and after property change
             if (_sceneLayer != null)
             {
-                var oldRect = this.DrawLocationWorld;
+                var oldRect = this.VisualBoundsWorld;
                 _vertAlign = value;
-                var newRect = this.DrawLocationWorld;
-                _sceneLayer.RefreshQueue.AddWorldRect(Rectangle.Union(oldRect, newRect));
+                InvalidateVisualChange(oldRect, this.VisualBoundsWorld);
             }
             else
                 _vertAlign = value;
@@ -272,10 +392,9 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
             // add to refresh queue before and after property change
             if (_sceneLayer != null)
             {
-                var oldRect = this.DrawLocationWorld;
+                var oldRect = this.VisualBoundsWorld;
                 _nudgeX = value;
-                var newRect = this.DrawLocationWorld;
-                _sceneLayer.RefreshQueue.AddWorldRect(Rectangle.Union(oldRect, newRect));
+                InvalidateVisualChange(oldRect, this.VisualBoundsWorld);
             }
             else
                 _nudgeX = value;
@@ -294,10 +413,9 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
             // add to refresh queue before and after property change
             if (_sceneLayer != null)
             {
-                var oldRect = this.DrawLocationWorld;
+                var oldRect = this.VisualBoundsWorld;
                 _nudgeY = value;
-                var newRect = this.DrawLocationWorld;
-                _sceneLayer.RefreshQueue.AddWorldRect(Rectangle.Union(oldRect, newRect));
+                InvalidateVisualChange(oldRect, this.VisualBoundsWorld);
             }
             else
                 _nudgeY = value;
@@ -316,16 +434,49 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
             // add to refresh queue before and after property change
             if (_sceneLayer != null)
             {
-                var oldRect = this.DrawLocationWorld;
+                var oldRect = this.VisualBoundsWorld;
                 _renderSize = value;
-                var newRect = this.DrawLocationWorld;
-                
-                var unionRect = Rectangle.Union(oldRect, newRect);
-                unionRect.Inflate(3, 3);
-                _sceneLayer.RefreshQueue.AddWorldRect(unionRect);
+                InvalidateVisualChange(oldRect, this.VisualBoundsWorld);
             }
             else
                 _renderSize = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the current frame displayed by the sprite. Overridden so that a frame
+    /// change invalidates the rotated visual bounds rather than the unrotated draw rectangle.
+    /// </summary>
+    [JsonInclude]
+    public override Frame CurrentFrame
+    {
+        get { return base.CurrentFrame; }
+        set
+        {
+            // add to refresh queue before and after property change
+            if (_sceneLayer != null)
+            {
+                var oldBounds = this.VisualBoundsWorld;
+                base.CurrentFrame = value;
+                InvalidateVisualChange(oldBounds, this.VisualBoundsWorld);
+            }
+            else
+                base.CurrentFrame = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the sprite is visible and should be rendered.
+    /// Overridden so that the refresh covers the rotated visual bounds.
+    /// </summary>
+    [JsonInclude]
+    public override bool Visible
+    {
+        get { return visible; }
+        set
+        {
+            visible = value;
+            _sceneLayer?.RefreshQueue?.AddWorldRect(VisualBoundsWorld);
         }
     }
 
@@ -418,15 +569,13 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     /// Minimum value is 1.
     /// </summary>
     [JsonInclude]
-    public virtual new int ZOrder
+    public override int ZOrder
     {
         get { return zOrder; }
         set
         {
-            if (value < 1)
-                base.ZOrder = 1;
-            else
-                base.ZOrder = value;
+            base.ZOrder = Math.Max(1, value);
+            _sceneLayer?.RefreshQueue?.AddWorldRect(VisualBoundsWorld);
         }
     }
 
@@ -522,8 +671,8 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         if (_sceneLayer != null)
         {
             // Mark the last draw region as dirty so the background under this sprite is repainted.
-            // DrawLocation should already be a world-space rectangle.
-            _sceneLayer.RefreshQueue.AddWorldRect(DrawLocationWorld);
+            // VisualBoundsWorld is a world-space rectangle that also covers any rotation.
+            _sceneLayer.RefreshQueue.AddWorldRect(VisualBoundsWorld);
         }
 
         // clear the events
@@ -534,4 +683,64 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     }
 
     #endregion IDisposable Members
+
+    #region rotation helpers
+
+    /// <summary>
+    /// Queues the union of the sprite's previous and current visual bounds for refresh,
+    /// inflated slightly to absorb rounding at the edges of a rotated rectangle.
+    /// </summary>
+    private void InvalidateVisualChange(Rectangle oldBounds, Rectangle newBounds)
+    {
+        if (_sceneLayer == null)
+            return;
+
+        var dirtyBounds = Rectangle.Union(oldBounds, newBounds);
+        dirtyBounds.Inflate(2, 2);
+        _sceneLayer.RefreshQueue?.AddWorldRect(dirtyBounds);
+    }
+
+    /// <summary>
+    /// Returns the smallest whole-pixel rectangle enclosing <paramref name="rect"/> after it is
+    /// rotated clockwise by <paramref name="degrees"/> about its own centre.
+    /// </summary>
+    private static Rectangle GetRotatedBounds(Rectangle rect, float degrees)
+    {
+        if (degrees % 360f == 0f)
+            return rect;
+
+        var bounds = GetRotatedBounds(new RectangleF(rect.X, rect.Y, rect.Width, rect.Height), degrees);
+
+        return Rectangle.FromLTRB(
+            (int)MathF.Floor(bounds.Left),
+            (int)MathF.Floor(bounds.Top),
+            (int)MathF.Ceiling(bounds.Right),
+            (int)MathF.Ceiling(bounds.Bottom));
+    }
+
+    /// <summary>
+    /// Returns the axis-aligned rectangle enclosing <paramref name="rect"/> after it is rotated
+    /// clockwise by <paramref name="degrees"/> about its own centre.
+    /// </summary>
+    private static RectangleF GetRotatedBounds(RectangleF rect, float degrees)
+    {
+        if (rect.IsEmpty || degrees % 360f == 0f)
+            return rect;
+
+        float radians = degrees * MathF.PI / 180f;
+        float sin = MathF.Abs(MathF.Sin(radians));
+        float cos = MathF.Abs(MathF.Cos(radians));
+        float width = (rect.Width * cos) + (rect.Height * sin);
+        float height = (rect.Width * sin) + (rect.Height * cos);
+        float centerX = rect.Left + (rect.Width * 0.5f);
+        float centerY = rect.Top + (rect.Height * 0.5f);
+
+        return new RectangleF(
+            centerX - (width * 0.5f),
+            centerY - (height * 0.5f),
+            width,
+            height);
+    }
+
+    #endregion rotation helpers
 }

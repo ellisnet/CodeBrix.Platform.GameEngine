@@ -124,18 +124,19 @@ public sealed class EngineInputSystems
     /// Gets or sets the touch adapter responsible for providing raw touch state to the engine.
     /// </summary>
     /// <remarks>
-    /// Setting this property disposes the previous adapter (if it implements
-    /// <see cref="IDisposable"/>) and initializes a new <see cref="TouchEventPoller"/> instance
-    /// backed by the supplied adapter. Pass <see langword="null"/> to clear the current adapter
-    /// without replacing it.
+    /// Setting this property disposes the previous poller - which in turn disposes the previous
+    /// adapter when it implements <see cref="IDisposable"/> - and initializes a new
+    /// <see cref="TouchEventPoller"/> instance backed by the supplied adapter. Pass
+    /// <see langword="null"/> to tear the touch poller down entirely without replacing it.
     /// </remarks>
     public ITouchAdapter? TouchAdapter
     {
         get => TouchEventPoller.Instance?.Adapter;
         set
         {
-            (TouchEventPoller.Instance?.Adapter as IDisposable)?.Dispose();
-            if (value != null)
+            if (value is null)
+                TouchEventPoller.Reset();
+            else
                 TouchEventPoller.Initialize(value);
         }
     }

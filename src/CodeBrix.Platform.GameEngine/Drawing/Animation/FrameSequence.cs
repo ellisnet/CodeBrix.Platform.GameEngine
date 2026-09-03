@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Runtime.Serialization;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -58,14 +57,6 @@ public struct FrameSequence : IEnumerable<Frame>
     {
         frameList = frames;
         SequenceCycleType = CycleType.Simple;
-        currentFrameIdx = 0;
-        curFrameIncrement = 1;
-        cycleFinished = true;
-    }
-
-    [OnDeserialized()]
-    private void OnDeserialized(StreamingContext context)
-    {
         currentFrameIdx = 0;
         curFrameIncrement = 1;
         cycleFinished = true;

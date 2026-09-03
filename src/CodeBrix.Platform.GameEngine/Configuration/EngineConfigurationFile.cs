@@ -47,7 +47,9 @@ public partial class EngineConfigurationFile : IDisposable
     /// Loads an engine configuration file from disk.
     /// </summary>
     /// <remarks>If the specified file does not exist or cannot be read, a new configuration with default settings
-    /// is created. The configuration file is monitored for changes and will reload automatically when modified.</remarks>
+    /// is created. The file is read once: the settings are materialized into <see cref="EngineConfig"/> and the
+    /// configuration root is released immediately, so no file watcher is left behind. Call <see cref="Load"/>
+    /// again to pick up later edits.</remarks>
     /// <param name="configFileName">The name of the configuration file to load. If <see langword="null"/>, uses the default file name "gameengine.json".</param>
     /// <param name="autoSave">A value indicating whether the configuration should be automatically saved when disposed. If <see langword="null"/>, defaults to <see langword="false"/>.</param>
     /// <returns>An <see cref="EngineConfigurationFile"/> instance loaded from the specified file, or a new instance with default settings if the file doesn't exist.</returns>
@@ -55,11 +57,20 @@ public partial class EngineConfigurationFile : IDisposable
     {
         var configFile = configFileName ?? _defaultConfigFileName;
 
-        var configRoot = new ConfigurationBuilder()
-            .AddJsonFile(configFile, optional: true, reloadOnChange: true)
-            .Build();
+        var configRoot = BuildConfigurationRoot(configFile);
+        EngineConfiguration? settings;
 
-        var settings = configRoot.GetSection(nameof(EngineConfig)).Get<EngineConfiguration>();
+        try
+        {
+            settings = configRoot.GetSection(nameof(EngineConfig)).Get<EngineConfiguration>();
+        }
+        finally
+        {
+            // ConfigurationRoot owns the file provider; without this the provider (and, when
+            // reload-on-change is enabled, its file watcher) survives for the life of the process.
+            (configRoot as IDisposable)?.Dispose();
+        }
+
         return new EngineConfigurationFile
         {
             FileName = configFile,
@@ -67,6 +78,18 @@ public partial class EngineConfigurationFile : IDisposable
             EngineConfig = settings ?? new EngineConfiguration()
         };
     }
+
+    /// <summary>
+    /// Builds the configuration root that <see cref="Load"/> reads the engine settings from.
+    /// </summary>
+    /// <remarks>Reload-on-change is deliberately off: the engine reads the file once, and a watching
+    /// provider would keep a live file watcher alive for every call.</remarks>
+    /// <param name="configFilePath">The path of the JSON configuration file to read.</param>
+    /// <returns>A configuration root whose only source is the requested JSON file. The caller owns it.</returns>
+    internal static IConfigurationRoot BuildConfigurationRoot(string configFilePath)
+        => new ConfigurationBuilder()
+            .AddJsonFile(configFilePath, optional: true, reloadOnChange: false)
+            .Build();
 
     /// <summary>
     /// Gets the name of the configuration file without the directory path.

@@ -61,15 +61,20 @@ public static class EngineExtensions
     /// <see cref="Engine"/>'s input systems, enabling touch and pointer gesture input.
     /// </summary>
     /// <remarks>
-    /// On desktop platforms without a physical touch screen, mouse pointer events are emulated as a single
-    /// touch contact with <c>Id = 0</c>. After calling this method, access the touch system via
-    /// <c>engine.Input.TouchEventPoller</c> and attach gesture recognizers from the
-    /// <c>CodeBrix.Platform.GameEngine.Input.Touch.Gestures</c> namespace.
+    /// Mouse pointers are ignored by default, keeping mouse clicks distinct from physical touch
+    /// contacts on desktop heads that also register a mouse adapter. Set <paramref name="emulateMouse"/>
+    /// to <c>true</c> only when a mouse should also produce touch ID 0. After calling this method,
+    /// access the touch system via <c>engine.Input.TouchEventPoller</c> and attach gesture recognizers
+    /// from the <c>CodeBrix.Platform.GameEngine.Input.Touch.Gestures</c> namespace.
     /// </remarks>
     /// <param name="engine">The engine instance to configure.</param>
     /// <param name="element">The element to capture pointer/touch input from.</param>
+    /// <param name="emulateMouse">Whether primary mouse input should also emulate touch input.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="element"/> is null.</exception>
-    public static void InitializeCodeBrixTouchAdapter(this Engine engine, UIElement element)
+    public static void InitializeCodeBrixTouchAdapter(
+        this Engine engine,
+        UIElement element,
+        bool emulateMouse = false)
     {
         Engine.Logger.LogInformation("Initializing CodeBrixTouchInputAdapter...");
 
@@ -79,6 +84,6 @@ public static class EngineExtensions
             throw new ArgumentNullException(nameof(element));
         }
 
-        engine.Input.TouchAdapter = new CodeBrixTouchInputAdapter(element);
+        engine.Input.TouchAdapter = new CodeBrixTouchInputAdapter(element, emulateMouse);
     }
 }

@@ -1,0 +1,11 @@
+<Solution>
+  <!-- Platformer.Brix.slnx
+       A CodeBrix.Platform application with everything that builds with the plain
+       .NET SDK on Linux, macOS and Windows. -->
+  <Project Path="src/Platformer.Brix.UI/Platformer.Brix.UI.shproj" />
+  <Project Path="src/libs/Platformer.Brix.Game/Platformer.Brix.Game.csproj" />
+  <Project Path="src/Platformer.Brix.Core/Platformer.Brix.Core.csproj" />
+  <Project Path="src/Platformer.Brix.LinuxX11/Platformer.Brix.LinuxX11.csproj" />
+  <Project Path="src/Platformer.Brix.MacOS/Platformer.Brix.MacOS.csproj" />
+  <Project Path="src/Platformer.Brix.Win32Skia/Platformer.Brix.Win32Skia.csproj" />
+</Solution>

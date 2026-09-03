@@ -35,6 +35,7 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //was previously: Gondwan
 /// <item><description>Dash patterns for creating dashed or dotted borders.</description></item>
 /// <item><description>Color pulsing animations for fill and/or border (sine or triangle wave).</description></item>
 /// <item><description>Pattern fills using tiled bitmaps with configurable tiling modes and scaling.</description></item>
+/// <item><description>Image fills that stretch, fit, cover, center, pixel-double or tile a bitmap or image inside the rectangle.</description></item>
 /// <item><description>Blend mode support for advanced compositing effects (screen, multiply, additive, etc.).</description></item>
 /// <item><description>Physics-based movement via inherited <see cref="DirectDrawingMovableBase"/> capabilities.</description></item>
 /// </list>
@@ -75,9 +76,22 @@ public class DirectRectangle : DirectDrawingMovableBase
 {
     private readonly SKPaint _fillPaint;        // cached fill
     private readonly SKPaint _strokePaint;      // cached stroke
+    private readonly SKPaint _imagePaint = new()   // cached paint for image fills
+    {
+        IsAntialias = true,
+        BlendMode = SKBlendMode.SrcOver
+    };
+
     private SKColor? _borderColor;              // optional distinct border color
     private SKShader? _fillShader;              // optional fill shader
     private SKImage? _fillImage;                // backing image for _fillShader (SkiaSharp 4 sampling)
+    private SKImage? _imageFillImage;           // caller-owned image fill source
+    private SKBitmap? _imageFillBitmap;         // caller-owned bitmap fill source
+    private ImageFillMode _imageFillMode = ImageFillMode.Stretch;
+    private ImageFilterQuality _imageFilterQuality = ImageFilterQuality.Medium;
+    private float _imageScale = 1f;
+    private SKPoint _imageOffsetPx;
+    private bool _resourcesDisposed;            // guards the one-time paint/shader teardown
 
     private bool _isFilled;
     private float _cornerRadius;
@@ -145,7 +159,7 @@ public class DirectRectangle : DirectDrawingMovableBase
                            SceneLayer sceneLayer,
                            Rectangle worldBounds,
                            string? nickname = null)
-        : this(color, renderSurfaceHost, DirectDrawingMode.SceneLayer, sceneLayer, null, worldBounds, null, nickname) { }
+        : this(color, renderSurfaceHost, DirectDrawingMode.SceneLayer, sceneLayer, null, null, worldBounds, nickname) { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectRectangle"/> class for view (screen-space) rendering.
@@ -412,7 +426,7 @@ public class DirectRectangle : DirectDrawingMovableBase
     ///   <item><term><see cref="SKBlendMode.Plus"/></term> – Additive blending; great for light or energy effects.</item>
     /// </list>
     /// <para>
-    /// This mode applies to both the fill and stroke paints. Changing it affects how
+    /// This mode applies to the fill, stroke and image-fill paints. Changing it affects how
     /// the rectangle visually interacts with whatever was previously drawn.
     /// </para>
     /// <para>
@@ -425,6 +439,7 @@ public class DirectRectangle : DirectDrawingMovableBase
         // apply to both paints
         _fillPaint.BlendMode = mode;
         _strokePaint.BlendMode = mode;
+        _imagePaint.BlendMode = mode;
         // no rebuild needed
         return this;
     }
@@ -581,6 +596,10 @@ public class DirectRectangle : DirectDrawingMovableBase
     /// <param name="offsetPx">Optional offset in pixels to shift the pattern origin. Null = no offset (default).</param>
     /// <param name="filterQuality">The filter quality to use when scaling the pattern. Default is None (nearest-neighbor).</param>
     /// <returns>This <see cref="DirectRectangle"/> instance for method chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bitmap"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="scale"/> is not finite or is not greater than zero.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Pattern fills replace the solid color fill with a repeating texture. The bitmap is tiled according
@@ -615,20 +634,130 @@ public class DirectRectangle : DirectDrawingMovableBase
                                           SKPoint? offsetPx = null,
                                           ImageFilterQuality filterQuality = ImageFilterQuality.None)
     {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        if (!float.IsFinite(scale) || scale <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(scale), "Pattern scale must be finite and greater than zero.");
+
         var m = SKMatrix.CreateScale(scale, scale);
         if (offsetPx is { } o)
             m = m.PostConcat(SKMatrix.CreateTranslation(o.X, o.Y));
 
         // SkiaSharp 4 removed SKPaint.FilterQuality; shader sampling is baked into the
         // shader via SKImage.ToShader(SKSamplingOptions). Back the shader with an SKImage.
+        SKImage newImage = SKImage.FromBitmap(bitmap);
+        SKShader newShader = newImage.ToShader(tileX, tileY, filterQuality.ToSamplingOptions(), m);
+
+        _fillPaint.Shader = null;
         _fillShader?.Dispose();
         _fillImage?.Dispose();
-        _fillImage = SKImage.FromBitmap(bitmap);
-        _fillShader = _fillImage.ToShader(tileX, tileY, filterQuality.ToSamplingOptions(), m);
+
+        _fillImage = newImage;
+        _fillShader = newShader;
         _fillPaint.Shader = _fillShader;
+
+        // A pattern fill and an image fill are mutually exclusive; the image sources are caller-owned.
+        _imageFillImage = null;
+        _imageFillBitmap = null;
 
         // Ensure we're in filled mode for visibility
         _isFilled = true;
+        ForceRefresh();
+        return this;
+    }
+
+    /// <summary>
+    /// Fills the rectangle with a bitmap using the requested scaling or repeat behavior.
+    /// </summary>
+    /// <param name="bitmap">The bitmap to draw. The caller retains ownership.</param>
+    /// <param name="mode">How the bitmap is fitted to or repeated within the rectangle.</param>
+    /// <param name="scale">
+    /// A uniform scale applied in <see cref="ImageFillMode.Repeat"/> mode. Ignored by other modes.
+    /// </param>
+    /// <param name="offsetPx">An optional repeat-pattern offset relative to the rectangle's upper-left corner.</param>
+    /// <param name="filterQuality">The sampling quality used when the bitmap is scaled.</param>
+    /// <returns>This <see cref="DirectRectangle"/> instance for method chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bitmap"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="scale"/> is not finite or is not greater than zero, or when
+    /// <paramref name="mode"/> is not a defined <see cref="ImageFillMode"/> value.
+    /// </exception>
+    /// <remarks>
+    /// The bitmap is clipped to the rectangle, including rounded corners. This method
+    /// automatically enables filled mode. Call <see cref="ClearFillImage"/> to return
+    /// to the configured solid-color fill.
+    /// </remarks>
+    public DirectRectangle SetFillImage(SKBitmap bitmap,
+                                        ImageFillMode mode = ImageFillMode.Stretch,
+                                        float scale = 1f,
+                                        SKPoint? offsetPx = null,
+                                        ImageFilterQuality filterQuality = ImageFilterQuality.Medium)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        SetFillImageCore(
+            image: null,
+            bitmap: bitmap,
+            mode: mode,
+            scale: scale,
+            offsetPx: offsetPx,
+            filterQuality: filterQuality);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Fills the rectangle with an image using the requested scaling or repeat behavior.
+    /// </summary>
+    /// <param name="image">The image to draw. The caller retains ownership.</param>
+    /// <param name="mode">How the image is fitted to or repeated within the rectangle.</param>
+    /// <param name="scale">
+    /// A uniform scale applied in <see cref="ImageFillMode.Repeat"/> mode. Ignored by other modes.
+    /// </param>
+    /// <param name="offsetPx">An optional repeat-pattern offset relative to the rectangle's upper-left corner.</param>
+    /// <param name="filterQuality">The sampling quality used when the image is scaled.</param>
+    /// <returns>This <see cref="DirectRectangle"/> instance for method chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="scale"/> is not finite or is not greater than zero, or when
+    /// <paramref name="mode"/> is not a defined <see cref="ImageFillMode"/> value.
+    /// </exception>
+    /// <remarks>
+    /// The image is clipped to the rectangle, including rounded corners. This method
+    /// automatically enables filled mode. Call <see cref="ClearFillImage"/> to return
+    /// to the configured solid-color fill.
+    /// </remarks>
+    public DirectRectangle SetFillImage(SKImage image,
+                                        ImageFillMode mode = ImageFillMode.Stretch,
+                                        float scale = 1f,
+                                        SKPoint? offsetPx = null,
+                                        ImageFilterQuality filterQuality = ImageFilterQuality.Medium)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        SetFillImageCore(
+            image: image,
+            bitmap: null,
+            mode: mode,
+            scale: scale,
+            offsetPx: offsetPx,
+            filterQuality: filterQuality);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Removes the current bitmap or image fill and returns to solid-color filling.
+    /// </summary>
+    /// <returns>This <see cref="DirectRectangle"/> instance for method chaining.</returns>
+    /// <remarks>
+    /// The image sources are owned by the caller, so they are released but never disposed here.
+    /// The affected screen regions are automatically marked as dirty to trigger rerendering on the next frame.
+    /// </remarks>
+    public DirectRectangle ClearFillImage()
+    {
+        _imageFillImage = null;
+        _imageFillBitmap = null;
         ForceRefresh();
         return this;
     }
@@ -648,11 +777,11 @@ public class DirectRectangle : DirectDrawingMovableBase
     /// </remarks>
     public DirectRectangle ClearFillPattern()
     {
+        _fillPaint.Shader = null;
         _fillShader?.Dispose();
         _fillShader = null;
         _fillImage?.Dispose();
         _fillImage = null;
-        _fillPaint.Shader = null;
         ForceRefresh();
         return this;
     }
@@ -804,10 +933,18 @@ public class DirectRectangle : DirectDrawingMovableBase
         // 3) Draw fill (unmodified rect)
         if (_isFilled)
         {
-            if (_cornerRadius > 0)
+            if (_imageFillImage is not null || _imageFillBitmap is not null)
+            {
+                DrawImageFill(canvas, fillRect);
+            }
+            else if (_cornerRadius > 0)
+            {
                 canvas.DrawRoundRect(fillRect, strokeCornerRadius, strokeCornerRadius, _fillPaint);
+            }
             else
+            {
                 canvas.DrawRect(fillRect, _fillPaint);
+            }
         }
 
         // 4) Draw stroke on its aligned rect (pure/opaque so it stays white)
@@ -838,6 +975,315 @@ public class DirectRectangle : DirectDrawingMovableBase
             _strokePaint.StrokeJoin = SKStrokeJoin.Round;
             _strokePaint.StrokeCap = SKStrokeCap.Round;
         }
+    }
+
+    /// <inheritdoc/>
+    protected override void Dispose(bool disposing)
+    {
+        // Unhook from the drawing manager first (base raises Disposing), so a concurrent engine-thread
+        // draw cannot pick up a paint that is about to be released.
+        base.Dispose(disposing);
+
+        if (disposing && !_resourcesDisposed)
+        {
+            _resourcesDisposed = true;
+            _fillPaint.Shader = null;
+            _fillShader?.Dispose();
+            _fillShader = null;
+            _fillImage?.Dispose();
+            _fillImage = null;
+
+            // The image-fill sources are caller-owned: release the references, never dispose them.
+            _imageFillImage = null;
+            _imageFillBitmap = null;
+
+            _fillPaint.Dispose();
+            _strokePaint.Dispose();
+            _imagePaint.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Applies a validated image-fill configuration and marks the rectangle for redraw.
+    /// </summary>
+    /// <param name="image">The image source, or <see langword="null"/> when a bitmap source is supplied.</param>
+    /// <param name="bitmap">The bitmap source, or <see langword="null"/> when an image source is supplied.</param>
+    /// <param name="mode">How the source is fitted to or repeated within the rectangle.</param>
+    /// <param name="scale">The uniform scale applied in <see cref="ImageFillMode.Repeat"/> mode.</param>
+    /// <param name="offsetPx">The repeat-pattern offset relative to the rectangle's upper-left corner.</param>
+    /// <param name="filterQuality">The sampling quality used when the source is scaled.</param>
+    private void SetFillImageCore(SKImage? image,
+                                  SKBitmap? bitmap,
+                                  ImageFillMode mode,
+                                  float scale,
+                                  SKPoint? offsetPx,
+                                  ImageFilterQuality filterQuality)
+    {
+        if (!float.IsFinite(scale) || scale <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(scale), "Image scale must be finite and greater than zero.");
+
+        if (!Enum.IsDefined(mode))
+            throw new ArgumentOutOfRangeException(nameof(mode));
+
+        // An image fill and a pattern fill are mutually exclusive; drop the pattern shader.
+        _fillPaint.Shader = null;
+        _fillShader?.Dispose();
+        _fillShader = null;
+        _fillImage?.Dispose();
+        _fillImage = null;
+
+        _imageFillImage = image;
+        _imageFillBitmap = bitmap;
+        _imageFillMode = mode;
+        _imageScale = scale;
+        _imageOffsetPx = offsetPx ?? SKPoint.Empty;
+        _imageFilterQuality = filterQuality;
+        _isFilled = true;
+
+        ForceRefresh();
+    }
+
+    /// <summary>
+    /// Draws the configured image fill, clipped to the rectangle (including its rounded corners).
+    /// </summary>
+    /// <param name="canvas">The canvas to draw into.</param>
+    /// <param name="fillRect">The rectangle's screen-space fill bounds.</param>
+    private void DrawImageFill(SKCanvas canvas, SKRect fillRect)
+    {
+        SKImage? image = _imageFillImage;
+        SKBitmap? bitmap = _imageFillBitmap;
+
+        int sourceWidth = image?.Width ?? bitmap?.Width ?? 0;
+        int sourceHeight = image?.Height ?? bitmap?.Height ?? 0;
+
+        if (sourceWidth <= 0 || sourceHeight <= 0)
+            return;
+
+        canvas.Save();
+
+        try
+        {
+            using var clipBuilder = new SKPathBuilder();
+
+            if (_cornerRadius > 0f)
+                clipBuilder.AddRoundRect(new SKRoundRect(fillRect, _cornerRadius, _cornerRadius));
+            else
+                clipBuilder.AddRect(fillRect);
+
+            using var clipPath = clipBuilder.Snapshot();
+
+            canvas.ClipPath(
+                clipPath,
+                SKClipOperation.Intersect,
+                antialias: _cornerRadius > 0f);
+
+            var source = new SKRect(
+                0f,
+                0f,
+                sourceWidth,
+                sourceHeight);
+
+            var sampling = _imageFilterQuality.ToSamplingOptions();
+
+            if (_imageFillMode == ImageFillMode.Repeat)
+            {
+                if (image is not null)
+                {
+                    DrawRepeatedImage(canvas, image, source, fillRect, sampling);
+                }
+                else
+                {
+                    DrawRepeatedBitmap(canvas, bitmap!, source, fillRect, sampling);
+                }
+            }
+            else
+            {
+                SKRect destination = ComputeImageDestination(
+                    fillRect,
+                    source,
+                    _imageFillMode);
+
+                if (image is not null)
+                {
+                    canvas.DrawImage(
+                        image,
+                        source,
+                        destination,
+                        sampling,
+                        _imagePaint);
+                }
+                else
+                {
+                    canvas.DrawBitmap(
+                        bitmap!,
+                        source,
+                        destination,
+                        sampling,
+                        _imagePaint);
+                }
+            }
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
+
+    /// <summary>
+    /// Tiles an image across the fill rectangle.
+    /// </summary>
+    /// <param name="canvas">The canvas to draw into.</param>
+    /// <param name="image">The image to tile.</param>
+    /// <param name="source">The source rectangle covering the whole image.</param>
+    /// <param name="fillRect">The rectangle's screen-space fill bounds.</param>
+    /// <param name="sampling">The sampling options derived from the configured filter quality.</param>
+    private void DrawRepeatedImage(SKCanvas canvas,
+                                   SKImage image,
+                                   SKRect source,
+                                   SKRect fillRect,
+                                   SKSamplingOptions sampling)
+    {
+        float tileWidth = image.Width * _imageScale;
+        float tileHeight = image.Height * _imageScale;
+
+        float offsetX = PositiveModulo(_imageOffsetPx.X, tileWidth);
+        float offsetY = PositiveModulo(_imageOffsetPx.Y, tileHeight);
+
+        float startX = fillRect.Left + offsetX;
+        float startY = fillRect.Top + offsetY;
+
+        if (startX > fillRect.Left)
+            startX -= tileWidth;
+
+        if (startY > fillRect.Top)
+            startY -= tileHeight;
+
+        for (float y = startY; y < fillRect.Bottom; y += tileHeight)
+        {
+            for (float x = startX; x < fillRect.Right; x += tileWidth)
+            {
+                canvas.DrawImage(
+                    image,
+                    source,
+                    new SKRect(
+                        x,
+                        y,
+                        x + tileWidth,
+                        y + tileHeight),
+                    sampling,
+                    _imagePaint);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tiles a bitmap across the fill rectangle.
+    /// </summary>
+    /// <param name="canvas">The canvas to draw into.</param>
+    /// <param name="bitmap">The bitmap to tile.</param>
+    /// <param name="source">The source rectangle covering the whole bitmap.</param>
+    /// <param name="fillRect">The rectangle's screen-space fill bounds.</param>
+    /// <param name="sampling">The sampling options derived from the configured filter quality.</param>
+    private void DrawRepeatedBitmap(SKCanvas canvas,
+                                    SKBitmap bitmap,
+                                    SKRect source,
+                                    SKRect fillRect,
+                                    SKSamplingOptions sampling)
+    {
+        float tileWidth = bitmap.Width * _imageScale;
+        float tileHeight = bitmap.Height * _imageScale;
+
+        float offsetX = PositiveModulo(_imageOffsetPx.X, tileWidth);
+        float offsetY = PositiveModulo(_imageOffsetPx.Y, tileHeight);
+
+        float startX = fillRect.Left + offsetX;
+        float startY = fillRect.Top + offsetY;
+
+        if (startX > fillRect.Left)
+            startX -= tileWidth;
+
+        if (startY > fillRect.Top)
+            startY -= tileHeight;
+
+        for (float y = startY; y < fillRect.Bottom; y += tileHeight)
+        {
+            for (float x = startX; x < fillRect.Right; x += tileWidth)
+            {
+                canvas.DrawBitmap(
+                    bitmap,
+                    source,
+                    new SKRect(
+                        x,
+                        y,
+                        x + tileWidth,
+                        y + tileHeight),
+                    sampling,
+                    _imagePaint);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Computes the destination rectangle for a non-repeating image fill mode.
+    /// </summary>
+    /// <param name="bounds">The rectangle's screen-space fill bounds.</param>
+    /// <param name="source">The source rectangle covering the whole image or bitmap.</param>
+    /// <param name="mode">The image fill mode to apply.</param>
+    /// <returns>The destination rectangle the source should be drawn into.</returns>
+    private static SKRect ComputeImageDestination(SKRect bounds, SKRect source, ImageFillMode mode)
+    {
+        if (mode == ImageFillMode.Stretch)
+            return bounds;
+
+        if (mode == ImageFillMode.Center)
+        {
+            float x = bounds.MidX - source.Width * 0.5f;
+            float y = bounds.MidY - source.Height * 0.5f;
+
+            return new SKRect(
+                x,
+                y,
+                x + source.Width,
+                y + source.Height);
+        }
+
+        float scaleX = bounds.Width / source.Width;
+        float scaleY = bounds.Height / source.Height;
+
+        float scale = mode switch
+        {
+            ImageFillMode.Fit => MathF.Min(scaleX, scaleY),
+            ImageFillMode.Fill => MathF.Max(scaleX, scaleY),
+            ImageFillMode.PixelPerfect => MathF.Max(
+                1f,
+                MathF.Floor(MathF.Min(scaleX, scaleY))),
+            _ => 1f
+        };
+
+        float width = source.Width * scale;
+        float height = source.Height * scale;
+        float left = bounds.MidX - width * 0.5f;
+        float top = bounds.MidY - height * 0.5f;
+
+        return new SKRect(
+            left,
+            top,
+            left + width,
+            top + height);
+    }
+
+    /// <summary>
+    /// Returns the remainder of a division, always expressed as a non-negative value.
+    /// </summary>
+    /// <param name="value">The dividend.</param>
+    /// <param name="modulus">The divisor.</param>
+    /// <returns>A remainder in the range [0, <paramref name="modulus"/>).</returns>
+    private static float PositiveModulo(float value, float modulus)
+    {
+        float remainder = value % modulus;
+        return remainder < 0f
+            ? remainder + modulus
+            : remainder;
     }
 
     /// <summary>
@@ -896,6 +1342,34 @@ public class DirectRectangle : DirectDrawingMovableBase
         /// inside and half outside (default Skia behavior).
         /// </summary>
         Center
+    }
+
+    /// <summary>
+    /// Defines how an image fills the rectangle interior.
+    /// </summary>
+    /// <remarks>
+    /// Used by <see cref="SetFillImage(SKBitmap, ImageFillMode, float, SKPoint?, ImageFilterQuality)"/>
+    /// and <see cref="SetFillImage(SKImage, ImageFillMode, float, SKPoint?, ImageFilterQuality)"/>.
+    /// </remarks>
+    public enum ImageFillMode
+    {
+        /// <summary>Stretches the image to the full rectangle without preserving aspect ratio.</summary>
+        Stretch,
+
+        /// <summary>Fits the entire image inside the rectangle while preserving aspect ratio.</summary>
+        Fit,
+
+        /// <summary>Covers the rectangle while preserving aspect ratio and clips any overflow.</summary>
+        Fill,
+
+        /// <summary>Draws the image at native size, centered and clipped to the rectangle.</summary>
+        Center,
+
+        /// <summary>Uses the largest whole-number scale that fits, never scaling below native size.</summary>
+        PixelPerfect,
+
+        /// <summary>Repeats the image as tiles across the rectangle.</summary>
+        Repeat
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -27,17 +27,14 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //was previously: Gondwan
 /// <para>
 /// Key features:
 /// <list type="bullet">
-/// <item><description>Fixed-timestep physics integration at 240 Hz for stable, deterministic movement.</description></item>
+/// <item><description>Movement advanced once per engine update using the actual elapsed duration.</description></item>
 /// <item><description>Automatic position synchronization between the movement controller and drawing bounds.</description></item>
 /// <item><description>Support for both world-space (scene-layer mode) and screen-space (view mode) movement.</description></item>
-/// <item><description>Frame-rate independent physics with accumulator and substep clamping to prevent spiral of death.</description></item>
 /// </list>
 /// </para>
 /// <para>
-/// The class uses a fixed-timestep update loop (240 Hz / ~4.16ms per step) to advance movement physics,
-/// ensuring consistent behavior regardless of the application frame rate. Each frame's variable delta time
-/// is accumulated and subdivided into fixed steps, with a maximum substep limit to prevent performance
-/// degradation during frame rate drops.
+/// Movement advances in real time: each update integrates the full elapsed duration since the previous
+/// update, so motion runs at the same speed regardless of how fast or slow the engine update cycle is.
 /// </para>
 /// <para>
 /// Derived classes must implement <see cref="DirectDrawingBase.OnDraw"/> to perform the actual rendering.
@@ -50,10 +47,6 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //was previously: Gondwan
 /// </remarks>
 public abstract class DirectDrawingMovableBase : DirectDrawingBase, IMovable
 {
-    // update timing for fixed-step physics
-    private float _accum;
-    private const float _fixedDt = 1f / 240f;
-    private const int _maxSubsteps = 8;
     private Vector2 _posPx;
 
     /// <summary>
@@ -118,9 +111,9 @@ public abstract class DirectDrawingMovableBase : DirectDrawingBase, IMovable
     /// </list>
     /// </para>
     /// <para>
-    /// The controller is automatically integrated each frame by <see cref="Update"/> using a fixed timestep
-    /// (240 Hz). Position changes from the controller are synchronized to the drawing's bounds, triggering
-    /// dirty-rectangle updates as needed.
+    /// The controller is advanced automatically by <see cref="Update(long)"/> once per engine update using
+    /// the actual elapsed duration. Position changes from the controller are synchronized to the drawing's
+    /// bounds, triggering dirty-rectangle updates as needed.
     /// </para>
     /// <para>
     /// The controller operates in pixel space (<see cref="MovementSpace.Pixel"/>), matching the coordinate
@@ -219,29 +212,18 @@ public abstract class DirectDrawingMovableBase : DirectDrawingBase, IMovable
     }
 
     /// <summary>
-    /// Performs per-frame update logic, including fixed-timestep physics integration for movement.
+    /// Advances this direct drawing's movement using the elapsed time since its previous update, then
+    /// performs the standard direct-drawing update logic.
     /// </summary>
     /// <param name="tick">The current engine tick value from <see cref="HighResTimer"/>.</param>
     /// <remarks>
     /// <para>
-    /// This method overrides <see cref="DirectDrawingBase.Update"/> to add physics integration via
-    /// the <see cref="Movement"/> controller. It uses a fixed-timestep accumulator pattern to ensure
-    /// stable, deterministic movement regardless of frame rate variations.
+    /// Movement is advanced once per engine update using the actual elapsed duration calculated from the
+    /// previously recorded tick and <paramref name="tick"/>, so motion runs in real time at any update rate.
     /// </para>
     /// <para>
-    /// The update process works as follows:
-    /// <list type="number">
-    /// <item><description>Calculates the elapsed time since the last frame, clamping large deltas (>66ms) to prevent instability during frame rate drops, alt-tab, or debugger pauses.</description></item>
-    /// <item><description>Accumulates the frame delta time and subdivides it into fixed timesteps of ~4.16ms (240 Hz).</description></item>
-    /// <item><description>Integrates movement physics at the fixed timestep for up to 8 substeps per frame to prevent spiral of death.</description></item>
-    /// <item><description>If the maximum substep limit is reached, discards remaining accumulated time to maintain real-time responsiveness.</description></item>
-    /// <item><description>Calls <c>base.Update(tick)</c> to perform fade and reveal animations from <see cref="DirectDrawingBase"/>.</description></item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// The fixed timestep ensures that physics simulations produce consistent, reproducible results across
-    /// different hardware and frame rates. The substep limit (8 steps) prevents performance degradation
-    /// when the frame rate drops significantly, trading some physics accuracy for real-time responsiveness.
+    /// The base implementation is called afterward to advance inherited behavior, including fade and reveal
+    /// animations, and to record the current tick.
     /// </para>
     /// <para>
     /// Override this method in derived classes to add custom per-frame logic (such as AI updates or
@@ -251,29 +233,21 @@ public abstract class DirectDrawingMovableBase : DirectDrawingBase, IMovable
     /// </remarks>
     public override void Update(long tick)
     {
+        // DirectDrawingBase registers the instance with DirectDrawingManager from
+        // its constructor. The update thread can therefore observe this derived
+        // instance before this constructor has assigned Movement.
+        if (Movement is null)
+        {
+            base.Update(tick);
+            return;
+        }
+
         if (tick <= _lastTick)
             return;
 
-        // 1) clamp giant stalls (alt-tab, debugger break, GC, etc.)
-        const float MaxFrameDt = 1f / 15f; // ~66ms
-        float dt = MathF.Min(HighResTimer.GetDuration(_lastTick, tick), MaxFrameDt);
+        float dt = HighResTimer.GetDuration(_lastTick, tick);
 
-        // 2) accumulate time
-        _accum += dt;
-
-        int steps = 0;
-        while (_accum >= _fixedDt && steps < _maxSubsteps)
-        {
-            // Always integrate at the fixed step (not dt!)
-            Movement.AdvanceMovement(_fixedDt);
-
-            _accum -= _fixedDt;
-            steps++;
-        }
-
-        // 3) if we hit the cap, drop remainder so we don't spiral
-        if (steps == _maxSubsteps)
-            _accum = 0f;
+        Movement.AdvanceMovement(dt);
 
         base.Update(tick);
     }

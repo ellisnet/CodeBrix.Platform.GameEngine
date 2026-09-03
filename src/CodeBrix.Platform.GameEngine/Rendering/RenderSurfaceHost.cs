@@ -2,6 +2,7 @@ using System.Drawing;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine.Drawing.Direct;
+using CodeBrix.Platform.GameEngine.Effects;
 using CodeBrix.Platform.GameEngine.Extensibility;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
@@ -248,11 +249,20 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// <see langword="false"/> to allow cameras to move freely beyond the scene boundaries.
     /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="newScene"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="newScene"/> is already bound to a different render surface host.
+    /// A scene may be bound to at most one host; use several views on that host for multiple
+    /// camera perspectives into the same scene.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Binding a scene unregisters event handlers from the previous scene (if any), registers handlers
     /// with the new scene, and triggers a full refresh on the next frame. The <see cref="BindToScene"/>
     /// event fires after the binding operation completes.
+    /// </para>
+    /// <para>
+    /// The new scene is claimed BEFORE the previous one is released, so a failed bind leaves this
+    /// host on the scene it already had.
     /// </para>
     /// <para>
     /// If the specified scene is already bound, this method returns immediately without performing
@@ -264,21 +274,44 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         if (newScene == null)
             throw new ArgumentNullException(nameof(newScene), "Cannot bind to null Scene.");
 
-        if (newScene == _scene)
+        if (ReferenceEquals(newScene, _scene))
             return;
 
-        // Unregister from the old scene (if any)
-        if (_scene != null)
-        {
-            _scene.SceneDisposing -= OnSourceDisposing;
-        }
+        // Claim the new scene before releasing the old one. If another host owns it, Bind
+        // fails without disturbing this host's current scene.
+        newScene.BindRenderSurfaceHost(this);
 
         var oldScene = _scene;
-        _scene = newScene;
 
-        ViewManager.BindToScene(_scene, limitCameraToWorldBoundPx);
-        _scene.SceneDisposing += OnSourceDisposing;
-        _scene.FullRefreshNeeded = true;
+        try
+        {
+            // Unregister from and release the old scene (if any).
+            if (oldScene is not null && !ReferenceEquals(oldScene, Scene.Empty))
+            {
+                oldScene.SceneDisposing -= OnSourceDisposing;
+                oldScene.UnbindRenderSurfaceHost(this);
+            }
+
+            _scene = newScene;
+
+            ViewManager.BindToScene(_scene, limitCameraToWorldBoundPx);
+            _scene.SceneDisposing += OnSourceDisposing;
+            _scene.FullRefreshNeeded = true;
+        }
+        catch
+        {
+            // Release the failed new binding and restore the previous scene.
+            newScene.UnbindRenderSurfaceHost(this);
+            _scene = oldScene;
+
+            if (oldScene is not null && !ReferenceEquals(oldScene, Scene.Empty))
+            {
+                oldScene.BindRenderSurfaceHost(this);
+                oldScene.SceneDisposing += OnSourceDisposing;
+            }
+
+            throw;
+        }
 
         BindToScene?.Invoke(this, new RenderSurfaceHostBindEventArgs(oldScene, _scene));
     }
@@ -322,6 +355,11 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
             return;
         }
 
+        // A view-level effect (fade, wipe, slide, shake) recomposes the whole surface every frame,
+        // so the dirty-rectangle optimization is suspended for as long as one is running. Effects
+        // that target only a scene layer keep dirty rects.
+        bool fullViewComposition = ViewManager.Views.Any(view => view.HasPresentationEffect);
+
         // 0) If there are no visible SceneLayers, just clear and publish the full frame.
         if (Scene.CountOfVisibleLayers == 0)
         {
@@ -332,7 +370,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         {
             // 1) Handle full scene refresh once (camera moved, zoom changed, window resized, etc.):
             //    clear the ENTIRE backbuffer surface, then mark all layers dirty so they redraw.
-            if (Scene.FullRefreshNeeded)
+            //    A running view effect takes the same route on every dirty frame; the full-surface
+            //    clear below is the one this port already performs here, so it is not repeated.
+            if (Scene.FullRefreshNeeded || (fullViewComposition && Scene.IsDirty))
             {
                 // Clear the whole surface — NOT just the per-viewport dirty rects that
                 // PreclearScreenAreas handles below (those are clipped to Viewport.TargetRectPx).
@@ -374,7 +414,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
                 var dirtyScreenRects = CollectDirtyScreenArea(view);
 
                 // 2.3) Clip to this view's viewport
-                var vp = view.Viewport.TargetRectPx;
+                var vp = view.GetRenderViewportTargetRectPx();
 
                 // clip inclusive to current viewport
                 Backbuffer.Canvas.Save();
@@ -384,27 +424,62 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
                 // clip exclusive to higher Z-order views
                 foreach (var blocker in ViewManager.GetViewsAbove(view))
                 {
-                    var overlap = Rectangle.Intersect(vp, blocker.Viewport.TargetRectPx);
+                    // A view running a presentation effect no longer occludes what is under it.
+                    if (!blocker.BlocksViewsBelow)
+                        continue;
+
+                    var overlap = Rectangle.Intersect(vp, blocker.GetRenderViewportTargetRectPx());
                     if (!overlap.IsEmpty)
                         Backbuffer.Canvas.ClipRect(overlap.ToSKRect(), SKClipOperation.Difference, antialias: false);
                 }
 
-                // 2.4) Pre-clear dirty areas on backbuffer to Backbuffer.ClearColor
-                PreclearScreenAreas(view, dirtyScreenRects);
+                int viewPresentation = BeginPresentation(
+                    view.GetPresentationBoundsPx(),
+                    view.EffectOpacity,
+                    view.EffectReveal,
+                    view.EffectRevealDirection);
 
-                // 2.5) Render each visible layer's dirty regions for this view
-                //      this will draw SceneLayerTiles, Sprites, and SceneLayer-based DirectDrawings
-                var sceneLayers = Scene.VisibleSceneLayers;
-
-                for (int i = 0; i < sceneLayers.Count; i++)
+                if (viewPresentation > 0)
                 {
-                    var layer = sceneLayers[i];
-                    RenderLayerDirtyRegions(view, layer);
-                }
+                    if (fullViewComposition)
+                    {
+                        // The view background belongs inside the group so it fades, wipes, and
+                        // slides with the rest of the view.
+                        Backbuffer.ClearRect(view.GetPresentationBoundsPx().ToPixelAlignedRect());
+                    }
+                    else
+                    {
+                        // 2.4) Pre-clear dirty areas on backbuffer to Backbuffer.ClearColor
+                        PreclearScreenAreas(view, dirtyScreenRects);
+                    }
 
-                // 2.6) draw all View-based DirectDrawings for this view
-                for (int i = 0; i < overlays.Count; i++)
-                    overlays[i].Draw(Backbuffer, overlays[i].GetDrawLocationScreen(view));
+                    // 2.5) Render each visible layer's dirty regions for this view
+                    //      this will draw SceneLayerTiles, Sprites, and SceneLayer-based DirectDrawings
+                    var sceneLayers = Scene.VisibleSceneLayers;
+
+                    for (int i = 0; i < sceneLayers.Count; i++)
+                    {
+                        var layer = sceneLayers[i];
+
+                        int layerPresentation = BeginPresentation(
+                            GetLayerPresentationBounds(view, layer),
+                            layer.EffectOpacity,
+                            layer.EffectReveal,
+                            layer.EffectRevealDirection);
+
+                        if (layerPresentation == 0)
+                            continue;
+
+                        RenderLayerDirtyRegions(view, layer);
+                        EndPresentation(layerPresentation);
+                    }
+
+                    // 2.6) draw all View-based DirectDrawings for this view
+                    for (int i = 0; i < overlays.Count; i++)
+                        overlays[i].Draw(Backbuffer, overlays[i].GetDrawLocationScreen(view));
+
+                    EndPresentation(viewPresentation);
+                }
 
                 // 2.7) Restore from viewport clip
                 Backbuffer.Canvas.Restore();
@@ -478,18 +553,22 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
             return;
         }
 
+        // A single clear lets translucent, wiped, or translated views reveal the
+        // views beneath them. Each view paints its own background as part of its
+        // presentation group below.
+        Backbuffer.ClearRect(new Rectangle(0, 0, Backbuffer.Width, Backbuffer.Height));
+
         foreach (var view in ViewManager.Views)
         {
             RenderContext.Push(view, tick);
 
             try
             {
-                // 1) Force-refresh all DirectDrawings that overlay this view.
+                // 1) View overlays are drawn unconditionally by this full-frame path.
+                //    They must not enqueue dirty regions that GL rendering never consumes.
                 var overlays = DirectDrawingManager.Instance.GetDrawingsForView(view);
-                foreach (var overlay in overlays)
-                    overlay.ForceRefresh();
 
-                var vp = view.Viewport.TargetRectPx;
+                var vp = view.GetRenderViewportTargetRectPx();
 
                 // 2) Clip to this view's viewport, excluding areas covered by higher Z-order views.
                 Backbuffer.Canvas.Save();
@@ -498,35 +577,62 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
                 foreach (var blocker in ViewManager.GetViewsAbove(view))
                 {
-                    var overlap = Rectangle.Intersect(vp, blocker.Viewport.TargetRectPx);
+                    // A view running a presentation effect no longer occludes what is under it.
+                    if (!blocker.BlocksViewsBelow)
+                        continue;
+
+                    var overlap = Rectangle.Intersect(vp, blocker.GetRenderViewportTargetRectPx());
                     if (!overlap.IsEmpty)
                         Backbuffer.Canvas.ClipRect(overlap.ToSKRect(), SKClipOperation.Difference, antialias: false);
                 }
 
-                // 3) Clear the full viewport.
-                Backbuffer.ClearRect(vp);
+                int viewPresentation = BeginPresentation(
+                    view.GetPresentationBoundsPx(),
+                    view.EffectOpacity,
+                    view.EffectReveal,
+                    view.EffectRevealDirection);
 
-                // 4) Render every visible layer for the full viewport extent (layers are drawn
-                //    back-to-front by ascending Z-order, which VisibleSceneLayers already provides).
-                var sceneLayers = Scene.VisibleSceneLayers;
-
-                for (int i = 0; i < sceneLayers.Count; i++)
+                if (viewPresentation > 0)
                 {
-                    var layer = sceneLayers[i];
+                    // 3) The view background belongs inside the group so it fades,
+                    //    wipes, and slides with the rest of the view.
+                    Backbuffer.ClearRect(view.GetPresentationBoundsPx().ToPixelAlignedRect());
 
-                    // Compute the world-space rect visible through this viewport for this layer,
-                    // expanded by one tile in each direction to cover boundary rounding.
-                    var layerWorldRectF = view.ScreenRectToWorldRect(layer, vp);
-                    layerWorldRectF.Inflate(layer.TileWidth, layer.TileHeight);
-                    var layerWorldRect = layerWorldRectF.ToPixelAlignedRect();
+                    // 4) Render every visible layer for the full viewport extent (layers are drawn
+                    //    back-to-front by ascending Z-order, which VisibleSceneLayers already provides).
+                    var sceneLayers = Scene.VisibleSceneLayers;
 
-                    var drawables = layer.GetDrawablesInWorldRect(layerWorldRect);
-                    Backbuffer.DrawDrawables(view, drawables, vp);
+                    for (int i = 0; i < sceneLayers.Count; i++)
+                    {
+                        var layer = sceneLayers[i];
+
+                        int layerPresentation = BeginPresentation(
+                            GetLayerPresentationBounds(view, layer),
+                            layer.EffectOpacity,
+                            layer.EffectReveal,
+                            layer.EffectRevealDirection);
+
+                        if (layerPresentation == 0)
+                            continue;
+
+                        // Compute the world-space rect visible through this viewport for this layer,
+                        // expanded by one tile in each direction to cover boundary rounding.
+                        var layerWorldRectF = view.ScreenRectToWorldRect(layer, vp);
+                        layerWorldRectF.Inflate(layer.TileWidth, layer.TileHeight);
+                        var layerWorldRect = layerWorldRectF.ToPixelAlignedRect();
+
+                        var drawables = layer.GetDrawablesInWorldRect(layerWorldRect);
+                        Backbuffer.DrawDrawables(view, drawables, vp);
+
+                        EndPresentation(layerPresentation);
+                    }
+
+                    // 5) Render view-based DirectDrawings on top.
+                    for (int i = 0; i < overlays.Count; i++)
+                        overlays[i].Draw(Backbuffer, overlays[i].GetDrawLocationScreen(view));
+
+                    EndPresentation(viewPresentation);
                 }
-
-                // 5) Render view-based DirectDrawings on top.
-                for (int i = 0; i < overlays.Count; i++)
-                    overlays[i].Draw(Backbuffer, overlays[i].GetDrawLocationScreen(view));
 
                 Backbuffer.Canvas.Restore();
             }
@@ -579,7 +685,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     private List<Rectangle> CollectDirtyScreenArea(View view)
     {
         var dirty = new List<Rectangle>(64);
-        var viewportRect = view.Viewport.TargetRectPx;
+        var viewportRect = view.GetRenderViewportTargetRectPx();
 
         foreach (var sceneLayer in Scene.VisibleSceneLayers)
         {
@@ -611,7 +717,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         foreach (var screenRect in screenRects)
         {
-            var screenRectViewport = Rectangle.Intersect(screenRect, view.Viewport.TargetRectPx);
+            var screenRectViewport = Rectangle.Intersect(screenRect, view.GetRenderViewportTargetRectPx());
 
             if (screenRectViewport.IsEmpty || screenRectViewport.Width <= 0 || screenRectViewport.Height <= 0)
                 continue;
@@ -625,7 +731,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
     private void EnqueueForOverlappingSceneLayers(View sourceView, Rectangle clearedScreenRect)
     {
-        var overlap = Rectangle.Intersect(clearedScreenRect, sourceView.Viewport.TargetRectPx);
+        var overlap = Rectangle.Intersect(clearedScreenRect, sourceView.GetRenderViewportTargetRectPx());
 
         if (overlap.IsEmpty)
             return;
@@ -658,6 +764,85 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
             Backbuffer.DrawDrawables(view, drawables, screenRect);
         }
+    }
+
+    /// <summary>
+    /// Opens a canvas group for one presentation target (a view or one of its layers), applying
+    /// that target's reveal clip and opacity.
+    /// </summary>
+    /// <param name="bounds">The screen-space bounds the target presents into.</param>
+    /// <param name="opacity">The target's effect opacity; clamped to 0 through 1.</param>
+    /// <param name="reveal">The target's effect reveal fraction; clamped to 0 through 1.</param>
+    /// <param name="direction">The direction the reveal travels in.</param>
+    /// <returns>
+    /// The number of canvas saves to undo with <see cref="EndPresentation"/>, or 0 when the target
+    /// is fully hidden — in which case nothing was saved and the caller must skip drawing it.
+    /// </returns>
+    private int BeginPresentation(
+        RectangleF bounds,
+        float opacity,
+        float reveal,
+        EffectDirection direction)
+    {
+        opacity = Math.Clamp(opacity, 0f, 1f);
+        reveal = Math.Clamp(reveal, 0f, 1f);
+
+        if (opacity <= 0.0001f || reveal <= 0.0001f || bounds.IsEmpty)
+            return 0;
+
+        int saveCount = 1;
+        Backbuffer.Canvas.Save();
+
+        if (reveal < 0.9999f)
+        {
+            RectangleF revealRect = EffectGeometry.GetRevealRect(bounds, direction, reveal);
+            Backbuffer.Canvas.ClipRect(
+                revealRect.ToSKRect(),
+                SKClipOperation.Intersect,
+                antialias: false);
+        }
+
+        if (opacity < 0.9999f)
+        {
+            using var paint = new SKPaint
+            {
+                Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255f))
+            };
+
+            Backbuffer.Canvas.SaveLayer(bounds.ToSKRect(), paint);
+            saveCount++;
+        }
+
+        return saveCount;
+    }
+
+    /// <summary>
+    /// Closes the canvas group opened by <see cref="BeginPresentation"/>.
+    /// </summary>
+    /// <param name="saveCount">The value <see cref="BeginPresentation"/> returned.</param>
+    private void EndPresentation(int saveCount)
+    {
+        while (saveCount-- > 0)
+            Backbuffer.Canvas.Restore();
+    }
+
+    /// <summary>
+    /// Gets the screen rectangle one scene layer presents into within a view, once the view's and
+    /// the layer's own effect offsets are applied.
+    /// </summary>
+    /// <param name="view">The view being rendered.</param>
+    /// <param name="layer">The scene layer being rendered inside that view.</param>
+    /// <returns>The layer's presentation bounds, in screen pixels.</returns>
+    private static RectangleF GetLayerPresentationBounds(View view, SceneLayer layer)
+    {
+        RectangleF viewport = view.GetRenderViewportTargetRectPx();
+        PointF offset = view.GetEffectOffsetPx(layer);
+
+        return new RectangleF(
+            viewport.Left + offset.X,
+            viewport.Top + offset.Y,
+            viewport.Width,
+            viewport.Height);
     }
 
     #endregion DrawRefreshQueueToBackbuffer helpers
@@ -700,8 +885,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// <see langword="false"/> to release only unmanaged resources (called from finalizer).
     /// </param>
     /// <remarks>
-    /// When <paramref name="disposing"/> is <see langword="true"/>, this method releases the backbuffer
-    /// and clears the reference, then calls the base implementation.
+    /// When <paramref name="disposing"/> is <see langword="true"/>, this method releases the bound
+    /// scene (unsubscribing from its disposal event and giving up this host's claim on it) and the
+    /// backbuffer, clearing both references; the base implementation is called either way.
     /// </remarks>
     protected override void Dispose(bool disposing)
     {
@@ -711,6 +897,19 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         if (disposing)
         {
+            // Release the scene claim (and its disposal subscription) before the backbuffer
+            // goes away: the scene's dirty-region policy reads this host's backbuffer.
+            if (_scene is not null)
+            {
+                _scene.SceneDisposing -= OnSourceDisposing;
+                _scene.UnbindRenderSurfaceHost(this);
+
+                // Reset to the shared null-object scene rather than null: a direct drawing that
+                // outlives its host still reaches through Scene on refresh, and Scene.Empty keeps
+                // that harmless while releasing the real scene.
+                _scene = Scene.Empty;
+            }
+
             // The host creates the backbuffer (via the factory) and is its only owner, so the
             // host is what has to dispose it. Merely dropping the reference - which is what this
             // did, despite the summary above always having said "releases the backbuffer" - left
@@ -723,7 +922,8 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         _disposed = true;
     }
 
-    ~RenderSurfaceHost() => Dispose(false);
+    // No finalizer here: RenderSurfaceHostBase already declares one and Dispose(bool) is virtual,
+    // so a derived finalizer would only queue this instance for finalization a second time.
 
     #endregion IDisposable
 
@@ -731,6 +931,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
     private void OnSourceDisposing(Scene scene)
     {
+        scene.SceneDisposing -= OnSourceDisposing;
+        scene.UnbindRenderSurfaceHost(this);
+
         // Only clear the binding if the scene being disposed is the one we are currently bound to.
         // A consumer may dispose an old, already-unbound scene after binding its replacement; that
         // must not null out the live binding.
@@ -793,7 +996,8 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         var img = Backbuffer.Snapshot();
 
         // Post to UI thread
-        Engine.Instance.UiDispatcher!.Post(() => RenderSurfaceAdapter!.Present(img, dirty.ToSKRectI(), dirty.ToSKRect()));
+        Engine.Instance.UiDispatcher!.Post(() =>
+            RenderSurfaceAdapter!.Present(img, clamped.ToSKRectI(), clamped.ToSKRect()));
     }
 
     private void InvokePostSceneCanvasHooks()

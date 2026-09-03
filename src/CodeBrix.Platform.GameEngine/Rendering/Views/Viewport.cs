@@ -19,6 +19,9 @@ public sealed class Viewport
     private float _zoom = 1f;
     private float? _zoomTarget;
     private float _zoomLerpPerSecond;
+    private float? _zoomDurationSeconds;
+    private float _zoomElapsedSeconds;
+    private float _zoomStart;
 
     /// <summary>
     /// Fired whenever <see cref="TargetRectPx"/> changes (viewport resized or moved).
@@ -87,6 +90,9 @@ public sealed class Viewport
     /// <summary>World size visible through this viewport (used for Camera clamping).</summary>
     public SizeF VisibleWorldSizePx => new SizeF(TargetRectPx.Width / Zoom, TargetRectPx.Height / Zoom);
 
+    /// <summary>Gets whether a smooth zoom animation is currently active.</summary>
+    internal bool IsZoomAnimating => _zoomTarget is not null;
+
     #region zoom zoom
 
     /// <summary>
@@ -96,6 +102,10 @@ public sealed class Viewport
     {
         _zoomTarget = null;
         _zoomLerpPerSecond = 0f;
+        _zoomDurationSeconds = null;
+        _zoomElapsedSeconds = 0f;
+        _zoomStart = zoom;
+
         Zoom = zoom;
     }
 
@@ -111,13 +121,16 @@ public sealed class Viewport
             return;
         }
 
+        _zoomStart = _zoom;
         _zoomTarget = targetZoom;
         _zoomLerpPerSecond = lerpPerSecond;
+        _zoomDurationSeconds = null;
+        _zoomElapsedSeconds = 0f;
     }
 
     /// <summary>
-    /// Smoothly animates the zoom so that it reaches ~99% of the target level
-    /// over approximately the given duration in seconds. Values &lt;= 0 snap.
+    /// Smoothly animates the zoom using exponential easing and snaps exactly to
+    /// the target when the requested duration has elapsed. Values &lt;= 0 snap.
     /// </summary>
     public void ZoomToOverDuration(float targetZoom, float durationSeconds)
     {
@@ -127,11 +140,14 @@ public sealed class Viewport
             return;
         }
 
-        // Same math as Camera.PanToOverDuration: exp(-k*T) = 0.01 → k = -ln(0.01) / T
-        float k = -(float)Math.Log(0.01f) / durationSeconds;
-
+        _zoomStart = _zoom;
         _zoomTarget = targetZoom;
-        _zoomLerpPerSecond = k;
+
+        _zoomDurationSeconds = durationSeconds;
+        _zoomElapsedSeconds = 0f;
+
+        // The fixed-duration path calculates progress directly.
+        _zoomLerpPerSecond = 0f;
     }
 
     /// <summary>
@@ -140,24 +156,48 @@ public sealed class Viewport
     /// </summary>
     internal void UpdateZoom(float dtSeconds)
     {
-        if (_zoomTarget is null || _zoomLerpPerSecond <= 0f)
+        if (_zoomTarget is null)
             return;
 
         float target = _zoomTarget.Value;
-        float current = _zoom;
+        float dt = Math.Max(0f, dtSeconds);
 
-        float t = 1f - (float)Math.Exp(-_zoomLerpPerSecond * Math.Max(0f, dtSeconds));
-        float newZoom = current + (target - current) * t;
+        if (_zoomDurationSeconds is { } durationSeconds)
+        {
+            _zoomElapsedSeconds = Math.Min(_zoomElapsedSeconds + dt, durationSeconds);
+
+            float progress = durationSeconds > 0f ? _zoomElapsedSeconds / durationSeconds : 1f;
+
+            // Preserve the existing exponential ease-out character, but normalize
+            // it so progress reaches exactly 1 at the requested duration.
+            const float decay = 4.605170186f; // -ln(0.01)
+
+            float normalization = 1f - MathF.Exp(-decay);
+            float easedProgress = (1f - MathF.Exp(-decay * progress)) / normalization;
+
+            Zoom = _zoomStart + (target - _zoomStart) * easedProgress;
+
+            if (_zoomElapsedSeconds >= durationSeconds)
+            {
+                // This no longer causes a visible jump: easedProgress is already 1.
+                SnapZoom(target);
+            }
+
+            return;
+        }
+
+        if (_zoomLerpPerSecond <= 0f)
+            return;
+
+        float t = 1f - MathF.Exp(-_zoomLerpPerSecond * dt);
+
+        float newZoom = _zoom + (target - _zoom) * t;
 
         Zoom = newZoom; // go through property so events fire
 
-        // Close enough → snap and finish.
+        // Close enough -> snap and finish.
         if (Math.Abs(newZoom - target) < 1e-4f)
-        {
-            Zoom = target;
-            _zoomTarget = null;
-            _zoomLerpPerSecond = 0f;
-        }
+            SnapZoom(target);
     }
 
     #endregion zoom zoom

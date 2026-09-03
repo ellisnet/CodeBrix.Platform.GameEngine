@@ -40,7 +40,7 @@ public partial class Sprite
     private float _pulseShrinkDurationSeconds;
 
     // --- Collision adjustment tween baseline ---
-    private CollisionDetectionAdjustment _resizeStartCollisionAdjust;
+    private CollisionAdjust _resizeStartCollisionAdjust;
     private Size _resizeStartSizeForCollision;
 
     internal void AdvanceResize(float deltaSeconds)
@@ -167,7 +167,7 @@ public partial class Sprite
         float sx = (float)currentSize.Width / _resizeStartSizeForCollision.Width;
         float sy = (float)currentSize.Height / _resizeStartSizeForCollision.Height;
 
-        AdjustCollisionArea = new CollisionDetectionAdjustment(
+        AdjustCollisionArea = new CollisionAdjust(
             top: (int)MathF.Round(_resizeStartCollisionAdjust.Top * sy),
             bottom: (int)MathF.Round(_resizeStartCollisionAdjust.Bottom * sy),
             left: (int)MathF.Round(_resizeStartCollisionAdjust.Left * sx),

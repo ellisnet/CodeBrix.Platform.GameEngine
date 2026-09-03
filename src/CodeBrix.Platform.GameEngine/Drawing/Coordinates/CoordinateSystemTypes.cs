@@ -45,6 +45,14 @@ public enum CoordinateSystemTypes
     /// Oblique projection using a right-receding, sheared square lattice: columns stay
     /// horizontal while rows advance down and to the right, giving each tile a
     /// parallelogram footprint rather than an isometric diamond.
+    /// Numeric value 5 is retained for compatibility with existing serialized layers.
     /// </summary>
-    Oblique = 5
+    ObliqueRight = 5,
+
+    /// <summary>
+    /// Oblique projection using a left-receding, sheared square lattice: columns stay
+    /// horizontal while rows advance down and to the left, giving each tile a
+    /// parallelogram footprint rather than an isometric diamond.
+    /// </summary>
+    ObliqueLeft = 6
 }
