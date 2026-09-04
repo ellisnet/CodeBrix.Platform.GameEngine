@@ -55,7 +55,8 @@ integrated velocity + gravity movement, horizontal camera follow with a dead
 zone, a view-bound DirectRectangle + TextBlock HUD, and a procedural tilesheet
 painted in code (TilesheetRegistry.LoadFromBitmap), so the sample ships no
 image assets. A/D or the arrow keys move, W / Up / Space jump, R restarts, Esc
-quits.
+quits. samples/Platformer.Brix/README.md explains the level rules and how the
+sample is put together.
 
 samples/SpaceDuel.Brix
 ----------------------
@@ -196,7 +197,7 @@ Windows". The ARM64 build tools usually have to be ticked separately under
 Modify -> Individual components; the script names the missing component rather
 than failing deep inside CMake.
 
-    cd tools
+    cd tools\sdl2_library_building
     .\build-sdl2-windows-arm64.ps1
     .\build-sdl2-windows-arm64.ps1 -SdlVersion <ver> -ExpectedSha256 <sha256>
     Get-Help .\build-sdl2-windows-arm64.ps1 -Full

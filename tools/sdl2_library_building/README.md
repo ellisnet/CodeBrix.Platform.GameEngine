@@ -58,7 +58,7 @@ names the component rather than failing deep inside CMake.
 ### Usage
 
 ```powershell
-cd tools
+cd tools/sdl2_library_building
 .\build-sdl2-windows-arm64.ps1
 ```
 

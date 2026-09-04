@@ -398,7 +398,7 @@ This binary was NOT downloaded. libsdl.org publishes official prebuilt SDL2
 binaries for Windows x64, Windows x86 and macOS, but not for Windows ARM64, so
 this one is built from the official SDL2 source release by:
 
-    tools/build-sdl2-windows-arm64.ps1
+    tools/sdl2_library_building/build-sdl2-windows-arm64.ps1
 
 Re-running that script with the same SDL2 version reproduces this binary.
 

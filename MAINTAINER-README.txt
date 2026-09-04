@@ -40,6 +40,7 @@ REPOSITORY LAYOUT
     tools/padcheck/                            hand-run gamepad hardware check
     tools/sdl2_library_building/               SDL2 Windows-ARM64 build script
     native_libraries/<rid>/                    committed SDL2 binaries + provenance
+    global.json                                selects the test runner; pins no SDK
     CodeBrix.Platform.GameEngine.slnx          product projects + tests only
 
 Engine-core source is grouped into sub-folders that mirror the sub-namespaces
@@ -51,6 +52,14 @@ EngineGamepadExtensions.cs at the root.
 
 Neither samples/ nor tools/ is in the .slnx, deliberately: the solution holds
 only product projects and their tests. Each sample carries its own .slnx.
+
+The solution's Solution Items folder carries .gitignore, AGENT-README.txt,
+EXTRAS-README.txt, global.json, icon-codebrix-128.png, LICENSE,
+MAINTAINER-README.txt, README-INDEX.txt, README.md, the current
+RELEASE-NOTES-<yyyy-MM-dd>.md and THIRD-PARTY-NOTICES.txt; the Tests folder
+carries the three test projects. The gamepad package's own AGENT-README.txt is
+not listed there because it is a <None> item of the Sdl2 project and is already
+visible inside it.
 
 INTERNALS SEAMS
 ---------------
@@ -118,12 +127,24 @@ TESTING
 =======
     dotnet test CodeBrix.Platform.GameEngine.slnx
 
-xUnit v3 + SilverAssertions, with coverlet.collector for coverage. No opt-in
-environment variables are required; head-dependent host behavior is env-gated or
-skipped with a reason.
+xUnit v3 + SilverAssertions. No opt-in environment variables are required;
+head-dependent host behavior is env-gated or skipped with a reason.
 
-The suites are Microsoft.Testing.Platform runners (see global.json), so each
-test assembly is also a self-contained executable. Running the built dlls
+Test dependencies, all three suites: xunit.v3, xunit.runner.visualstudio,
+Microsoft.NET.Test.Sdk and SilverAssertions.ApacheLicenseForever; the
+engine-core suite adds SkiaSharp.NativeAssets.Linux and CodeBrix.Audio.Opus.
+No coverage collector is referenced by any test project.
+
+THE TEST RUNNER IS Microsoft.Testing.Platform (MTP), selected by global.json at
+the repository root. That file does NOT pin an SDK version, so the newest
+installed .NET 10 SDK is still used; it exists solely to select the runner:
+
+    { "test": { "runner": "Microsoft.Testing.Platform" } }
+
+Because the setting lives in global.json rather than in the csprojs, it applies
+to every `dotnet test` run anywhere in the repository, including CI. Keep the
+file committed. Each test assembly is therefore also a self-contained
+executable. Running the built dlls
 directly is the reliable fallback when `dotnet test` discovers nothing — on
 .NET SDK 10.0.400 it reports zero tests for this repository — and it is the way
 to filter down to one class or method while iterating:
@@ -158,7 +179,8 @@ CODE — a MidiEventCollection exported through MidiFile.Export, and a one-regio
 SFZ over a generated tone — so there is no committed binary).
 
 THE CORE TEST ASSEMBLY RUNS ITS COLLECTIONS SERIALLY
-(CollectionBehavior(DisableTestParallelization = true) in AssemblyInfo.cs): the
+([assembly: Parallelization(Mode = ParallelMode.None)] in AssemblyInfo.cs, from
+Xunit.v3 + Xunit.Sdk; the gamepad suite carries the same attribute): the
 engine under test is a process-global singleton machine (Engine.Instance plus
 the scene/sprite/cycle/tilesheet/audio registries), so tests that populate or
 clear that state cannot overlap. Keep new test classes compatible with that
@@ -289,6 +311,8 @@ RELEASE-NOTES-2026-09-03.md. Conventions:
     be able to grep their own code from the notes.
   * The files are additive history — write a NEW dated file for the next
     release rather than rewriting an old one.
+  * Put the new file in the .slnx Solution Items folder (replacing the previous
+    one there) so it is visible in the IDE.
 
 Release-notes files are repository content only: they are not packed into
 either NuGet package (only README.md, THIRD-PARTY-NOTICES.txt and the relevant
@@ -350,7 +374,7 @@ CODING CONVENTIONS
     usings.
   * XML doc comments on public/protected members (GenerateDocumentationFile
     = true; fix CS1591 at the source, never suppress).
-  * xUnit v3 + SilverAssertions for tests; coverlet.collector for coverage.
+  * xUnit v3 + SilverAssertions for tests; no coverage collector.
   * No project-wide warning suppression except the documented port exceptions
     below.
 

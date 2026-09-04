@@ -9,6 +9,7 @@
     <File Path="MAINTAINER-README.txt" />
     <File Path="README-INDEX.txt" />
     <File Path="README.md" />
+    <File Path="RELEASE-NOTES-2026-09-03.md" />
     <File Path="THIRD-PARTY-NOTICES.txt" />
   </Folder>
   <Folder Name="/Tests/">

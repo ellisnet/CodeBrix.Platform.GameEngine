@@ -173,7 +173,8 @@ is not incorporated into these assemblies.
                                              (universal x86_64 + arm64)
      runtimes/osx-arm64/native/libSDL2.dylib the same universal file
      runtimes/win-arm64/native/SDL2.dll      BUILT FROM OFFICIAL SDL2 SOURCE by
-                                             tools/build-sdl2-windows-arm64.ps1,
+                                             tools/sdl2_library_building/
+                                             build-sdl2-windows-arm64.ps1,
                                              because upstream publishes no
                                              prebuilt Windows ARM64 binary
 

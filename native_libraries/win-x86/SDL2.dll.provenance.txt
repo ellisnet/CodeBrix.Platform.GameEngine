@@ -3,7 +3,8 @@ SDL2.dll -- Windows x86 (32-bit)
 This binary was DOWNLOADED from the official SDL release page. It was not built
 here. libsdl.org publishes official prebuilt SDL2 binaries for Windows x64,
 Windows x86 and macOS; only Windows ARM64 has to be built from source (see
-native_libraries/win-arm64/ and tools/build-sdl2-windows-arm64.ps1).
+native_libraries/win-arm64/ and
+tools/sdl2_library_building/build-sdl2-windows-arm64.ps1).
 
 SDL2 version      : 2.32.10   (released 2025-09-01)
 Architecture      : x86

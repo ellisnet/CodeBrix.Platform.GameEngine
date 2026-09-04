@@ -8,11 +8,46 @@ This repository ships **two** core libraries, plus one optional add-on:
 * **`CodeBrix.Platform.GameEngine.Host`** — the host layer that runs the engine on **CodeBrix.Platform**, across all six heads (Windows Win32-Skia, Windows WPF-Skia, Linux X11, Linux Wayland, Linux Frame Buffer, macOS). It provides the CPU and GPU render-surface adapters, pointer/keyboard input adapters, and a UI dispatcher.
 * **`CodeBrix.Platform.GameEngine.Sdl2`** — *optional* game controller (gamepad) support; see below.
 
-CodeBrix.Platform.GameEngine is provided as .NET 10 libraries, shipped as a single `CodeBrix.Platform.GameEngine.MitLicenseForever` NuGet package that bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies.
+CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and two NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, and the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads.
 
 CodeBrix.Platform.GameEngine supports applications and assemblies that target Microsoft .NET version 10.0 and later.
 Microsoft .NET version 10.0 is a Long-Term Supported (LTS) version of .NET, and was released on Nov 11, 2025; and will be actively supported by Microsoft until Nov 14, 2028.
 Please update your C#/.NET code and projects to the latest LTS version of Microsoft .NET.
+
+## Installation
+
+```
+dotnet add package CodeBrix.Platform.GameEngine.MitLicenseForever
+```
+
+```
+dotnet add package CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
+```
+
+Note that the NuGet package IDs and the namespaces are different - there is no package named plain `CodeBrix.Platform.GameEngine`:
+
+* NuGet package ID: `CodeBrix.Platform.GameEngine.MitLicenseForever`
+  * Assemblies and primary namespaces: `CodeBrix.Platform.GameEngine` and `CodeBrix.Platform.GameEngine.Host` - i.e. `using CodeBrix.Platform.GameEngine;`
+  * One reference gives you both assemblies; there is no separate `.Host` package.
+* NuGet package ID: `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever`
+  * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.Sdl2` - i.e. `using CodeBrix.Platform.GameEngine.Sdl2;`
+
+**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one.
+
+XML documentation (IntelliSense) ships alongside the assemblies.
+
+The engine package pulls in the following automatically; no version pinning is needed in the consuming project:
+
+* `CodeBrix.Platform.ApacheLicenseForever` - the UI platform
+* `CodeBrix.Platform.SkiaSharp.Views.MitLicenseForever` - the XAML canvas the engine renders into
+* `CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever` - the GPU render path
+* `CodeBrix.Platform.Svg.ApacheLicenseForever` and `CodeBrix.SkiaSvg.MitLicenseForever` - SVG drawing
+* `SkiaSharp` - the rendering engine
+* `CodeBrix.Audio.MitLicenseForever` - device audio I/O
+* `CodeBrix.Compression.MitLicenseForever` and `CodeBrix.Json.Extensions.MitLicenseForever` - save/load
+* `Microsoft.Extensions.Configuration` (plus `.Binder` and `.Json`) and `Microsoft.Extensions.Logging.Console` / `.Debug`
+
+Your game is a CodeBrix.Platform application, so each executable project also adds exactly one CodeBrix.Platform head package - for example `CodeBrix.Platform.Runtime.Skia.X11.ApacheLicenseForever` for Linux X11 - and that head supplies the SkiaSharp native libraries. Add `CodeBrix.Audio.Opus.BsdLicenseForever` if you want `.opus` audio assets.
 
 ## CodeBrix.Platform.GameEngine supports:
 
@@ -81,12 +116,21 @@ It works on all six heads — including Frame Buffer — because SDL2 is initial
 
 The package carries the SDL2 native binaries for Windows and macOS. On Linux it uses the system SDL2, which is its one prerequisite: `sudo apt install libsdl2-2.0-0`.
 
-See `AGENT-README.txt` for the full documentation, including the gotchas worth knowing before wiring a game to it.
+## Documentation
+
+The NuGet package includes `AGENT-README.txt`, a complete API reference and usage guide written for AI coding agents - point your agent at that file when it is writing code against this library.
+
+The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads.
+
+Additional sample code and usage examples are available in the `CodeBrix.Platform.GameEngine.Tests` project:
+https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests
 
 ## License
 
-The project is licensed under the MIT License. see: https://en.wikipedia.org/wiki/MIT_License
+CodeBrix.Platform.GameEngine is licensed under the MIT License - see the
+[LICENSE](https://github.com/ellisnet/CodeBrix.Platform.GameEngine/blob/main/LICENSE) file.
 
-The engine core is a port of an open-source, MIT-licensed game engine; see `THIRD-PARTY-NOTICES.txt` for full attribution, including the upstream project and the exact revision this port tracks.
+The optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` package is licensed `MIT AND Zlib`, because it redistributes the SDL2 native libraries.
 
-The optional `CodeBrix.Platform.GameEngine.Sdl2` package is licensed `MIT AND Zlib`: its managed SDL2 bindings are adapted from Veldrid (MIT), and it redistributes the SDL2 native libraries (zlib). Both are attributed in full in `THIRD-PARTY-NOTICES.txt`.
+For licensing and provenance information about the open source code included in
+these packages, see [THIRD-PARTY-NOTICES.txt](https://github.com/ellisnet/CodeBrix.Platform.GameEngine/blob/main/THIRD-PARTY-NOTICES.txt).

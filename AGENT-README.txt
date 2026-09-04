@@ -1806,6 +1806,19 @@ The effect types (namespace CodeBrix.Platform.GameEngine.Effects):
         FromBottomToTop, FromTopLeftToBottomRight, FromTopRightToBottomLeft,
         FromBottomLeftToTopRight, FromBottomRightToTopLeft
 
+The concrete types sit under four public abstract bases — FadeEffect (FadeIn /
+FadeOut), SlideEffect (SlideIn / SlideOut), WipeEffect (Fill / Erase) and
+ZoomEffect (ZoomIn / ZoomOut) — all deriving DisplayEffect. Every constructor in
+that hierarchy, DisplayEffect's included, is `private protected`, so the set of
+effect types is CLOSED: use the bases for type tests and pattern matching, not
+for subclassing. They also carry the read-back properties:
+
+    SlideEffect.Direction        EffectDirection, get-only
+    WipeEffect.Direction         EffectDirection, get-only
+    ZoomEffect.TargetZoom        float, get-only
+    EarthquakeEffect.IntensityPx float, get-only
+    EarthquakeEffect.Decay       bool, get-only
+
 Every DisplayEffect carries Id, DurationSeconds, Easing, Status
 (EffectStatus: Pending -> Running -> Completed | Cancelled), Progress, the
 events Completed and Cancelled, and Cancel().
