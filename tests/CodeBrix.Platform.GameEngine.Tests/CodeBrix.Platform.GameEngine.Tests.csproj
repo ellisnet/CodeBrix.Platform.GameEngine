@@ -21,7 +21,7 @@
          stops being true. This project ships nothing, so it can reference the real codec and prove
          that a separately licensed format registered with CodeBrix.Audio becomes a first-class
          engine format (PlatformAudioFactoryTests). Do not move this reference into src/. -->
-    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.245.260" />
+    <PackageReference Include="CodeBrix.Audio.Opus.BsdLicenseForever" Version="1.0.250.73" />
   </ItemGroup>
 
   <ItemGroup>

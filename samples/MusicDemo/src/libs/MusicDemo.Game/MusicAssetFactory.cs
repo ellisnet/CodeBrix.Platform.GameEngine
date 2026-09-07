@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using CodeBrix.Audio.Midi;
 using CodeBrix.Audio.Wave;
@@ -6,8 +7,9 @@ using CodeBrix.Audio.Wave;
 namespace MusicDemo.Game;
 
 /// <summary>
-/// Generates every asset this sample plays — stems, two linear tracks, a stinger, an SFZ instrument
-/// and a MIDI file — into a folder beside the executable, the first time the sample runs.
+/// Generates every asset this sample plays — layers, two linear tracks, a stinger, an SFZ and a
+/// Decent Sampler instrument, two MIDI files and a whole stems export — into a folder beside the
+/// executable, the first time the sample runs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +20,13 @@ namespace MusicDemo.Game;
 /// editor to see what the engine was given.
 /// </para>
 /// <para>
-/// It is not music. It is three layers that agree about tempo and key, which is exactly what the
-/// stem and quantisation features need in order to be demonstrable.
+/// It is not music. It is layers that agree about tempo and key, which is exactly what the stem and
+/// quantisation features need in order to be demonstrable.
+/// </para>
+/// <para>
+/// TWO OF THE ASSETS ARE FOLDERS, NOT FILES. A <c>.dspreset</c> points at sample files beside it,
+/// and a stems export is a set of files that belong together and are named for each other. Both are
+/// written as the real thing is laid out, because that is the part a game gets wrong.
 /// </para>
 /// </remarks>
 public static class MusicAssetFactory
@@ -35,6 +42,9 @@ public static class MusicAssetFactory
 
     private const int TicksPerQuarter = 96;
     private const int Bars = 4;
+
+    // The generated stems export is sixteen beats long, and its tempo changes at the halfway mark.
+    private const int StemsBeatCount = 16;
 
     private static readonly double _secondsPerBeat = 60.0 / BeatsPerMinute;
     private static readonly double _loopSeconds = _secondsPerBeat * BeatsPerBar * Bars; // 8 s
@@ -73,6 +83,43 @@ public static class MusicAssetFactory
     public static string MidiPath { get; } = Path.Combine(AssetDirectory, "theme.mid");
 
     /// <summary>
+    /// The Decent Sampler instrument the second MIDI track is rendered through: a preset, and the
+    /// <c>Samples</c> folder beside it that the preset points at.
+    /// </summary>
+    public static string DecentSamplerPresetPath { get; } =
+        Path.Combine(AssetDirectory, "DemoSampler", "Demo Instrument.dspreset");
+
+    /// <summary>
+    /// A MIDI file whose tempo CHANGES partway through, so a bar-quantised transition has something
+    /// to be exact about.
+    /// </summary>
+    public static string TempoChangeMidiPath { get; } = Path.Combine(AssetDirectory, "tempo-change.mid");
+
+    /// <summary>
+    /// A stems export laid out the way a download from a music service is — several stem files and
+    /// a MIDI file side by side, named "&lt;Title&gt; (&lt;Stem&gt;).&lt;ext&gt;".
+    /// </summary>
+    public static string StemsExportFolder { get; } = Path.Combine(AssetDirectory, "Fake Song Stems");
+
+    /// <summary>The tempo the second half of <see cref="TempoChangeMidiPath"/> runs at.</summary>
+    public const double SlowerBeatsPerMinute = 90;
+
+    /// <summary>How many bars of <see cref="TempoChangeMidiPath"/> run at the opening tempo.</summary>
+    public const int BarsBeforeTempoChange = 2;
+
+    /// <summary>
+    /// The rate the generated stems export is written at — 48 kHz, which is what a real stems
+    /// download carries, and deliberately NOT the rate this sample pins the device to.
+    /// </summary>
+    public const int StemsExportSampleRate = 48000;
+
+    /// <summary>The tempo the generated stems export starts at.</summary>
+    public const double StemsBeatsPerMinute = 100;
+
+    /// <summary>The tempo the generated stems export finishes at.</summary>
+    public const double StemsSecondBeatsPerMinute = 120;
+
+    /// <summary>
     /// Writes every asset if it is not already there. Safe to call more than once; it is skipped
     /// entirely on later runs.
     /// </summary>
@@ -93,6 +140,9 @@ public static class MusicAssetFactory
 
         EnsureInstrument();
         EnsureMidi();
+        EnsureDecentSamplerInstrument();
+        EnsureTempoChangeMidi();
+        EnsureStemsExport();
     }
 
     private static void WriteIfMissing(string path, Func<float[]> render)
@@ -314,7 +364,7 @@ public static class MusicAssetFactory
         var melodyNotes = new[] { 60, 62, 64, 67, 64, 62, 60, 55 };
         for (var i = 0; i < melodyNotes.Length * 2; i++)
         {
-            melody.Add(new NoteOnEvent(i * beat, 1, melodyNotes[i % melodyNotes.Length], 100, beat));
+            AddNote(melody, i * beat, channel: 1, melodyNotes[i % melodyNotes.Length], velocity: 100, length: beat);
         }
 
         melody.Add(new MetaEvent(MetaEventType.EndTrack, 0, bar * 4));
@@ -322,14 +372,266 @@ public static class MusicAssetFactory
         var harmony = events.AddTrack();
         for (var i = 0; i < 8; i++)
         {
-            harmony.Add(new NoteOnEvent(i * beat * 2, 2, 48, 90, beat * 2));
-            harmony.Add(new NoteOnEvent(i * beat * 2, 2, 52, 90, beat * 2));
+            AddNote(harmony, i * beat * 2, channel: 2, note: 48, velocity: 90, length: beat * 2);
+            AddNote(harmony, i * beat * 2, channel: 2, note: 52, velocity: 90, length: beat * 2);
         }
 
         harmony.Add(new MetaEvent(MetaEventType.EndTrack, 0, bar * 4));
 
         events.PrepareForExport();
         MidiFile.Export(MidiPath, events);
+    }
+
+    // ----- the Decent Sampler instrument -----
+
+    // A .dspreset is not one file: it POINTS AT sample files beside it, so the folder is as much
+    // part of the instrument as the XML is. Written here the same way as everything else, so the
+    // sample still ships no binary assets.
+    private static void EnsureDecentSamplerInstrument()
+    {
+        var instrumentFolder = Path.GetDirectoryName(DecentSamplerPresetPath);
+        var samplesFolder = Path.Combine(instrumentFolder, "Samples");
+        Directory.CreateDirectory(samplesFolder);
+
+        var samplePath = Path.Combine(samplesFolder, "bell.wav");
+
+        if (!File.Exists(samplePath))
+        {
+            // A bell-ish middle C: a fundamental and two partials under a long decay, so the
+            // instrument sounds different from the SFZ one and a switch between them is audible.
+            var frames = (int)(SampleRate * 1.5);
+            var samples = new float[frames];
+
+            for (var frame = 0; frame < frames; frame++)
+            {
+                var t = frame / (double)SampleRate;
+                var envelope = Math.Min(1.0, t * 200) * Math.Exp(-2.2 * t);
+                var value = Math.Sin(2 * Math.PI * 261.63 * t)
+                            + (0.5 * Math.Sin(2 * Math.PI * 523.25 * t))
+                            + (0.25 * Math.Sin(2 * Math.PI * 784.0 * t));
+
+                samples[frame] = (float)(value * envelope * 0.22);
+            }
+
+            WaveFileWriter.CreateWaveFile16(samplePath, new BufferSampleProvider(samples, SampleRate, 1));
+        }
+
+        if (File.Exists(DecentSamplerPresetPath))
+        {
+            return;
+        }
+
+        // One group, one sample across the keyboard, and a labeled knob bound to the group's
+        // volume — the smallest preset that still exercises the format's UI-to-parameter binding.
+        File.WriteAllText(DecentSamplerPresetPath,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + Environment.NewLine +
+            "<!-- Generated by the CodeBrix.Platform.GameEngine MusicDemo sample. -->" + Environment.NewLine +
+            "<DecentSampler minVersion=\"1.0.0\">" + Environment.NewLine +
+            "  <ui width=\"812\" height=\"375\">" + Environment.NewLine +
+            "    <tab name=\"main\">" + Environment.NewLine +
+            "      <labeled-knob x=\"40\" y=\"40\" width=\"60\" height=\"70\" label=\"Level\"" +
+            " minValue=\"0\" maxValue=\"1\" value=\"1\">" + Environment.NewLine +
+            "        <binding type=\"amp\" level=\"group\" position=\"0\" parameter=\"AMP_VOLUME\" />" + Environment.NewLine +
+            "      </labeled-knob>" + Environment.NewLine +
+            "    </tab>" + Environment.NewLine +
+            "  </ui>" + Environment.NewLine +
+            "  <groups>" + Environment.NewLine +
+            "    <group name=\"bells\" tags=\"tuned\">" + Environment.NewLine +
+            "      <sample path=\"Samples/bell.wav\" rootNote=\"60\" loNote=\"0\" hiNote=\"127\" />" + Environment.NewLine +
+            "    </group>" + Environment.NewLine +
+            "  </groups>" + Environment.NewLine +
+            "</DecentSampler>" + Environment.NewLine);
+    }
+
+    // A file that changes tempo partway through, so "on the next bar" has something to be exact
+    // about: quantising against the opening tempo alone would answer wrong from the change onwards.
+    private static void EnsureTempoChangeMidi()
+    {
+        if (File.Exists(TempoChangeMidiPath))
+        {
+            return;
+        }
+
+        var events = new MidiEventCollection(1, TicksPerQuarter);
+        var beat = TicksPerQuarter;
+        var bar = beat * BeatsPerBar;
+        var changeTick = bar * BarsBeforeTempoChange;
+        var endTick = bar * 6;
+
+        var tempoTrack = events.AddTrack();
+        tempoTrack.Add(new TempoEvent((int)Math.Round(60_000_000.0 / BeatsPerMinute), 0));
+        tempoTrack.Add(new TimeSignatureEvent(0, BeatsPerBar, 2, 24, 8));
+        tempoTrack.Add(new TextEvent("fast", MetaEventType.Marker, 0));
+        tempoTrack.Add(new TempoEvent((int)Math.Round(60_000_000.0 / SlowerBeatsPerMinute), changeTick));
+        tempoTrack.Add(new TextEvent("slow", MetaEventType.Marker, changeTick));
+        tempoTrack.Add(new MetaEvent(MetaEventType.EndTrack, 0, endTick));
+
+        var melody = events.AddTrack();
+        var notes = new[] { 60, 64, 67, 72, 67, 64 };
+
+        for (var i = 0; i < endTick / beat; i++)
+        {
+            AddNote(melody, i * beat, channel: 1, notes[i % notes.Length], velocity: 96, length: beat);
+        }
+
+        melody.Add(new MetaEvent(MetaEventType.EndTrack, 0, endTick));
+
+        events.PrepareForExport();
+        MidiFile.Export(TempoChangeMidiPath, events);
+    }
+
+    // ----- the stems export -----
+
+    // A folder shaped exactly like a stems download: "<Title> (<Stem>).wav" files side by side, all
+    // the same length, rate and channel count, with the song's MIDI beside them. It is written at
+    // 48 kHz on purpose — a real download is, and this sample pins the device to 44.1 kHz, so the
+    // stems rate-convert as they decode rather than being rejected for disagreeing.
+    private static void EnsureStemsExport()
+    {
+        Directory.CreateDirectory(StemsExportFolder);
+
+        var beats = StemsBeatTimes();
+
+        WriteStemIfMissing("Vocals", () => StemsPad(beats));
+        WriteStemIfMissing("Drums", () => StemsPulse(beats, frequency: 180, gain: 0.30, decay: 26));
+        WriteStemIfMissing("Bass", () => StemsPulse(beats, frequency: 65.41, gain: 0.34, decay: 6));
+
+        EnsureStemsMidi();
+    }
+
+    private static void WriteStemIfMissing(string stemName, Func<float[]> render)
+    {
+        var path = Path.Combine(StemsExportFolder, $"Fake Song ({stemName}).wav");
+
+        if (!File.Exists(path))
+        {
+            WaveFileWriter.CreateWaveFile16(path,
+                new BufferSampleProvider(render(), StemsExportSampleRate, 2));
+        }
+    }
+
+    // Where each beat of the export falls. The tempo CHANGES halfway, and the audio is generated
+    // from these times, so the recordings and the MIDI beside them agree about where the beats are.
+    private static double[] StemsBeatTimes()
+    {
+        var times = new double[StemsBeatCount + 1];
+        var time = 0.0;
+
+        for (var i = 0; i <= StemsBeatCount; i++)
+        {
+            times[i] = time;
+            time += 60.0 / (i < StemsBeatCount / 2 ? StemsBeatsPerMinute : StemsSecondBeatsPerMinute);
+        }
+
+        return times;
+    }
+
+    private static float[] StemsPad(double[] beats)
+    {
+        var buffer = NewStemsBuffer(beats);
+        var frames = buffer.Length / 2;
+        var length = beats[StemsBeatCount];
+        var voices = new[] { 261.63, 329.63, 392.00 };
+
+        for (var frame = 0; frame < frames; frame++)
+        {
+            var t = frame / (double)StemsExportSampleRate;
+            var swell = 0.5 + (0.5 * Math.Sin(2 * Math.PI * t / length));
+
+            double value = 0;
+            foreach (var voice in voices)
+            {
+                value += Math.Sin(2 * Math.PI * voice * t);
+            }
+
+            value *= 0.09 * (0.4 + (0.6 * swell)) / voices.Length;
+
+            buffer[(frame * 2) + 0] = (float)value;
+            buffer[(frame * 2) + 1] = (float)value;
+        }
+
+        return buffer;
+    }
+
+    private static float[] StemsPulse(double[] beats, double frequency, double gain, double decay)
+    {
+        var buffer = NewStemsBuffer(beats);
+        var frames = buffer.Length / 2;
+
+        for (var beat = 0; beat < StemsBeatCount; beat++)
+        {
+            var start = (int)(beats[beat] * StemsExportSampleRate);
+
+            for (var frame = start; frame < frames; frame++)
+            {
+                var t = (frame - start) / (double)StemsExportSampleRate;
+                var envelope = Math.Exp(-decay * t);
+
+                if (envelope < 0.001)
+                {
+                    break;
+                }
+
+                var value = (float)(Math.Sin(2 * Math.PI * frequency * t) * envelope * gain);
+
+                buffer[(frame * 2) + 0] += value;
+                buffer[(frame * 2) + 1] += value;
+            }
+        }
+
+        return buffer;
+    }
+
+    private static float[] NewStemsBuffer(double[] beats)
+        => new float[(int)(StemsExportSampleRate * beats[StemsBeatCount]) * 2];
+
+    // The MIDI a stems download ships beside the recordings: a tempo event on EVERY beat (which is
+    // what "follow tempo changes" produces), one part, and no time signature.
+    private static void EnsureStemsMidi()
+    {
+        var path = Path.Combine(StemsExportFolder, "Fake Song (Drums).mid");
+
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        const int stemsTicksPerQuarter = 480;
+
+        var events = new MidiEventCollection(1, stemsTicksPerQuarter);
+        var tempoTrack = events.AddTrack();
+
+        for (var beat = 0; beat < StemsBeatCount; beat++)
+        {
+            var beatsPerMinute = beat < StemsBeatCount / 2 ? StemsBeatsPerMinute : StemsSecondBeatsPerMinute;
+            tempoTrack.Add(new TempoEvent((int)Math.Round(60_000_000.0 / beatsPerMinute), beat * stemsTicksPerQuarter));
+        }
+
+        tempoTrack.Add(new MetaEvent(MetaEventType.EndTrack, 0, StemsBeatCount * stemsTicksPerQuarter));
+
+        var part = events.AddTrack();
+
+        for (var beat = 0; beat < StemsBeatCount; beat++)
+        {
+            AddNote(part, beat * stemsTicksPerQuarter, channel: 10, note: 36, velocity: 100,
+                length: stemsTicksPerQuarter / 2);
+        }
+
+        part.Add(new MetaEvent(MetaEventType.EndTrack, 0, StemsBeatCount * stemsTicksPerQuarter));
+
+        events.PrepareForExport();
+        MidiFile.Export(path, events);
+    }
+
+    // A note is TWO events. PrepareForExport sorts a track and closes it, but it does not release
+    // anything: a note added without its off event is still sounding when the track ends, which the
+    // reader reports as a problem with the file (and every player then has to guess about).
+    private static void AddNote(IList<MidiEvent> track, long tick, int channel, int note, int velocity, int length)
+    {
+        var noteOn = new NoteOnEvent(tick, channel, note, velocity, length);
+
+        track.Add(noteOn);
+        track.Add(noteOn.OffEvent);
     }
 
     /// <summary>Plays a float array straight out, so a generated buffer can be written to a file.</summary>

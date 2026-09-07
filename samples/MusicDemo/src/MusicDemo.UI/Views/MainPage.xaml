@@ -39,6 +39,8 @@
                 <Button Content="Play Track A (fade in)" HorizontalAlignment="Stretch" Click="OnPlayTrackA" />
                 <Button Content="Play adaptive stems" HorizontalAlignment="Stretch" Click="OnPlayStems" />
                 <Button Content="Play MIDI theme (SFZ)" HorizontalAlignment="Stretch" Click="OnPlayMidi" />
+                <Button Content="Play MIDI theme (Decent Sampler)" HorizontalAlignment="Stretch" Click="OnPlaySamplerTheme" />
+                <Button Content="Play the stems export" HorizontalAlignment="Stretch" Click="OnPlaySongStems" />
                 <Button Content="Play playlist (A then B)" HorizontalAlignment="Stretch" Click="OnPlayPlaylist" />
                 <Button Content="Next in playlist" HorizontalAlignment="Stretch" Click="OnNextInPlaylist" />
                 <Button Content="Stop (fade out)" HorizontalAlignment="Stretch" Click="OnStop" />
@@ -50,6 +52,8 @@
                 <Button Content="Crossfade to B - on the next bar" HorizontalAlignment="Stretch" Click="OnCrossfadeOnBar" />
                 <Button Content="Crossfade back to A - on the next bar" HorizontalAlignment="Stretch" Click="OnCrossfadeBackOnBar" />
                 <Button Content="Cancel the queued transition" HorizontalAlignment="Stretch" Click="OnCancelQueued" />
+                <TextBlock Text="The Decent Sampler theme changes tempo partway through. Play it, wait for the change, then crossfade on the next bar: the wait follows the file's tempo map, and the log says what a fixed grid would have answered instead."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
 
                 <TextBlock Text="ADAPTIVE STEMS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
                 <TextBlock Text="Three layers in one sample-locked voice. Play the stems above first."
@@ -62,6 +66,14 @@
                 <Slider x:Name="LeadSlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnLeadGainChanged" />
                 <Button Content="Fade the lead in over 2s" HorizontalAlignment="Stretch" Click="OnFadeLeadIn" />
                 <Button Content="Fade the lead out over 2s" HorizontalAlignment="Stretch" Click="OnFadeLeadOut" />
+
+                <TextBlock Text="STEMS FROM A DOWNLOAD" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
+                <TextBlock Text="The same feature over a stems export - stem files and their MIDI, side by side, named for each other. The layers and the beat grid come from the export itself. Play the stems export above first."
+                           TextWrapping="Wrap" Foreground="#94A3B8" FontSize="12" />
+                <Button Content="Fade the Drums layer in" HorizontalAlignment="Stretch" Click="OnFadeSongDrumsIn" />
+                <Button Content="Fade the Drums layer out" HorizontalAlignment="Stretch" Click="OnFadeSongDrumsOut" />
+                <Button Content="Fade the Bass layer in" HorizontalAlignment="Stretch" Click="OnFadeSongBassIn" />
+                <Button Content="Fade the Bass layer out" HorizontalAlignment="Stretch" Click="OnFadeSongBassOut" />
 
                 <TextBlock Text="MIDI LAYERS" FontWeight="Bold" Foreground="#93C5FD" Margin="0,10,0,0" />
                 <TextBlock Text="The same idea, per MIDI channel. Play the MIDI theme above first."

@@ -93,7 +93,7 @@
     <PackageReference Include="SkiaSharp" Version="4.151.0" />
     <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.238.140" />
     <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.238.89" />
-    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.245.150" />
+    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.250.60" />
     <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.242.1163" />
   </ItemGroup>
 

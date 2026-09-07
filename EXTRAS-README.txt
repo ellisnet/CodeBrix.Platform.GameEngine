@@ -113,11 +113,13 @@ samples/MusicDemo
 The MUSIC SYSTEM reference: volume buses, fades and equal-power crossfades,
 ducking (both the fire-and-forget and the held-handle forms), stingers,
 playlists, layered adaptive stems (MusicStemSet) and the MIDI per-channel route,
-transitions quantised to the next bar, marker jump points, and the global pause
-freezing music and fades together. It GENERATES every asset it plays on first
-run (src/libs/MusicDemo.Game/MusicAssetFactory.cs builds the stems, two tracks, a
-stinger, an SFZ instrument and a MIDI file with markers), so the repository
-carries no binary music and the sample runs anywhere.
+MIDI rendered through an SFZ and through a Decent Sampler instrument, a
+bar-quantised crossfade across a tempo change, a stems export loaded with
+MusicStemSet.FromSunoStems, marker jump points, and the global pause freezing
+music and fades together. It GENERATES every asset it plays on first run
+(src/libs/MusicDemo.Game/MusicAssetFactory.cs builds the layers, two tracks, a
+stinger, an SFZ and a Decent Sampler instrument, two MIDI files and a whole stems
+export), so the repository carries no binary music and the sample runs anywhere.
 
 NOTE: no sample wires up gamepads. Controller behavior is verified with
 tools/padcheck instead, because the thing that has to be checked is physical

@@ -60,7 +60,8 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 * Physics: movement, easing, scripted motion, and collision detection — with named collision profiles, per-tile and per-animation-frame collision shapes and types, all authorable in a `.gts` tilesheet definition
 * Input: keyboard, mouse, gamepad, and touch (with tap, swipe and pinch gestures)
 * Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
-* A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems, and transitions quantised to the next beat or bar
+* MIDI music rendered live through a sampled instrument — SoundFont, SFZ and Decent Sampler instruments — with per-channel layering, a tempo control that does not change pitch, and MPE
+* A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems (including the stems of a Suno download, loaded straight from the zip or folder), and transitions quantised to the next beat or bar — exactly, through the tempo map, even where the music changes tempo
 * Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
 * A global pause that parks the whole engine at near-zero CPU and shifts every time baseline on resume, so nothing bursts or teleports
 * A UI-agnostic core with a render-surface-adapter seam for headless unit testing

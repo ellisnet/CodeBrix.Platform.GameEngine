@@ -2,26 +2,48 @@ using System;
 using System.Collections.Generic;
 using CodeBrix.Audio.Playback;
 using CodeBrix.Audio.Synth;
+using CodeBrix.Audio.Synth.DecentSampler;
 using CodeBrix.Audio.Synth.Sfz;
+using Microsoft.Extensions.Logging;
 
 namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 
 /// <summary>
-/// Music that is a MIDI sequence rendered live through a SoundFont (<c>.sf2</c>) or an SFZ
-/// instrument (<c>.sfz</c>) — the format that costs kilobytes on disk instead of megabytes, and
-/// whose arrangement the game can change while it plays.
+/// Music that is a MIDI sequence rendered live through a sampled instrument — a SoundFont
+/// (<c>.sf2</c>), an SFZ instrument (<c>.sfz</c>) or a Decent Sampler instrument
+/// (<c>.dspreset</c>, <c>.dslibrary</c>, <c>.dsbundle</c>, or a folder holding a preset) — the
+/// format that costs kilobytes on disk instead of megabytes, and whose arrangement the game can
+/// change while it plays.
 /// </summary>
 /// <remarks>
 /// <para>
-/// SHARE THE INSTRUMENT. A SoundFont runs to tens of megabytes and an SFZ instrument decodes its
-/// samples eagerly, so load through <see cref="SoundFontCache"/> or <see cref="SfzInstrumentCache"/>
-/// and hand the same instance to every track. The MIDI sequence itself is small.
+/// SHARE THE INSTRUMENT. A sampled instrument is the expensive thing in the whole system: a
+/// SoundFont runs to tens of megabytes, and an SFZ or Decent Sampler library decodes its samples
+/// into memory. Load through <see cref="SoundFontCache"/>,
+/// <see cref="SfzInstrumentCache"/> or
+/// <see cref="DecentSamplerInstrumentCache"/> and hand the same instance to every track that wants
+/// that sound. The MIDI sequence itself is small. The path constructor is the exception and says so.
 /// </para>
 /// <para>
-/// SFZ FROM AN ASSET PACK IS NOT THE SAME AS SF2 FROM ONE. A <c>.sf2</c> is a single file and loads
-/// from a <see cref="System.IO.Stream"/>. A <c>.sfz</c> is a text file that REFERENCES sample files
-/// beside it on disk, so it needs a real directory: an SFZ instrument packed into an
-/// <see cref="Assets.AssetsFile"/> must be extracted before it can be loaded.
+/// ONE INSTRUMENT PER INDEPENDENT PERFORMANCE (Decent Sampler). A preset's knob positions and
+/// modulated parameters are INSTRUMENT state, not synthesizer state, because that is where the
+/// format puts them — a binding writes the group's volume. Two tracks over one instrument therefore
+/// share every knob, which is exactly right for two players of the same sound and wrong when each
+/// part must move its own. Give those their own instrument.
+/// </para>
+/// <para>
+/// AN INSTRUMENT FROM AN ASSET PACK MUST REACH THE DISK, EXCEPT SF2. A <c>.sf2</c> is a single file
+/// and loads from a <see cref="System.IO.Stream"/>. A <c>.sfz</c> is a text file that REFERENCES
+/// sample files beside it, so it needs a real directory. A <c>.dspreset</c> is the same: its
+/// <c>Samples/</c> folder sits beside it. A <c>.dslibrary</c> or <c>.dsbundle</c> IS one file, but
+/// it is read IN PLACE BY PATH — nothing is unpacked — so it too must exist on disk. Anything
+/// packed into an <see cref="Assets.AssetsFile"/> therefore has to be extracted before it can be
+/// loaded; only the SoundFont can be handed over as a stream.
+/// </para>
+/// <para>
+/// MPE GOES THROUGH THE PLAYER. All three engines implement it, and the settings live on
+/// <see cref="Player"/>, so <c>track.Player.MpeMode = MpeMode.Auto</c> (with
+/// <c>MpeMemberBendRange</c> beside it) is the whole of it. Those settings persist across loads.
 /// </para>
 /// <para>
 /// Like every music track it plays on <see cref="AudioBus.Music"/> and suspends with the global
@@ -39,11 +61,20 @@ public sealed class MidiMusicTrack : MusicTrack, IEnginePausableAudio, IMixerVoi
 
     private bool _disposed;
     private bool _pausedByEngine;
+    private IReadOnlyList<string> _problems = Array.Empty<string>();
 
     /// <summary>Creates a track over a MIDI sequence rendered by a SoundFont.</summary>
     /// <param name="key">A name for the track.</param>
     /// <param name="soundFont">The SoundFont to render with — share one instance across tracks.</param>
     /// <param name="sequence">The sequence to play.</param>
+    /// <remarks>
+    /// <see cref="MusicTrack.Timeline"/> is filled in from the sequence's own tempo map, so
+    /// quantised transitions land on the beat even in a piece whose tempo moves. FOUR BEATS TO THE
+    /// BAR IS ASSUMED, because a <see cref="MidiSequence"/> keeps no time signature; set
+    /// <see cref="MusicTrack.Timeline"/> to a <see cref="MusicTimeline"/> of your own for another
+    /// meter, or read the FILE (through the path constructor or
+    /// <see cref="MusicTimeline.FromMidiFile"/>) to pick up its time signature and markers as well.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">An argument is null.</exception>
     public MidiMusicTrack(string key, SoundFont soundFont, MidiSequence sequence)
         : this(key)
@@ -51,12 +82,23 @@ public sealed class MidiMusicTrack : MusicTrack, IEnginePausableAudio, IMixerVoi
         ArgumentNullException.ThrowIfNull(soundFont);
         ArgumentNullException.ThrowIfNull(sequence);
         _player.Load(soundFont, sequence);
+
+        // A SoundFont reports no problems of its own; the sequence still can.
+        AdoptSequence(null, sequence);
     }
 
     /// <summary>Creates a track over a MIDI sequence rendered by an SFZ instrument.</summary>
     /// <param name="key">A name for the track.</param>
     /// <param name="instrument">The SFZ instrument to render with — share one instance across tracks.</param>
     /// <param name="sequence">The sequence to play.</param>
+    /// <remarks>
+    /// <see cref="MusicTrack.Timeline"/> is filled in from the sequence's own tempo map, so
+    /// quantised transitions land on the beat even in a piece whose tempo moves. FOUR BEATS TO THE
+    /// BAR IS ASSUMED, because a <see cref="MidiSequence"/> keeps no time signature; set
+    /// <see cref="MusicTrack.Timeline"/> to a <see cref="MusicTimeline"/> of your own for another
+    /// meter, or read the FILE (through the path constructor or
+    /// <see cref="MusicTimeline.FromMidiFile"/>) to pick up its time signature and markers as well.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">An argument is null.</exception>
     public MidiMusicTrack(string key, SfzInstrument instrument, MidiSequence sequence)
         : this(key)
@@ -64,26 +106,70 @@ public sealed class MidiMusicTrack : MusicTrack, IEnginePausableAudio, IMixerVoi
         ArgumentNullException.ThrowIfNull(instrument);
         ArgumentNullException.ThrowIfNull(sequence);
         _player.Load(instrument, sequence);
+
+        AdoptSequence(instrument.Problems, sequence);
+    }
+
+    /// <summary>Creates a track over a MIDI sequence rendered by a Decent Sampler instrument.</summary>
+    /// <param name="key">A name for the track.</param>
+    /// <param name="instrument">
+    /// The Decent Sampler instrument to render with. Share one instance across tracks that play the
+    /// same sound — through a <see cref="DecentSamplerInstrumentCache"/>, or the process-wide
+    /// <see cref="MidiMusicPlayer.SharedDecentSamplerCache"/> the path constructor uses — and give a
+    /// track its own instrument when it must move its own knobs.
+    /// </param>
+    /// <param name="sequence">The sequence to play.</param>
+    /// <remarks>
+    /// <para>
+    /// The track never disposes the instrument: a cache owns it, or the caller does.
+    /// </para>
+    /// <para>
+    /// <see cref="MusicTrack.Timeline"/> is filled in from the sequence's own tempo map, so
+    /// quantised transitions land on the beat even in a piece whose tempo moves. FOUR BEATS TO THE
+    /// BAR IS ASSUMED, because a <see cref="MidiSequence"/> keeps no time signature; set
+    /// <see cref="MusicTrack.Timeline"/> to a <see cref="MusicTimeline"/> of your own for another
+    /// meter, or read the FILE (through the path constructor or
+    /// <see cref="MusicTimeline.FromMidiFile"/>) to pick up its time signature and markers as well.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is null.</exception>
+    public MidiMusicTrack(string key, DecentSamplerInstrument instrument, MidiSequence sequence)
+        : this(key)
+    {
+        ArgumentNullException.ThrowIfNull(instrument);
+        ArgumentNullException.ThrowIfNull(sequence);
+        _player.Load(instrument, sequence);
+
+        AdoptSequence(instrument.Problems, sequence);
     }
 
     /// <summary>
     /// Creates a track from an instrument file and a MIDI file on disk. The instrument's extension
-    /// decides the synthesizer: <c>.sfz</c> loads an SFZ instrument, anything else a SoundFont.
+    /// decides the synthesizer: <c>.sfz</c> loads an SFZ instrument, <c>.dspreset</c>,
+    /// <c>.dslibrary</c> and <c>.dsbundle</c> (or a FOLDER holding a <c>.dspreset</c>) load a Decent
+    /// Sampler instrument, and anything else is read as a SoundFont.
     /// </summary>
     /// <param name="key">A name for the track.</param>
-    /// <param name="instrumentPath">Path to a <c>.sf2</c> or <c>.sfz</c> file.</param>
+    /// <param name="instrumentPath">
+    /// Path to a <c>.sf2</c>, <c>.sfz</c>, <c>.dspreset</c>, <c>.dslibrary</c> or <c>.dsbundle</c>
+    /// file, or to a folder holding a Decent Sampler preset.
+    /// </param>
     /// <param name="midiFilePath">Path to a Standard MIDI File.</param>
     /// <remarks>
     /// <para>
-    /// This overload loads the instrument fresh every time. For more than one track over the same
-    /// instrument, load it through a cache and use the overloads above instead.
+    /// A DECENT SAMPLER INSTRUMENT NAMED HERE IS SHARED; THE OTHER TWO ARE NOT. The engine resolves
+    /// a Decent Sampler path through the process-wide
+    /// <see cref="MidiMusicPlayer.SharedDecentSamplerCache"/>, so two tracks naming the same library
+    /// decode it once — and share its knob state, which is the caveat in the type's own remarks. A
+    /// SoundFont or SFZ instrument named here is loaded FRESH every time; for more than one track
+    /// over one of those, load it through a cache and use the overloads above.
     /// </para>
     /// <para>
-    /// It is also the overload that fills in <see cref="MusicTrack.Timeline"/>, because it is the
-    /// only one with a MIDI FILE to read the tempo, time signature and markers from — the
-    /// <see cref="MidiSequence"/> the other overloads take has already discarded them. Quantised
-    /// transitions and <see cref="MusicManager.JumpToMarker"/> therefore work with no further
-    /// wiring here, and need <see cref="MusicTrack.Timeline"/> set by hand there.
+    /// It is also the overload that reads the MIDI FILE for its time signature and its markers, so
+    /// <see cref="MusicTrack.Timeline"/> comes back with the real meter (6/8 is three quarter-note
+    /// beats to the bar) and with <see cref="MusicManager.JumpToMarker"/> working. The tempo map
+    /// comes with it either way: the overloads above take a <see cref="MidiSequence"/>, which keeps
+    /// its tempo map but not its meta events' timing, and assume four beats to the bar.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">A path is null.</exception>
@@ -95,6 +181,52 @@ public sealed class MidiMusicTrack : MusicTrack, IEnginePausableAudio, IMixerVoi
         _player.Load(instrumentPath, midiFilePath);
 
         Timeline = MusicTimeline.FromMidiFile(midiFilePath);
+
+        // The player holds the instrument it built from the path and does not hand it back, so the
+        // instrument's own problems are not reachable from here; the sequence's are.
+        RecordProblems(null, _player.Sequence?.Problems);
+    }
+
+    // Everything the three instrument-and-sequence constructors share: the grid comes from the
+    // sequence's tempo map (four beats to the bar, because a sequence keeps no time signature), and
+    // the two sources of problems are gathered and logged once.
+    private void AdoptSequence(IReadOnlyList<string>? instrumentProblems, MidiSequence sequence)
+    {
+        Timeline = MusicTimeline.FromMidiSequence(sequence);
+        RecordProblems(instrumentProblems, sequence.Problems);
+    }
+
+    // One warning per track, not one per line: a machine-generated file can report several, and a
+    // game that ships a hundred of them should still have a readable log.
+    private void RecordProblems(IReadOnlyList<string>? instrumentProblems, IReadOnlyList<string>? sequenceProblems)
+    {
+        var instrumentCount = instrumentProblems?.Count ?? 0;
+        var sequenceCount = sequenceProblems?.Count ?? 0;
+
+        if (instrumentCount + sequenceCount == 0)
+        {
+            return;
+        }
+
+        var combined = new List<string>(instrumentCount + sequenceCount);
+
+        if (instrumentProblems is not null)
+        {
+            combined.AddRange(instrumentProblems);
+        }
+
+        if (sequenceProblems is not null)
+        {
+            combined.AddRange(sequenceProblems);
+        }
+
+        _problems = combined;
+
+        Engine.Logger.LogWarning(
+            "Music track '{Key}' loaded with {Count} problem(s) reported by its instrument or MIDI file: {Problems}",
+            Key,
+            combined.Count,
+            string.Join(" | ", combined));
     }
 
     private MidiMusicTrack(string key)
@@ -148,6 +280,32 @@ public sealed class MidiMusicTrack : MusicTrack, IEnginePausableAudio, IMixerVoi
     /// player's, so the music bus and any active duck still apply.
     /// </remarks>
     public MidiMusicPlayer Player => _player;
+
+    /// <summary>
+    /// What the instrument and the MIDI file complained about when this track was loaded. Empty
+    /// when both read cleanly.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two sources, in this order. THE INSTRUMENT: an SFZ or Decent Sampler instrument reports the
+    /// opcodes or features it asked for and did not get, a sample it could not resolve, and any
+    /// memory decision that went against what the preset asked. A preset that needs an oscillator or
+    /// a creative effect this engine does not synthesize still LOADS, and says here what would make
+    /// it complete. A SoundFont reports nothing. THE FILE: a MIDI file is read leniently, so one
+    /// that breaks a rule — an out-of-range key signature, a truncated track — plays instead of
+    /// throwing, and says here what was wrong with it. That is common in machine-generated files.
+    /// </para>
+    /// <para>
+    /// The list is also logged once as a warning when the track loads, so a game that never reads
+    /// this property still leaves a trace of why an asset sounds odd.
+    /// </para>
+    /// <para>
+    /// The path constructor reports the FILE's problems only: the instrument it built is held inside
+    /// the player and is not handed back. Pass the instrument in — through one of the overloads that
+    /// takes one — to see both.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> Problems => _problems;
 
     /// <summary>
     /// Overrides the global engine pause's decision for this track. Music always suspends by

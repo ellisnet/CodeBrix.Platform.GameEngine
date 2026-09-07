@@ -1,5 +1,7 @@
 using System;
 using System.Drawing;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using CodeBrix.Platform.GameEngine;
@@ -7,6 +9,7 @@ using CodeBrix.Platform.GameEngine.Audio;
 using CodeBrix.Platform.GameEngine.Drawing.Direct;
 using CodeBrix.Platform.GameEngine.Host.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using static CodeBrix.Platform.GameEngine.Drawing.Direct.TextBlock;
 
@@ -34,9 +37,11 @@ public sealed class MusicDemoGame
 
     private MusicPlaylist _playlist;
     private MusicStemSet _stems;
+    private MusicStemSet _songStems;
     private FileMusicTrack _trackA;
     private FileMusicTrack _trackB;
     private MidiMusicTrack _midiTrack;
+    private MidiMusicTrack _samplerTrack;
     private TextBlock _readout;
     private IDisposable _heldDuck;
 
@@ -48,8 +53,16 @@ public sealed class MusicDemoGame
     /// <summary>The stem set, for the per-layer controls.</summary>
     public MusicStemSet Stems => _stems;
 
+    /// <summary>
+    /// The stem set built from the generated stems export, for the per-layer controls on that one.
+    /// </summary>
+    public MusicStemSet SongStems => _songStems;
+
     /// <summary>The MIDI track, for the per-channel layering and speed controls.</summary>
     public MidiMusicTrack MidiTrack => _midiTrack;
+
+    /// <summary>The Decent Sampler MIDI track, whose file changes tempo partway through.</summary>
+    public MidiMusicTrack SamplerTrack => _samplerTrack;
 
     /// <summary>Whether the engine is currently paused.</summary>
     public bool IsPaused => Engine.Instance.IsPaused;
@@ -75,6 +88,12 @@ public sealed class MusicDemoGame
 
         BuildTracks();
         BuildReadoutDisplay(renderSurface, adapter.Width, adapter.Height);
+
+        // Off unless the environment asks for it; see MusicDemoWalkthrough for what it is for.
+        if (MusicDemoWalkthrough.IsRequested)
+        {
+            MusicDemoWalkthrough.Start(this);
+        }
     }
 
     private void BuildTracks()
@@ -110,12 +129,67 @@ public sealed class MusicDemoGame
             Timeline = timeline,
         };
 
+        // The same thing again through the other instrument format, over a file whose tempo CHANGES
+        // partway through. A .dspreset is not one file - its Samples folder sits beside it - so it
+        // is loaded by path from disk, never from an asset pack.
+        _samplerTrack = new MidiMusicTrack("Decent Sampler Theme",
+            MusicAssetFactory.DecentSamplerPresetPath, MusicAssetFactory.TempoChangeMidiPath)
+        {
+            IsLooping = true,
+        };
+
+        // A stems export - the shape a music service hands over - straight into a stem set. The
+        // grid comes out of the MIDI beside the recordings, so bar-locked layer changes and
+        // bar-quantised transitions work with nothing else set up.
+        _songStems = MusicStemSet.FromSunoStems("Song Stems", MusicAssetFactory.StemsExportFolder,
+            "Vocals", "Drums", "Bass");
+        _songStems.IsLooping = true;
+
         _playlist = new MusicPlaylist { RepeatMode = MusicRepeatMode.All };
         _playlist.Add(_trackA);
         _playlist.Add(_trackB);
 
         resources.LoadFromFile("stinger", MusicAssetFactory.StingerPath);
         resources.LoadFromFile("voice", MusicAssetFactory.VoicePath);
+
+        LogWhatWasLoaded();
+    }
+
+    // The sample writes a line per loaded track because the interesting facts - which instrument
+    // format was used, what the file said about its own tempo, what the export could not account
+    // for - are otherwise invisible on a screen full of buttons.
+    private void LogWhatWasLoaded()
+    {
+        Engine.Logger.LogInformation(
+            "MusicDemo: MIDI track '{Key}' loaded through an SFZ instrument. Grid: {Tempo:0} BPM, "
+            + "{BeatsPerBar:0} beats/bar, markers: {Markers}. Problems: {Problems}.",
+            _midiTrack.Key,
+            _midiTrack.Timeline?.BeatsPerMinute ?? 0,
+            _midiTrack.Timeline?.BeatsPerBar ?? 0,
+            _midiTrack.Timeline is null ? "(none)" : string.Join(", ", _midiTrack.Timeline.Markers),
+            _midiTrack.Problems.Count);
+
+        Engine.Logger.LogInformation(
+            "MusicDemo: MIDI track '{Key}' loaded through a Decent Sampler instrument ({Instrument}). "
+            + "Grid: {Tempo:0} BPM, {BeatsPerBar:0} beats/bar, tempo changes: {Changes}, markers: {Markers}. "
+            + "Problems: {Problems}.",
+            _samplerTrack.Key,
+            Path.GetFileName(MusicAssetFactory.DecentSamplerPresetPath),
+            _samplerTrack.Timeline?.BeatsPerMinute ?? 0,
+            _samplerTrack.Timeline?.BeatsPerBar ?? 0,
+            _samplerTrack.Timeline?.HasTempoChanges ?? false,
+            _samplerTrack.Timeline is null ? "(none)" : string.Join(", ", _samplerTrack.Timeline.Markers),
+            _samplerTrack.Problems.Count);
+
+        Engine.Logger.LogInformation(
+            "MusicDemo: stem set '{Key}' loaded from the stems export in '{Folder}': {Stems}. "
+            + "Grid: {Tempo:0} BPM, tempo changes: {Changes}. Problems: {Problems}.",
+            _songStems.Key,
+            Path.GetFileName(MusicAssetFactory.StemsExportFolder),
+            string.Join(", ", _songStems.Stems.Select(stem => stem.Name)),
+            _songStems.Timeline?.BeatsPerMinute ?? 0,
+            _songStems.Timeline?.HasTempoChanges ?? false,
+            _songStems.Problems.Count);
     }
 
     private static CachedSound[] DecodeStems()
@@ -181,11 +255,29 @@ public sealed class MusicDemoGame
             text.AppendLine();
         }
 
+        if (_songStems is not null)
+        {
+            text.Append("Song stems  : ");
+            foreach (var stem in _songStems.Stems)
+            {
+                text.Append($"{stem.Name} {Meter(stem.Gain)}  ");
+            }
+
+            text.AppendLine();
+        }
+
         if (_midiTrack?.Timeline is not null)
         {
             var markers = string.Join(", ", _midiTrack.Timeline.Markers);
             text.AppendLine($"MIDI grid   : {_midiTrack.Timeline.BeatsPerMinute:0} BPM, "
                             + $"{_midiTrack.Timeline.BeatsPerBar:0} beats/bar, markers: {markers}");
+        }
+
+        if (_samplerTrack?.Timeline is not null)
+        {
+            var timeline = _samplerTrack.Timeline;
+            text.AppendLine($"Sampler grid: {timeline.BeatsPerMinute:0} BPM to start, "
+                            + $"{timeline.BeatsPerBar:0} beats/bar, tempo changes: {timeline.HasTempoChanges}");
         }
 
         if (pausing || Engine.Instance.IsPaused)
@@ -210,18 +302,74 @@ public sealed class MusicDemoGame
     /// <summary>Crossfades to the second linear track, optionally waiting for the next bar.</summary>
     /// <param name="quantize">The boundary to wait for.</param>
     public void CrossfadeToTrackB(MusicTransitionQuantize quantize)
-        => MusicManager.Instance.CrossfadeTo(_trackB, TimeSpan.FromSeconds(2), quantize);
+    {
+        LogQuantisedWait(quantize);
+        MusicManager.Instance.CrossfadeTo(_trackB, TimeSpan.FromSeconds(2), quantize);
+    }
 
     /// <summary>Crossfades back to the first linear track, optionally waiting for the next bar.</summary>
     /// <param name="quantize">The boundary to wait for.</param>
     public void CrossfadeToTrackA(MusicTransitionQuantize quantize)
-        => MusicManager.Instance.CrossfadeTo(_trackA, TimeSpan.FromSeconds(2), quantize);
+    {
+        LogQuantisedWait(quantize);
+        MusicManager.Instance.CrossfadeTo(_trackA, TimeSpan.FromSeconds(2), quantize);
+    }
+
+    // Says what the grid answered and what a constant-tempo grid WOULD have answered. On a file
+    // whose tempo changes the two differ, which is the whole point of quantising through the map.
+    private static void LogQuantisedWait(MusicTransitionQuantize quantize)
+    {
+        if (quantize == MusicTransitionQuantize.Immediate)
+        {
+            return;
+        }
+
+        var current = MusicManager.Instance.NowPlaying;
+        var timeline = current?.Timeline;
+
+        if (current is null || timeline is null)
+        {
+            Engine.Logger.LogInformation(
+                "MusicDemo: a {Quantize} transition was asked for with no grid to wait on, so it runs now.",
+                quantize);
+
+            return;
+        }
+
+        var position = current.Position;
+        var wait = timeline.TimeToNextBoundary(position, quantize);
+        var grid = quantize == MusicTransitionQuantize.Bar ? timeline.SecondsPerBar : timeline.SecondsPerBeat;
+        var atOpeningTempo = grid - (position.TotalSeconds % grid);
+
+        Engine.Logger.LogInformation(
+            "MusicDemo: {Quantize} transition from '{Key}' at {Position:0.000}s waits {Wait:0.000}s. "
+            + "The opening tempo is {Tempo:0} BPM (tempo changes: {Changes}), and a grid fixed at it "
+            + "would have said {Fixed:0.000}s.",
+            quantize, current.Key, position.TotalSeconds, wait.TotalSeconds,
+            timeline.BeatsPerMinute, timeline.HasTempoChanges, atOpeningTempo);
+    }
 
     /// <summary>Plays the layered stem set. Only the pad layer starts audible.</summary>
     public void PlayStems() => MusicManager.Instance.Play(_stems, TimeSpan.FromSeconds(1));
 
     /// <summary>Plays the MIDI theme, rendered live through the generated SFZ instrument.</summary>
     public void PlayMidi() => MusicManager.Instance.Play(_midiTrack, TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// Plays the second MIDI theme, rendered live through the generated Decent Sampler instrument.
+    /// Its file changes tempo partway through, so a bar-quantised transition away from it has to
+    /// follow the tempo map to land on the beat.
+    /// </summary>
+    public void PlayDecentSamplerTheme() => MusicManager.Instance.Play(_samplerTrack, TimeSpan.FromSeconds(1));
+
+    /// <summary>Plays the stem set built from the generated stems export.</summary>
+    public void PlaySongStems() => MusicManager.Instance.Play(_songStems, TimeSpan.FromSeconds(1));
+
+    /// <summary>Fades one layer of the stems export in or out.</summary>
+    /// <param name="stemName">The stem's name, as it appears on the export's file names.</param>
+    /// <param name="target">The gain to fade to, 0.0 to 1.0.</param>
+    public void FadeSongStem(string stemName, float target)
+        => _songStems?[stemName].FadeTo(target, TimeSpan.FromSeconds(2));
 
     /// <summary>Plays the two linear tracks as a repeating playlist, crossfading between them.</summary>
     public void PlayPlaylist() => MusicManager.Instance.Play(_playlist, TimeSpan.FromSeconds(2));
@@ -306,7 +454,9 @@ public sealed class MusicDemoGame
         MusicManager.Instance.Dispose();
 
         _stems?.Dispose();
+        _songStems?.Dispose();
         _midiTrack?.Dispose();
+        _samplerTrack?.Dispose();
         _trackA?.Dispose();
         _trackB?.Dispose();
 

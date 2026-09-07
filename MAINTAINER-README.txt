@@ -227,6 +227,28 @@ need a person with a controller — see tools/padcheck (EXTRAS-README.txt), and
 RUN BOTH OF ITS DRIVE MODES: the default mode supplies its own refresh and
 therefore cannot detect a missing refresh on the InputPump path.
 
+THE MusicDemo WALKTHROUGH
+------------------------
+The music system's most important behaviours are audible-only: which instrument
+format actually loaded, what a file said about its own tempo, and whether a
+bar-quantised transition across a TEMPO CHANGE lands where the tempo map says it
+should. None of that can be asserted from a screenshot, and a headless test
+cannot play anything.
+
+samples/MusicDemo therefore carries an unattended pass over exactly those
+behaviours (src/libs/MusicDemo.Game/MusicDemoWalkthrough.cs). It is OFF unless
+the environment variable MUSICDEMO_SELFTEST is set to 1, so a person running the
+sample never meets it. Build the head and run it with a timeout, then read the
+log:
+
+    dotnet build samples/MusicDemo/src/MusicDemo.LinuxX11 -c Release
+    cd samples/MusicDemo/src/MusicDemo.LinuxX11/bin/Release/net10.0
+    DISPLAY=:0 MUSICDEMO_SELFTEST=1 timeout 90 ./MusicDemo.LinuxX11 > /tmp/musicdemo.log 2>&1
+
+Every check writes a PASS/FAIL line prefixed MUSICDEMO-SELFTEST, and the last
+line is "RESULT PASS (n/n checks)". Delete the head's GeneratedMusic folder first
+when the asset factory has changed; assets are written only when missing.
+
 PACKAGING AND PUBLISHING
 ========================
 Both packable projects set GeneratePackageOnBuild=true, so an ordinary Release

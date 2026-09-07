@@ -60,6 +60,10 @@ public sealed partial class MainPage : Page
 
     private void OnPlayMidi(object sender, object e) => Demo?.PlayMidi();
 
+    private void OnPlaySamplerTheme(object sender, object e) => Demo?.PlayDecentSamplerTheme();
+
+    private void OnPlaySongStems(object sender, object e) => Demo?.PlaySongStems();
+
     private void OnPlayPlaylist(object sender, object e) => Demo?.PlayPlaylist();
 
     private void OnNextInPlaylist(object sender, object e) => Demo?.NextInPlaylist();
@@ -129,6 +133,16 @@ public sealed partial class MainPage : Page
         BassSlider.Value = stems[1].Gain * 100.0;
         LeadSlider.Value = stems[2].Gain * 100.0;
     }
+
+    // ----- the stems export -----
+
+    private void OnFadeSongDrumsIn(object sender, object e) => Demo?.FadeSongStem("Drums", 1f);
+
+    private void OnFadeSongDrumsOut(object sender, object e) => Demo?.FadeSongStem("Drums", 0f);
+
+    private void OnFadeSongBassIn(object sender, object e) => Demo?.FadeSongStem("Bass", 1f);
+
+    private void OnFadeSongBassOut(object sender, object e) => Demo?.FadeSongStem("Bass", 0f);
 
     // ----- MIDI layers -----
 

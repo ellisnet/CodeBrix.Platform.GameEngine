@@ -41,13 +41,19 @@ namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 /// <see cref="FileMusicTrack"/>, which streams.
 /// </para>
 /// <para>
+/// FROM A STEMS DOWNLOAD. <see cref="FromSunoStems(string, string, string[])"/> builds a set
+/// straight from a stems export — the zip or folder a generative music service hands over —
+/// choosing the layers by name, and filling <see cref="MusicTrack.Timeline"/> in from the MIDI
+/// that ships beside the recordings so bar-locked layer changes work with no further wiring.
+/// </para>
+/// <para>
 /// FOR MIDI MUSIC, DO NOT USE THIS. A <see cref="MidiMusicTrack"/> layers far more cheaply through
 /// per-channel volume on the one sequence it is already playing — no second copy of anything, no
 /// shared-format requirement, and the layers cannot drift because there is only one sequence. See
 /// <see cref="MidiMusicTrack.SetLayerVolume"/>.
 /// </para>
 /// </remarks>
-public sealed class MusicStemSet : MusicTrack
+public sealed partial class MusicStemSet : MusicTrack
 {
     private readonly StemMixSampleProvider _provider;
     private readonly MusicStem[] _stems;

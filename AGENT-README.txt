@@ -994,17 +994,44 @@ place the policy lives, so a game does not reimplement fade timing and
 
   TRACKS — a track is a HANDLE, not a transport. Read its state and set its
   Volume; play/stop/crossfade/seek through the manager, which owns the fades.
-  Two kinds:
+  Three kinds:
     * FileMusicTrack   — wraps an AudioResource, so it STREAMS from the loaded
                          data. The right choice for long linear music.
     * MidiMusicTrack   — a MIDI sequence rendered live through a SoundFont
-                         (.sf2) or SFZ instrument (.sfz). Kilobytes on disk
-                         instead of megabytes, and the arrangement can change
-                         while it plays. SHARE THE INSTRUMENT via
-                         SoundFontCache / SfzInstrumentCache. NOTE a .sf2 is
-                         one file and loads from a Stream; a .sfz is text that
-                         REFERENCES sample files beside it on disk, so an SFZ
-                         packed into an AssetsFile must be extracted first.
+                         (.sf2), an SFZ instrument (.sfz) or a Decent Sampler
+                         instrument (.dspreset, .dslibrary, .dsbundle, or a
+                         FOLDER holding a preset). Kilobytes on disk instead of
+                         megabytes, and the arrangement can change while it
+                         plays. SHARE THE INSTRUMENT via SoundFontCache,
+                         SfzInstrumentCache or DecentSamplerInstrumentCache.
+                         The (key, instrumentPath, midiFilePath) overload
+                         resolves a Decent Sampler path through the
+                         process-wide MidiMusicPlayer.SharedDecentSamplerCache,
+                         so two tracks naming one library decode it once AND
+                         SHARE ITS KNOBS; a SoundFont or SFZ named there is
+                         loaded fresh each time. Pass the instrument in instead
+                         for a part that must move its own knobs.
+                         track.Problems lists what the instrument and the MIDI
+                         file objected to, logged once at load and empty for a
+                         clean pair; the PATH form reports the FILE's only,
+                         because the player keeps the instrument it built and
+                         does not hand it back — pass the instrument in when
+                         both lists matter. A file that breaks a rule still
+                         LOADS: the MIDI reader is lenient by default, so what
+                         it had to work around (a note left sounding when its
+                         track ended, say) is reported there rather than
+                         thrown, and what it can simply ignore (a key signature
+                         outside the range the specification allows, which
+                         machine-generated files do write) is not reported at
+                         all. MPE settings live on track.Player.
+                         AN INSTRUMENT FROM AN ASSET PACK MUST REACH THE DISK,
+                         EXCEPT .sf2: a .sf2 is one file and loads from a
+                         Stream, a .sfz and a .dspreset REFERENCE sample files
+                         beside them, and a .dslibrary or .dsbundle is one file
+                         but is read IN PLACE BY PATH. Extract all but the .sf2
+                         from an AssetsFile before loading.
+    * MusicStemSet     — several recordings of one piece playing in lock, with
+                         the game fading layers in and out. See ADAPTIVE STEMS.
 
   TRANSPORT: Play(track, fadeIn), CrossfadeTo(track, duration), Stop(fadeOut),
   Pause(), Resume(), Seek(), NowPlaying, IsPlaying, ActiveFadeCount.
@@ -1050,7 +1077,7 @@ place the policy lives, so a game does not reimplement fade timing and
   reload, and audio playback position does not round-trip anyway. A game that
   wants it saves the track key itself. This is a decision, not an oversight.
 
-  ADAPTIVE STEMS — TWO ROUTES, PICK DELIBERATELY:
+  ADAPTIVE STEMS — THREE ROUTES, PICK DELIBERATELY:
 
     (a) MIDI, via per-channel volume. The cheap one, and the default answer for
         synthesized music:
@@ -1094,6 +1121,44 @@ place the policy lives, so a game does not reimplement fade timing and
         sum to N, and stems are expected to be mixed so the combinations the
         game actually uses do not clip.
 
+    (c) A Suno stems download, via MusicStemSet.FromSunoStems. Such a download
+        is a set of files named "<Title> (<Stem>).wav" with the song's MIDI
+        beside them, as a zip or as a folder — both load:
+            var stems = MusicStemSet.FromSunoStems("battle", zipOrFolder,
+                                                   "Drums", "Bass", "Guitar");
+            MusicManager.Instance.Play(stems);
+        Name the layers the game will actually cross-fade; pass none for every
+        stem that carries audio. A name the export does not have throws,
+        LISTING THE ONES IT DOES. From there it is an ordinary MusicStemSet,
+        except that its Timeline is already filled in from the MIDI that ships
+        beside the recordings — so bar-locked layer changes and bar-quantised
+        transitions work with nothing else set up, and they follow the tempo
+        exactly (a generated arrangement writes one tempo event per beat).
+        MusicStemSet.Problems carries whatever the export could not account for
+        — an unrecognised stem name, a stem of the wrong length, MIDI that
+        would not read. It is logged once and never thrown.
+        COST: every stem is decoded to memory, about 23 MB per stereo minute at
+        48 kHz — so a four-minute song is about 92 MB PER STEM, and taking all
+        ten of a full export is most of a gigabyte. Three or four named layers
+        is the difference between a feature and a memory problem. Call
+        AudioSystem.Initialize first so the decode converts to the device rate
+        once (a download is 48 kHz whatever the game is running at).
+        A ZIP IS UNPACKED ON DEMAND into a cache folder keyed by the download,
+        so it is unpacked once and reused; SunoLoadOptions.CacheFolder chooses
+        where, and a game that ships a download should point it at its own
+        writable folder. A folder is read where it lies.
+        THE FULL MIX IS NOT A STEM. When the download includes one it is a long
+        linear piece: load it with AudioResourceManager and play it as a
+        FileMusicTrack, which streams.
+        ALIGNMENT MEASUREMENT IS FORCED OFF here. It lines a recording up with
+        its MIDI, which is a MIDI concern, and it costs a decode of every stem;
+        the recordings are already locked to each other.
+        GETTING THE DOWNLOAD RIGHT: choose "Extract Stems and MIDI", Auto split,
+        Full Song, and tick WAV and MIDI; set Tempo to "Follow tempo changes",
+        which keeps the map that a fixed tempo would flatten. TAKE THE WAVs —
+        they line up exactly with each other, where an MP3 carries an encoder
+        delay. An export with only MP3s loads and plays; it is simply worse.
+
   QUANTISED TRANSITIONS (bar / beat) — the difference between music that
   changes when the game says so and music that changes when the MUSIC says so:
       MusicManager.Instance.CrossfadeTo(combat, TimeSpan.FromSeconds(2),
@@ -1107,15 +1172,21 @@ place the policy lives, so a game does not reimplement fade timing and
   cannot land after the game changed its mind.
 
   WHERE THE GRID COMES FROM — MusicTrack.Timeline (a MusicTimeline):
-    * MIDI loaded FROM A PATH fills it in automatically. The MidiMusicTrack
+    * MIDI loaded FROM A PATH fills it in completely. The MidiMusicTrack
       (key, instrumentPath, midiFilePath) overload parses the file a SECOND
-      time as CodeBrix.Audio.Midi.MidiFile to read the tempo, time signature and
-      markers. That second parse is necessary, not lazy: MidiSequence — the
-      thing that PLAYS — bakes the tempo map into absolute times and keeps no
-      meta events, so the grid genuinely is not in it any more. A MIDI file is
-      kilobytes and this happens once at load. The other MidiMusicTrack
-      overloads take a MidiSequence and so have no file to read: set Timeline
-      by hand there.
+      time as CodeBrix.Audio.Midi.MidiFile to read the tempo MAP, the time
+      signature and the markers. That second parse is necessary, not lazy:
+      MidiSequence — the thing that PLAYS — bakes the tempo map into absolute
+      times and keeps no meta events, so the markers and the meter genuinely
+      are not in it any more. A MIDI file is kilobytes and this happens once at
+      load.
+    * MIDI loaded from a MidiSequence fills it in from the sequence's OWN tempo
+      map (MusicTimeline.FromMidiSequence), so the grid is exact there too —
+      but FOUR BEATS TO THE BAR IS ASSUMED and there are no markers, because a
+      sequence keeps its tempo map and not its meta events' timing. Set
+      Timeline yourself for another meter, or read the FILE for markers.
+    * A SUNO STEMS DOWNLOAD fills it in from the MIDI in the export
+      (MusicStemSet.FromSunoStems, above): four beats to the bar, no markers.
     * DECODED AUDIO: the game supplies it —
           track.Timeline = new MusicTimeline(beatsPerMinute: 128, beatsPerBar: 4);
       There is NO inference from a decoded stream on offer. Beat detection is a
@@ -1125,10 +1196,19 @@ place the policy lives, so a game does not reimplement fade timing and
       the log. It is never silently dropped.
   A beat is the tempo's own unit (a quarter note, for MIDI), so BeatsPerBar is
   fractional where the time signature's beat unit differs: 6/8 read from a MIDI
-  file is 3 quarter-note beats to the bar, not 6. The grid is CONSTANT — one
-  tempo throughout. A file that changes tempo sets HasTempoChanges and is
-  quantised against its FIRST tempo, so bars drift after the change. Markers
-  are exempt: they are converted through the whole tempo map.
+  file is 3 quarter-note beats to the bar, not 6.
+  THE GRID FOLLOWS THE TEMPO. A timeline given a tempo in its constructor is a
+  CONSTANT grid. A timeline built from MIDI carries the source's whole tempo map
+  (MusicTimeline.TempoMap, a CodeBrix.Audio.Synth.MidiTempoMap) and quantises
+  THROUGH it, so a beat or bar boundary is exactly where the file puts it
+  however often the tempo moves. That matters because a machine-generated arrangement
+  routinely carries ONE TEMPO EVENT PER BEAT, and quantising such a file against
+  its first tempo alone would be off the beat within a few bars.
+  HasTempoChanges says whether the source's tempo varies at all; SecondsPerBeat
+  and SecondsPerBar describe the tempo the piece STARTS at, so ask
+  TimeToNextBoundary rather than doing that arithmetic. Markers come through the
+  same map, so a jump point and the bar line it sits on agree. A game can build
+  the same thing itself: new MusicTimeline(tempoMap, beatsPerBar).
 
   JUMP POINTS: a MIDI file's markers (and cue points) become
   MusicTimeline.Markers (MusicMarker(string Name, TimeSpan Time)), and
@@ -2531,8 +2611,20 @@ API TRAPS
   [] MusicDuckMultiplier is owned by MusicManager — duck through PushDuck/
      Duck, never by writing AudioMixer.MusicVolume. ClearDucks() rescues a
      leaked duck handle.
-  [] A .sfz instrument references sample files on disk — extract it from an
-     AssetsFile before loading; a .sf2 loads from a Stream.
+  [] AN INSTRUMENT FROM AN ASSET PACK MUST REACH THE DISK, EXCEPT .sf2. A .sfz
+     and a .dspreset REFERENCE sample files beside them; a .dslibrary or
+     .dsbundle IS one file, but it is read IN PLACE BY PATH and nothing is
+     unpacked. Only a .sf2 loads from a Stream. Extract the rest from an
+     AssetsFile before loading.
+  [] Decent Sampler knob positions and modulated parameters are INSTRUMENT
+     state, not synthesizer state, so two tracks over one instrument share
+     them — right for two players of the same sound, wrong when each part must
+     move its own. The (key, instrumentPath, midiFilePath) constructor shares by
+     design, through the process-wide MidiMusicPlayer.SharedDecentSamplerCache;
+     hand a part its own instrument when it needs its own knobs.
+  [] MusicStemSet.FromSunoStems decodes every stem it is given to memory (about
+     23 MB per stereo minute at 48 kHz). Name the layers the game will actually
+     cross-fade rather than taking the whole export.
   [] Never call IGamepadManager.Update() yourself — the engine refreshes
      gamepad state in both modes.
 
@@ -2636,14 +2728,18 @@ consumer for the subsystems it exercises. None of them is in the repository
       The MUSIC SYSTEM reference: volume buses, fades and equal-power
       crossfades, ducking (fire-and-forget and the held-handle form),
       stingers, playlists, layered adaptive stems (MusicStemSet) AND the MIDI
-      per-channel route, transitions quantised to the next bar, marker jump
+      per-channel route, MIDI rendered through both an SFZ and a Decent
+      Sampler instrument, a bar-quantised crossfade ACROSS A TEMPO CHANGE (the
+      log says what the tempo map answered and what a fixed grid would have),
+      a stems export loaded with MusicStemSet.FromSunoStems, marker jump
       points, and the global pause freezing music and fades together. It
       GENERATES every asset it plays on first run (src/libs/MusicDemo.Game/
-      MusicAssetFactory.cs: stems, two tracks, a stinger, an SFZ instrument
-      and a MIDI file with markers), so the sample runs anywhere.
+      MusicAssetFactory.cs: layers, two tracks, a stinger, an SFZ and a Decent
+      Sampler instrument, two MIDI files and a whole stems export), so the
+      sample runs anywhere.
 
-TESTS — headless unit tests that double as usage references (456 in the engine
-core suite, 45 in the gamepad suite, 2 in the host suite):
+TESTS — headless unit tests that double as usage references, in an engine core
+suite, a gamepad suite and a host suite:
 
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests
       EngineStateRoundTripTests.cs / EngineStateSaveTests.cs — populated-graph
@@ -2681,9 +2777,12 @@ core suite, 45 in the gamepad suite, 2 in the host suite):
       CachedSoundTests.cs / SfxVoicePoolTests.cs — decode-once preload and the
           pool's cull-policy selection (nothing opens the audio device)
       AudioMixerTests.cs, MusicManagerTests.cs, MusicStemSetTests.cs,
-          MusicTimelineTests.cs, MusicQuantizedTransitionTests.cs,
-          MidiMusicTrackLayerTests.cs — the music system, with fades advanced
-          by hand and MIDI fixtures built in code
+          MusicStemSetSunoTests.cs, MusicTimelineTests.cs,
+          MusicQuantizedTransitionTests.cs, MidiMusicTrackLayerTests.cs,
+          MidiMusicTrackInstrumentTests.cs — the music system, with fades
+          advanced by hand and every instrument, MIDI file and stems export
+          built in code (SyntheticInstrumentAssets.cs), so no binary fixture is
+          needed to run them
       FixedRateGameLoopTests.cs, PixelFramePresenterTests.cs — Mode B
       InputPumpGamepadTests.cs — the Mode-B gamepad refresh path
       EngineConfigurationTests.cs, ServiceCollectionExtensionsTests.cs,
@@ -2914,9 +3013,19 @@ AUDIO / MUSIC
         Seek(); PushDuck(depth, attack, release) -> IDisposable; Duck(depth, attack, hold, release);
         ClearDucks(); PlayStinger(key, volume, duckMusic); Play(playlist, crossfade); Next(crossfade);
         JumpToMarker(name); HasPendingTransition; CancelPendingTransition(); NowPlaying; IsPlaying
-    MusicTimeline(beatsPerMinute, beatsPerBar); MusicMarker(string Name, TimeSpan Time)
-    MusicStemSet(key, params stem paths): this[stem].FadeTo(volume, TimeSpan)
-    MidiMusicTrack: SetLayerVolume(channel, v); FadeLayerTo(channel, v, TimeSpan); SetLayerPan; Speed
+    MusicTimeline(beatsPerMinute, beatsPerBar[, offsetSeconds, markers]);
+        MusicTimeline(MidiTempoMap, beatsPerBar[, offsetSeconds, markers]);
+        static FromMidiFile(path) / FromMidiEvents(events) / FromMidiSequence(sequence, beatsPerBar);
+        TempoMap; HasTempoChanges; BeatsPerMinute; BeatsPerBar; SecondsPerBeat; SecondsPerBar;
+        OffsetSeconds; Markers; TimeToNextBoundary(position, quantize); TryGetMarker(name, out time);
+        MusicMarker(string Name, TimeSpan Time)
+    MusicStemSet(key, params stem paths) / (key, IReadOnlyDictionary<string,string>) /
+        (key, names, decoded): this[stem].FadeTo(volume, TimeSpan); Stems; Count; Problems;
+        static FromSunoStems(key, stemsZipOrFolder[, SunoLoadOptions], params stemNames)
+    MidiMusicTrack(key, instrumentPath, midiFilePath) -- .sf2 / .sfz / .dspreset / .dslibrary /
+        .dsbundle / a folder holding a preset; (key, SoundFont | SfzInstrument |
+        DecentSamplerInstrument, MidiSequence); Problems; Player (MPE lives here);
+        SetLayerVolume(channel, v); FadeLayerTo(channel, v, TimeSpan); SetLayerPan; Speed
 
 SAVE / LOAD / ASSETS / CONFIG
     EngineState: SaveToFile(path, compress); static LoadFromFile(path, compressed[, parts]);

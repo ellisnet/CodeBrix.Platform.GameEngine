@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CodeBrix.Audio.Midi;
+using CodeBrix.Audio.Synth;
 using Microsoft.Extensions.Logging;
 
 namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
@@ -30,8 +31,9 @@ public readonly record struct MusicMarker(string Name, TimeSpan Time)
 /// <remarks>
 /// <para>
 /// FOR MIDI MUSIC THIS IS FREE. <see cref="FromMidiFile"/> reads the tempo, the time signature and
-/// the markers out of the file, and <see cref="MidiMusicTrack"/> does it automatically when it is
-/// constructed from a path. Nothing needs to be measured or typed in.
+/// the markers out of the file, and <see cref="FromMidiSequence"/> takes the tempo out of a sequence
+/// that has already been parsed for playback. <see cref="MidiMusicTrack"/> does one or the other for
+/// itself, whichever it was given. Nothing needs to be measured or typed in.
 /// </para>
 /// <para>
 /// FOR A DECODED AUDIO FILE THE GAME MUST SUPPLY IT. There is no way to infer a grid from a decoded
@@ -44,10 +46,19 @@ public readonly record struct MusicMarker(string Name, TimeSpan Time)
 /// MusicManager.Instance.CrossfadeTo(combat, TimeSpan.FromSeconds(2), MusicTransitionQuantize.Bar);
 /// </code>
 /// <para>
-/// THE GRID IS CONSTANT. One tempo, one time signature, running the length of the piece. A file that
-/// changes tempo part-way is reported through <see cref="HasTempoChanges"/> and quantised against
-/// its FIRST tempo, so bar boundaries drift after the change. Markers are exempt: they are converted
-/// through the whole tempo map, so a jump point stays exactly where the composer put it.
+/// THE GRID FOLLOWS THE TEMPO. A timeline given a tempo in its constructor is a constant grid: one
+/// tempo, one time signature, running the length of the piece. A timeline given a
+/// <see cref="MidiTempoMap"/> — which is what <see cref="FromMidiFile"/>,
+/// <see cref="FromMidiEvents"/> and <see cref="FromMidiSequence"/> produce — quantises THROUGH the
+/// map, so a beat or bar boundary is exactly where the file puts it however often the tempo moves.
+/// <see cref="HasTempoChanges"/> says whether the source's tempo varies at all, and
+/// <see cref="TempoMap"/> is the map itself, or null for a constant grid.
+/// </para>
+/// <para>
+/// That matters because a machine-generated arrangement routinely carries ONE TEMPO EVENT PER BEAT.
+/// Quantising such a file against its first tempo alone would put every transition off the beat
+/// within a few bars. Markers are placed through the same map, so a jump point and the bar line it
+/// sits on agree.
 /// </para>
 /// </remarks>
 public sealed class MusicTimeline
@@ -74,7 +85,47 @@ public sealed class MusicTimeline
         Markers = markers ?? _noMarkers;
     }
 
-    /// <summary>The tempo. For a timeline read from MIDI, a beat is a quarter note.</summary>
+    /// <summary>
+    /// Creates a timeline whose grid follows a MIDI tempo map, so beats and bars stay exact through
+    /// every tempo change in the piece.
+    /// </summary>
+    /// <param name="tempoMap">
+    /// The map to quantise against. <see cref="CodeBrix.Audio.Synth.MidiSequence.TempoMap"/> is one;
+    /// so is the map <see cref="FromMidiEvents"/> builds out of a file's tempo events.
+    /// </param>
+    /// <param name="beatsPerBar">How many beats make a bar — 4 for common time. Must be positive.</param>
+    /// <param name="offsetSeconds">
+    /// Where the first beat falls, for a recording that does not start exactly on one. Leading
+    /// silence or a pickup bar goes here.
+    /// </param>
+    /// <param name="markers">Named points in the piece, or null for none.</param>
+    /// <remarks>
+    /// A beat here is a quarter note, which is the unit the map measures in, so a time signature
+    /// whose beat unit is not a quarter note is expressed in <paramref name="beatsPerBar"/> — 6/8 is
+    /// three beats to the bar, not six, exactly as for the fixed-tempo constructor.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="tempoMap"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The bar length is not positive, or the map's initial tempo is not positive.
+    /// </exception>
+    public MusicTimeline(MidiTempoMap tempoMap, double beatsPerBar = 4, double offsetSeconds = 0, IReadOnlyList<MusicMarker>? markers = null)
+    {
+        ArgumentNullException.ThrowIfNull(tempoMap);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(beatsPerBar, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(tempoMap.InitialBeatsPerMinute, 0, nameof(tempoMap));
+
+        TempoMap = tempoMap;
+        BeatsPerMinute = tempoMap.InitialBeatsPerMinute;
+        BeatsPerBar = beatsPerBar;
+        OffsetSeconds = offsetSeconds;
+        Markers = markers ?? _noMarkers;
+        HasTempoChanges = !tempoMap.IsConstant;
+    }
+
+    /// <summary>
+    /// The tempo. For a timeline read from MIDI, a beat is a quarter note; where a
+    /// <see cref="TempoMap"/> is present this is the tempo the piece STARTS at.
+    /// </summary>
     public double BeatsPerMinute { get; }
 
     /// <summary>
@@ -90,15 +141,33 @@ public sealed class MusicTimeline
     public IReadOnlyList<MusicMarker> Markers { get; }
 
     /// <summary>
-    /// Whether the source changed tempo after its first tempo event. When true, this timeline
-    /// describes the FIRST tempo only, and bar boundaries after the change are approximate.
+    /// The tempo map the grid follows, or <see langword="null"/> when this timeline is a constant
+    /// grid at <see cref="BeatsPerMinute"/>.
+    /// </summary>
+    /// <remarks>
+    /// It is the source's own map, so it converts between time and beats in both directions:
+    /// <c>BeatPositionAt</c> for where a moment falls musically, <c>TimeAt</c> for when a beat
+    /// happens. <see cref="TimeToNextBoundary"/> uses it for exactly that.
+    /// </remarks>
+    public MidiTempoMap? TempoMap { get; }
+
+    /// <summary>
+    /// Whether the source's tempo varies. When true the grid FOLLOWS the tempo exactly, because a
+    /// timeline read from MIDI quantises through the whole <see cref="TempoMap"/>.
     /// </summary>
     public bool HasTempoChanges { get; private init; }
 
-    /// <summary>The length of one beat.</summary>
+    /// <summary>
+    /// The length of one beat at <see cref="BeatsPerMinute"/>. Where a <see cref="TempoMap"/> is
+    /// present that is the INITIAL tempo, so this describes the opening of the piece rather than the
+    /// whole of it; <see cref="TimeToNextBoundary"/> is what knows where the beats actually are.
+    /// </summary>
     public double SecondsPerBeat => 60.0 / BeatsPerMinute;
 
-    /// <summary>The length of one bar.</summary>
+    /// <summary>
+    /// The length of one bar at <see cref="BeatsPerMinute"/>, with the same caveat as
+    /// <see cref="SecondsPerBeat"/> for a piece whose tempo varies.
+    /// </summary>
     public double SecondsPerBar => SecondsPerBeat * BeatsPerBar;
 
     /// <summary>
@@ -108,15 +177,14 @@ public sealed class MusicTimeline
     /// <param name="position">The current playback position.</param>
     /// <param name="quantize">The boundary to wait for.</param>
     /// <returns>The wait.</returns>
+    /// <remarks>
+    /// With a <see cref="TempoMap"/> the answer is worked out in BEAT space and converted back
+    /// through the map, so it is exact on both sides of a tempo change. Without one the grid is the
+    /// constant <see cref="SecondsPerBeat"/> / <see cref="SecondsPerBar"/>.
+    /// </remarks>
     public TimeSpan TimeToNextBoundary(TimeSpan position, MusicTransitionQuantize quantize)
     {
         if (quantize == MusicTransitionQuantize.Immediate)
-        {
-            return TimeSpan.Zero;
-        }
-
-        var grid = quantize == MusicTransitionQuantize.Bar ? SecondsPerBar : SecondsPerBeat;
-        if (grid <= 0)
         {
             return TimeSpan.Zero;
         }
@@ -129,10 +197,51 @@ public sealed class MusicTimeline
             return TimeSpan.FromSeconds(-elapsed);
         }
 
+        if (TempoMap is not null)
+        {
+            return TimeToNextBoundaryOnMap(elapsed, quantize);
+        }
+
+        var grid = quantize == MusicTransitionQuantize.Bar ? SecondsPerBar : SecondsPerBeat;
+        if (grid <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
         var remaining = grid - (elapsed % grid);
 
         // Landing exactly on a boundary should go now rather than wait a whole bar for the next one.
         return remaining >= grid - 1e-9 ? TimeSpan.Zero : TimeSpan.FromSeconds(remaining);
+    }
+
+    // The same question asked in beats rather than seconds, which is the only way to answer it when
+    // the tempo moves: the grid is regular in beat space and irregular in time, so the boundary is
+    // found there and converted back through the map.
+    private TimeSpan TimeToNextBoundaryOnMap(double elapsed, MusicTransitionQuantize quantize)
+    {
+        var map = TempoMap!;
+        var grid = quantize == MusicTransitionQuantize.Bar ? BeatsPerBar : 1.0;
+
+        if (grid <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var beat = map.BeatPositionAt(TimeSpan.FromSeconds(elapsed));
+        var gridsElapsed = beat / grid;
+        var fraction = gridsElapsed - Math.Floor(gridsElapsed);
+
+        // Landing exactly on a boundary should go now rather than wait a whole bar for the next one,
+        // the same rule the constant grid applies.
+        if (fraction <= 1e-9)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var next = (Math.Floor(gridsElapsed) + 1) * grid;
+        var wait = map.TimeAt(next).TotalSeconds - elapsed;
+
+        return wait <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(wait);
     }
 
     /// <summary>Finds a marker by name; the comparison ignores case.</summary>
@@ -206,6 +315,11 @@ public sealed class MusicTimeline
     /// </summary>
     /// <param name="events">The event collection to read.</param>
     /// <returns>The timeline, or <see langword="null"/> when the collection carries no tempo.</returns>
+    /// <remarks>
+    /// The tempo events are walked ONCE and used twice: to place the markers, and to build the
+    /// <see cref="TempoMap"/> the grid then follows. Markers and boundaries therefore agree by
+    /// construction — a marker on a bar line is on that bar line.
+    /// </remarks>
     public static MusicTimeline? FromMidiEvents(MidiEventCollection events)
     {
         if (events is null)
@@ -220,7 +334,6 @@ public sealed class MusicTimeline
         }
 
         double? firstTempo = null;
-        var tempoCount = 0;
         double beatsPerBar = 4;
         var haveTimeSignature = false;
 
@@ -235,7 +348,6 @@ public sealed class MusicTimeline
                 switch (midiEvent)
                 {
                     case TempoEvent tempo:
-                        tempoCount++;
                         tempoMap.Add((tempo.AbsoluteTime, tempo.Tempo));
                         if (firstTempo is null || tempo.AbsoluteTime == 0)
                         {
@@ -284,10 +396,83 @@ public sealed class MusicTimeline
                 TimeSpan.FromSeconds(TicksToSeconds(markerEvents[i].Tick, ticksPerQuarter, tempoMap, firstTempo.Value)));
         }
 
-        return new MusicTimeline(firstTempo.Value, beatsPerBar, 0, markers)
+        return new MusicTimeline(BuildTempoMap(ticksPerQuarter, tempoMap, firstTempo.Value), beatsPerBar, 0, markers);
+    }
+
+    /// <summary>
+    /// Reads the grid out of a MIDI sequence that has already been parsed for playback — its tempo
+    /// map, and nothing else.
+    /// </summary>
+    /// <param name="sequence">The sequence to read.</param>
+    /// <param name="beatsPerBar">
+    /// How many beats make a bar — 4 for common time, which is what a file carrying no time
+    /// signature means. Must be positive.
+    /// </param>
+    /// <returns>The timeline, or <see langword="null"/> when <paramref name="sequence"/> is null.</returns>
+    /// <remarks>
+    /// <para>
+    /// NO TIME SIGNATURE AND NO MARKERS, unlike <see cref="FromMidiFile"/>. A
+    /// <see cref="CodeBrix.Audio.Synth.MidiSequence"/> keeps its tempo map but not its meta events'
+    /// timing: its text metas carry TICKS and the sequence does not expose the tick resolution to
+    /// convert them with, so a marker could not be placed even though its name is there. Read the
+    /// FILE when the game needs markers or a meter other than the one passed here.
+    /// </para>
+    /// <para>
+    /// What it does give is the exact grid, which is the part that matters for a quantised
+    /// transition, and it costs no second parse.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The bar length is not positive.</exception>
+    public static MusicTimeline? FromMidiSequence(MidiSequence sequence, double beatsPerBar = 4)
+    {
+        var map = sequence?.TempoMap;
+
+        return map is null ? null : new MusicTimeline(map, beatsPerBar);
+    }
+
+    // Turns the tick-and-tempo pairs the event walk collected into the map the grid quantises
+    // against. A tick becomes a beat by dividing by the file's resolution, and a time by the same
+    // walk the markers use, so the two cannot disagree.
+    private static MidiTempoMap BuildTempoMap(int ticksPerQuarter, List<(long Tick, double Bpm)> tempoMap, double initialBpm)
+    {
+        var changes = new List<MidiTempoChange>(tempoMap.Count + 1);
+
+        // A file whose first tempo event is not at tick 0 runs its lead-in at that tempo, which is
+        // what the marker walk assumes too. Saying so explicitly keeps MidiTempoMap from prepending
+        // the MIDI default of 120 and changing the tempo this timeline reports.
+        if (tempoMap.Count == 0 || tempoMap[0].Tick > 0)
         {
-            HasTempoChanges = tempoCount > 1,
-        };
+            changes.Add(new MidiTempoChange(TimeSpan.Zero, 0, initialBpm));
+        }
+
+        var seconds = 0.0;
+        var lastTick = 0L;
+        var bpm = initialBpm;
+
+        foreach (var (changeTick, changeBpm) in tempoMap)
+        {
+            if (changeTick > lastTick)
+            {
+                seconds += (changeTick - lastTick) / (double)ticksPerQuarter * (60.0 / bpm);
+                lastTick = changeTick;
+            }
+
+            bpm = changeBpm;
+
+            // A tempo event that restates the tempo already running is not a change: it must not
+            // make HasTempoChanges true, and it would move no boundary anyway.
+            if (changes.Count > 0 && changes[^1].BeatsPerMinute.Equals(changeBpm))
+            {
+                continue;
+            }
+
+            changes.Add(new MidiTempoChange(
+                TimeSpan.FromSeconds(seconds),
+                changeTick / (double)ticksPerQuarter,
+                changeBpm));
+        }
+
+        return new MidiTempoMap(changes);
     }
 
     // Walks the tempo map so a marker's time is right even in a piece that changes tempo.
