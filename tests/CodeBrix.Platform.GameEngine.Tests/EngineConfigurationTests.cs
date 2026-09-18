@@ -58,6 +58,7 @@ public class EngineConfigurationTests
         file.EngineConfig.TargetFPS.Should().Be(60);
         file.EngineConfig.SamplingTimeForCPS.Should().Be(1.5);
         file.EngineConfig.TimeBetweenMouseEvents.Should().Be(0.03);
+        file.EngineConfig.StartInitializationWaitTimeout.Should().Be(30f);
     }
 
     [Fact]
@@ -137,6 +138,56 @@ public class EngineConfigurationTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void StartInitializationWaitTimeout_defaults_to_thirty_seconds()
+        => new EngineConfiguration().StartInitializationWaitTimeout.Should().Be(30f);
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-1f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(float.PositiveInfinity)]
+    public void StartInitializationWaitTimeout_clamps_non_positive_and_non_finite_values(float value)
+    {
+        //Arrange
+        var config = new EngineConfiguration();
+
+        //Act
+        config.StartInitializationWaitTimeout = value;
+
+        //Assert
+        config.StartInitializationWaitTimeout.Should().Be(0.001f);
+    }
+
+    [Fact]
+    public void StartInitializationWaitTimeout_caps_at_a_value_a_TimeSpan_can_express()
+    {
+        //Arrange
+        var config = new EngineConfiguration();
+
+        //Act
+        config.StartInitializationWaitTimeout = float.MaxValue;
+
+        //Assert (Start() feeds this straight to TimeSpan.FromSeconds, which overflows above the cap)
+        Action toTimeSpan = () => TimeSpan.FromSeconds(config.StartInitializationWaitTimeout);
+        toTimeSpan.Should().NotThrow();
+        config.StartInitializationWaitTimeout.Should().BeGreaterThan(0f);
+    }
+
+    [Fact]
+    public void StartInitializationWaitTimeout_keeps_an_ordinary_positive_value()
+    {
+        //Arrange
+        var config = new EngineConfiguration();
+
+        //Act
+        config.StartInitializationWaitTimeout = 2.5f;
+
+        //Assert
+        config.StartInitializationWaitTimeout.Should().Be(2.5f);
     }
 
     [Fact]

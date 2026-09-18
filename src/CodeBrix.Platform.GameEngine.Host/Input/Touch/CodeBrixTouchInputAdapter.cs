@@ -27,12 +27,18 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Touch;
 /// in which case primary mouse-button input is exposed as touch <c>Id = 0</c>.
 /// </para>
 /// <para>
+/// Every <see cref="TouchPoint.Position"/> is in logical Backbuffer ScreenPx, mapped from the
+/// element's own pixels through the render surface adapter's presentation transform; a contact on
+/// the letterbox or pillarbox margins keeps its outside coordinates rather than being clamped.
+/// </para>
+/// <para>
 /// Dispose this adapter to unsubscribe from all pointer events.
 /// </para>
 /// </remarks>
 public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 {
     private readonly UIElement _element;
+    private readonly PointerCoordinateMapper _coordinates;
     private readonly bool _emulateMouse;
     private readonly Dictionary<int, TouchPoint> _activeTouches = new();
     private TouchPoint[] _activeTouchesSnapshot = Array.Empty<TouchPoint>();
@@ -58,6 +64,7 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
     public CodeBrixTouchInputAdapter(UIElement element, bool emulateMouse = false)
     {
         _element = element ?? throw new ArgumentNullException(nameof(element));
+        _coordinates = new PointerCoordinateMapper(element);
         _emulateMouse = emulateMouse;
 
         _element.PointerPressed += OnPointerPressed;
@@ -81,7 +88,7 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
             return;
 
         var id = GetTouchId(e);
-        var touch = new TouchPoint(id, ToPoint(point.Position), TouchPhase.Began);
+        var touch = new TouchPoint(id, _coordinates.ToScreenPx(point.Position), TouchPhase.Began);
 
         _activeTouches[id] = touch;
         RebuildSnapshot();
@@ -100,7 +107,7 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
             return;
 
         var point = e.GetCurrentPoint(_element);
-        var touch = new TouchPoint(id, ToPoint(point.Position), TouchPhase.Moved);
+        var touch = new TouchPoint(id, _coordinates.ToScreenPx(point.Position), TouchPhase.Moved);
 
         _activeTouches[id] = touch;
         RebuildSnapshot();
@@ -117,7 +124,7 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
             return;
 
         var point = e.GetCurrentPoint(_element);
-        var touch = new TouchPoint(id, ToPoint(point.Position), TouchPhase.Ended);
+        var touch = new TouchPoint(id, _coordinates.ToScreenPx(point.Position), TouchPhase.Ended);
 
         _activeTouches.Remove(id);
         RebuildSnapshot();
@@ -179,9 +186,6 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
     /// </summary>
     private static int GetTouchId(PointerRoutedEventArgs e)
         => IsMouse(e) ? 0 : (int)e.Pointer.PointerId;
-
-    private static Point ToPoint(global::Windows.Foundation.Point position)
-        => new Point((int)position.X, (int)position.Y);
 
     /// <summary>
     /// Releases all resources held by this adapter, unsubscribing from all pointer events.

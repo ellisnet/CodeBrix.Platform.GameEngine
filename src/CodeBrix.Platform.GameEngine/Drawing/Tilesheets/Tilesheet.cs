@@ -23,6 +23,14 @@ public sealed class Tilesheet : IDisposable
     /// </summary>
     public event Action<Tilesheet>? Disposed;
 
+    // Name lookup for Regions, kept in step by AddRegion and RemoveRegion so that GetRegion does
+    // not have to scan. Regions is a public list, so the index is only ever a cache: each entry
+    // remembers the position it was built from, a lookup checks that the position still holds the
+    // same region, and the index is rebuilt whenever the list moved underneath it.
+    private readonly Dictionary<string, (int Position, TilesheetRegion Region)> _regionIndex =
+        new(StringComparer.OrdinalIgnoreCase);
+    private int _indexedRegionCount = -1;
+
     #region ctors
 
     private Tilesheet() { }
@@ -267,6 +275,8 @@ public sealed class Tilesheet : IDisposable
             collisionType);
 
         Regions.Add(region);
+        _regionIndex[region.Name] = (Regions.Count - 1, region);
+        _indexedRegionCount = Regions.Count;
 
         return region;
     }
@@ -284,10 +294,29 @@ public sealed class Tilesheet : IDisposable
         if (string.IsNullOrWhiteSpace(name))
             return null;
 
+        if (_indexedRegionCount != Regions.Count)
+            SyncRegionIndex();
+
+        if (_regionIndex.TryGetValue(name, out var entry))
+        {
+            if (IsCurrentIndexEntry(entry))
+                return entry.Region;
+
+            // The entry no longer matches the list, so the list was changed directly. Rebuild and
+            // take the answer from the fresh index.
+            SyncRegionIndex();
+
+            if (_regionIndex.TryGetValue(name, out entry) && IsCurrentIndexEntry(entry))
+                return entry.Region;
+        }
+
         foreach (var region in Regions)
         {
             if (string.Equals(region.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                SyncRegionIndex();
                 return region;
+            }
         }
 
         return null;
@@ -309,6 +338,10 @@ public sealed class Tilesheet : IDisposable
             return false;
 
         Regions.Remove(region);
+
+        // Removing from the middle shifts the positions of everything after it, so drop the index
+        // and let the next lookup rebuild it.
+        InvalidateRegionIndex();
 
         if (dispose)
             region.Dispose();
@@ -638,6 +671,36 @@ public sealed class Tilesheet : IDisposable
             collisionType);
     }
 
+    private bool IsCurrentIndexEntry((int Position, TilesheetRegion Region) entry)
+    {
+        return (uint)entry.Position < (uint)Regions.Count
+            && ReferenceEquals(Regions[entry.Position], entry.Region);
+    }
+
+    private void InvalidateRegionIndex()
+    {
+        _regionIndex.Clear();
+        _indexedRegionCount = -1;
+    }
+
+    private void SyncRegionIndex()
+    {
+        _regionIndex.Clear();
+
+        for (int position = 0; position < Regions.Count; position++)
+        {
+            var region = Regions[position];
+
+            if (region is null || string.IsNullOrWhiteSpace(region.Name))
+                continue;
+
+            // first match wins, which is the documented behaviour of GetRegion
+            _regionIndex.TryAdd(region.Name, (position, region));
+        }
+
+        _indexedRegionCount = Regions.Count;
+    }
+
     #endregion private methods
 
     // --- IDisposable pattern ---
@@ -667,6 +730,7 @@ public sealed class Tilesheet : IDisposable
             }
 
             Regions.Clear();
+            InvalidateRegionIndex();
 
             // dispose the main bitmaps
             SkBitmap?.Dispose();

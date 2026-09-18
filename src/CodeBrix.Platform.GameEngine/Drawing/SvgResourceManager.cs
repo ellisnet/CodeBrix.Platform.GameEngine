@@ -43,6 +43,25 @@ public sealed class SvgResourceManager : IDisposable
     }
 
     /// <summary>
+    /// Loads an SVG resource from a stream.
+    /// </summary>
+    /// <param name="key">Unique resource key.</param>
+    /// <param name="stream">The stream containing the SVG document. It is read from its current
+    /// position; the caller keeps ownership and disposes it.</param>
+    /// <returns>The loaded resource. An existing resource with the same key is disposed and replaced.</returns>
+    /// <exception cref="ArgumentException">Thrown when the key is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the stream does not contain a parsable SVG document.</exception>
+    public SvgResource LoadFromStream(string key, Stream stream)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var resource = SvgResource.Load(stream);
+        return AddOrReplace(key, resource);
+    }
+
+    /// <summary>
     /// Loads all SVG resources from an <see cref="AssetsFile"/>.
     /// </summary>
     /// <param name="resourceFile">The assets file containing SVG entries.</param>

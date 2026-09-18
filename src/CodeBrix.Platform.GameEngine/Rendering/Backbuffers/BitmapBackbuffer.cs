@@ -1,6 +1,5 @@
 using System.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing;
-using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
@@ -25,10 +24,9 @@ public sealed class BitmapBackbuffer : BackbufferBase
     private SKSurface? _surface;
     private bool _disposed;
 
-    // resize request (written by UI thread, read by render thread)
-    private int _reqW, _reqH;           // 0 means "no request"
-
-    private int _resizeFlag;            // 0 = none, 1 = pending
+    // resize request (written by any thread, applied by the render thread in BeginFrame)
+    private sealed record Resolution(int Width, int Height);
+    private Resolution? _requestedResolution;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BitmapBackbuffer"/> class with the specified dimensions.
@@ -58,9 +56,7 @@ public sealed class BitmapBackbuffer : BackbufferBase
     /// </remarks>
     protected internal override void RequestResize(int width, int height)
     {
-        Volatile.Write(ref _reqW, width);
-        Volatile.Write(ref _reqH, height);
-        Interlocked.Exchange(ref _resizeFlag, 1); // coalesce requests
+        Interlocked.Exchange(ref _requestedResolution, new(width, height)); // coalesce requests
     }
 
     /// <summary>
@@ -113,12 +109,12 @@ public sealed class BitmapBackbuffer : BackbufferBase
     protected internal override void BeginFrame()
     {
         // if a resize was requested, do it now (render thread only)...
-        if (Interlocked.Exchange(ref _resizeFlag, 0) == 1)
+        if (Interlocked.Exchange(ref _requestedResolution, null) is { } request)
         {
-            var w = Volatile.Read(ref _reqW);
-            var h = Volatile.Read(ref _reqH);
+            var w = request.Width;
+            var h = request.Height;
 
-            if (w > 0 && h > 0)
+            if (w > 0 && h > 0 && (w != Width || h != Height))
             {
                 lock (_gate)
                 {
@@ -165,6 +161,7 @@ public sealed class BitmapBackbuffer : BackbufferBase
     /// <remarks>
     /// If the tile's current frame does not have a valid bitmap, the method returns without drawing.
     /// The drawing uses the filter quality specified by the <see cref="FilterQuality"/> property.
+    /// Drawable types apply their own visual transforms (such as sprite rotation) before calling this method.
     /// </remarks>
     protected internal override void DrawTileFrame(Tile tile, RectangleF destRectScreen)
     {
@@ -172,26 +169,6 @@ public sealed class BitmapBackbuffer : BackbufferBase
 
         if (bmp is null)
             return;
-
-        if (tile is Sprite { Rotation: not 0f } sprite)
-        {
-            float centerX = destRectScreen.Left + (destRectScreen.Width * 0.5f);
-            float centerY = destRectScreen.Top + (destRectScreen.Height * 0.5f);
-
-            Canvas.Save();
-
-            try
-            {
-                Canvas.RotateDegrees(sprite.Rotation, centerX, centerY);
-                Canvas.DrawBitmap(bmp, destRectScreen.ToSKRect(), _filterQuality.ToSamplingOptions(), _bitmapPaint);
-            }
-            finally
-            {
-                Canvas.Restore();
-            }
-
-            return;
-        }
 
         Canvas.DrawBitmap(bmp, destRectScreen.ToSKRect(), _filterQuality.ToSamplingOptions(), _bitmapPaint);
     }

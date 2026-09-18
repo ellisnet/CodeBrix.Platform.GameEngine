@@ -22,6 +22,9 @@ public class VariableRateSampleProviderTests
 
         public WaveFormat WaveFormat { get; }
 
+        /// <summary>Rewinds to the first frame, the way a wave stream set back to position 0 does.</summary>
+        public void Rewind() => _framesRead = 0;
+
         public int Read(Span<float> buffer)
         {
             var channels = WaveFormat.Channels;
@@ -38,6 +41,151 @@ public class VariableRateSampleProviderTests
             _framesRead += frames;
             return frames * channels;
         }
+    }
+
+    /// <summary>A source that hands back exactly the samples it was given, one chunk per read.</summary>
+    private sealed class BufferSource : ISampleProvider
+    {
+        private readonly float[] _samples;
+        private readonly int _chunkSamples;
+        private int _read;
+
+        public BufferSource(int sampleRate, int channels, float[] samples, int chunkSamples = int.MaxValue)
+        {
+            WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
+            _samples = samples;
+            _chunkSamples = chunkSamples;
+        }
+
+        public WaveFormat WaveFormat { get; }
+
+        /// <summary>How many samples this source has handed out so far.</summary>
+        public int SamplesTaken => _read;
+
+        public int Read(Span<float> buffer)
+        {
+            var count = Math.Min(Math.Min(buffer.Length, _chunkSamples), _samples.Length - _read);
+            _samples.AsSpan(_read, count).CopyTo(buffer);
+            _read += count;
+            return count;
+        }
+    }
+
+    private static int SamplesTakenFrom(BufferSource source) => source.SamplesTaken;
+
+    [Fact]
+    public void Same_rate_unity_pitch_is_a_bit_exact_pass_through()
+    {
+        //Arrange - ordinary but awkward sample values, at the output rate and unity pitch.
+        var samples = new[]
+        {
+            0f, 1f, -1f, 0.5f, -0.5f, 0.1f, -0.1f, 1e-7f, -1e-7f, 0.3333333f,
+            -0.6666667f, float.Epsilon, -float.Epsilon, 0.9999999f, -0.9999999f, 0.25f,
+        };
+        var provider = new VariableRateSampleProvider(new BufferSource(44100, 1, samples), 44100);
+        var output = new float[samples.Length + 16];
+
+        //Act
+        var total = 0;
+        int read;
+        while ((read = provider.Read(output.AsSpan(total))) > 0)
+        {
+            total += read;
+        }
+
+        //Assert - EVERY source frame comes back, the final one included, and each is the source
+        //sample itself with no arithmetic applied. This is what lets every resource carry the
+        //stage: at unity it changes nothing at all.
+        total.Should().Be(samples.Length);
+        for (var i = 0; i < total; i++)
+        {
+            output[i].Should().Be(samples[i]);
+        }
+    }
+
+    [Fact]
+    public void Unity_takes_exactly_as_many_source_frames_as_it_hands_back()
+    {
+        //Arrange - source and output at the same rate, pitch 1.0.
+        var source = new BufferSource(44100, 1, new float[8192]);
+        var provider = new VariableRateSampleProvider(source, 44100);
+
+        //Act - ask for eight frames.
+        provider.Read(new float[8]).Should().Be(8);
+
+        //Assert - and exactly eight are taken from the source. No read-ahead means a wave stream
+        //behind this stage still reports the position that has actually been handed over.
+        SamplesTakenFrom(source).Should().Be(8);
+    }
+
+    [Fact]
+    public void Resampling_buffers_well_ahead_of_what_it_hands_back()
+    {
+        //Arrange - a real rate conversion, which needs frames in hand to interpolate between.
+        var source = new BufferSource(11025, 1, new float[8192]);
+        var provider = new VariableRateSampleProvider(source, 44100);
+
+        //Act
+        provider.Read(new float[8]).Should().Be(8);
+
+        //Assert - the resampling path fills its whole buffer, so a stream behind it runs ahead of
+        //what has been heard. Only a converting resource pays that.
+        SamplesTakenFrom(source).Should().Be(2049);
+    }
+
+    [Fact]
+    public void Resampling_hands_over_the_final_source_frame()
+    {
+        //Arrange - 4x upsample of ten source frames.
+        var provider = new VariableRateSampleProvider(new RampSource(11025, 1, 10), 44100);
+        var output = new float[128];
+
+        //Act
+        var total = 0;
+        int read;
+        while ((read = provider.Read(output.AsSpan(total))) > 0)
+        {
+            total += read;
+        }
+
+        //Assert - forty output frames, i.e. all ten source frames converted; the last one used to
+        //be held back for want of an interpolation partner and is now held at its own value.
+        total.Should().Be(40);
+        output[36].Should().Be(9f);
+        output[39].Should().Be(9f);
+    }
+
+    [Fact]
+    public void Pitch_changes_mid_stream_keep_the_output_continuous()
+    {
+        //Arrange - a ramp whose sample value IS its source frame index, so the output reads as the
+        //position the stage is at.
+        var provider = new VariableRateSampleProvider(new RampSource(44100, 1, 4096), 44100);
+        var buffer = new float[10];
+
+        //Act + Assert - unity first: ten frames, one per source frame.
+        provider.Read(buffer).Should().Be(10);
+        buffer[0].Should().Be(0f);
+        buffer[9].Should().Be(9f);
+
+        //Act + Assert - leaving unity picks up exactly where unity stopped and strides by 1.5.
+        provider.Pitch = 1.5f;
+        provider.Read(buffer).Should().Be(10);
+        buffer[0].Should().Be(10f);
+        (Math.Abs(buffer[1] - 11.5f) < 0.0001f).Should().BeTrue($"expected 11.5 but got {buffer[1]}");
+        (Math.Abs(buffer[9] - 23.5f) < 0.0001f).Should().BeTrue($"expected 23.5 but got {buffer[9]}");
+
+        //Act + Assert - returning to unity drains what was buffered, in order and without a gap:
+        //the next position after 23.5 at a stride of 1.5 is 25.0, and unity carries on from there.
+        provider.Pitch = 1f;
+        provider.Read(buffer).Should().Be(10);
+        buffer[0].Should().Be(25f);
+        buffer[1].Should().Be(26f);
+        buffer[9].Should().Be(34f);
+
+        provider.Read(buffer).Should().Be(10);
+        buffer[0].Should().Be(35f);
+        buffer[9].Should().Be(44f);
     }
 
     [Fact]
@@ -164,9 +312,51 @@ public class VariableRateSampleProviderTests
         var first = provider.Read(buffer);
         var second = provider.Read(buffer);
 
-        //Assert - the final frame has no interpolation partner, so at most the 10 source
-        // frames (implementations may hold back the very last one).
-        (first >= 9 && first <= 10).Should().BeTrue($"expected 9 or 10 samples but got {first}");
+        //Assert - all ten source frames come back, then the source is dry.
+        first.Should().Be(10);
         second.Should().Be(0);
+    }
+
+    [Fact]
+    public void Reset_lets_the_provider_read_a_rewound_source_again()
+    {
+        //Arrange - drain the source, which latches end-of-source inside the provider.
+        var source = new RampSource(44100, 1, 10);
+        var provider = new VariableRateSampleProvider(source, 44100);
+        var buffer = new float[32];
+        provider.Read(buffer);
+        provider.Read(buffer).Should().Be(0);
+
+        //Act - rewinding the source is not enough on its own; the stage has to be re-armed too.
+        source.Rewind();
+        var withoutReset = provider.Read(buffer);
+        provider.Reset();
+        var afterReset = provider.Read(buffer);
+
+        //Assert - this is what keeps a looping voice from stopping and restarting in silence.
+        withoutReset.Should().Be(0);
+        (afterReset >= 9).Should().BeTrue($"expected the rewound source to be read again but got {afterReset} samples");
+        buffer[0].Should().Be(0f);
+        buffer[1].Should().Be(1f);
+    }
+
+    [Fact]
+    public void Reset_discards_frames_buffered_from_the_old_source_position()
+    {
+        //Arrange - a converting stage, which reads far ahead of what it hands back.
+        var source = new RampSource(11025, 1, 4096);
+        var provider = new VariableRateSampleProvider(source, 44100);
+        var buffer = new float[8];
+        provider.Read(buffer);
+        buffer[0].Should().Be(0f);
+
+        //Act - the source jumps back to the start, as a seek to zero does.
+        source.Rewind();
+        provider.Reset();
+        provider.Read(buffer);
+
+        //Assert - the stale frames are gone, so playback follows the new position.
+        buffer[0].Should().Be(0f);
+        (Math.Abs(buffer[1] - 0.25f) < 0.0001f).Should().BeTrue($"expected 0.25 but got {buffer[1]}");
     }
 }

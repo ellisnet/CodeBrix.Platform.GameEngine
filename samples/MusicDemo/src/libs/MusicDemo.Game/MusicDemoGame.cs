@@ -79,7 +79,6 @@ public sealed class MusicDemoGame
         AudioSystem.Initialize(MusicAssetFactory.SampleRate, 2);
 
         var renderSurface = _canvas.Host;
-        var adapter = renderSurface.RenderSurfaceAdapter;
         renderSurface.ViewManager.ConfigureSingleFullView();
 
         Engine.Instance.CPSCalculated += _ => _readout?.SetText(BuildReadout());
@@ -87,7 +86,9 @@ public sealed class MusicDemoGame
         Engine.Instance.Configuration.TargetFPS = 30; // a text readout does not need more
 
         BuildTracks();
-        BuildReadoutDisplay(renderSurface, adapter.Width, adapter.Height);
+        // The readout is laid out in the logical image the scene is drawn into; a window resize
+        // presents that same image fitted and centred.
+        BuildReadoutDisplay(renderSurface, renderSurface.Backbuffer.Width, renderSurface.Backbuffer.Height);
 
         // Off unless the environment asks for it; see MusicDemoWalkthrough for what it is for.
         if (MusicDemoWalkthrough.IsRequested)

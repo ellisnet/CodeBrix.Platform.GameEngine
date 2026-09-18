@@ -23,13 +23,13 @@ public class GameSurfaceCanvas : SKXamlCanvas
 {
     private readonly object _gate = new();
     private SKImage? _currentImage;
-    private SKRectI _currentBufferRect;
 
     private RenderSurfaceAdapterBase? _adapter;
     private RenderSurfaceHost<BackbufferBase>? _host;
     private GameSurfaceCanvasPixelFramePresenter? _presenter;
     private bool _ensureFocusApplied;
     private bool _useGpuRendering;
+    private bool _trackWindowSize;
     private int _renderWidth;
     private int _renderHeight;
 
@@ -119,14 +119,19 @@ public class GameSurfaceCanvas : SKXamlCanvas
         }
     }
 
+    // The adapter this canvas already has, without creating the scene pipeline: the input adapters
+    // need the presentation transform, but asking for it must not fix the render tier (or throw in
+    // presenter mode) before the game has made its own choices.
+    internal RenderSurfaceAdapterBase? CurrentRenderSurfaceAdapter => _adapter;
+
     /// <summary>
     /// Opts this canvas into GpuRendering-OpenGL (GPU) rendering: the engine's scene is rasterised by the GPU
     /// through an off-screen OpenGL/GLES context and read back for presentation, instead of being
     /// rendered on the CPU (CpuRendering, the default). Set this before the first access to
-    /// <see cref="Host"/> — like <see cref="SetRenderResolution"/>, it configures how the
-    /// host/adapter pair is created. Letterboxing, resize behaviour, and input mapping are
-    /// identical across tiers. On a head without OpenGL support the adapter logs a warning and
-    /// falls back to CPU rendering automatically.
+    /// <see cref="Host"/>: it decides which host/adapter pair is created, and that choice cannot
+    /// change afterwards. Letterboxing, resize behaviour, and input mapping are identical across
+    /// tiers. On a head without OpenGL support the adapter logs a warning and falls back to CPU
+    /// rendering automatically.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when changed after the scene pipeline has been created (the tier cannot change once
@@ -155,16 +160,55 @@ public class GameSurfaceCanvas : SKXamlCanvas
     /// with black letterbox/pillarbox bars where the control's aspect ratio differs.
     /// </summary>
     /// <remarks>
-    /// Call this before the first access to <see cref="Host"/> (that is, before the engine starts).
-    /// Pass a non-positive width or height (the default) to instead track this control's size, so the
-    /// render resolution follows the window.
+    /// <para>
+    /// This is the pinned-size way to choose a render resolution; it forwards to
+    /// <see cref="RenderSurfaceHostBase.RequestRenderResolution"/>. The upstream way is
+    /// <see cref="CodeBrix.Platform.GameEngine.Configuration.EngineConfiguration.RenderScale"/>, which
+    /// derives the resolution from the surface size instead — a later change to it supersedes the
+    /// pinned size.
+    /// </para>
+    /// <para>
+    /// Safe to call before the first access to <see cref="Host"/> (that is, before the engine starts):
+    /// the request is applied as soon as the host exists, and again at the first layout when the
+    /// control does not have a size yet. Pass a non-positive width or height (the default) to leave
+    /// the resolution to <c>RenderScale</c>.
+    /// </para>
     /// </remarks>
-    /// <param name="width">The fixed render width in pixels, or 0 to track the control width.</param>
-    /// <param name="height">The fixed render height in pixels, or 0 to track the control height.</param>
+    /// <param name="width">The fixed render width in pixels, or 0 to leave the resolution to <c>RenderScale</c>.</param>
+    /// <param name="height">The fixed render height in pixels, or 0 to leave the resolution to <c>RenderScale</c>.</param>
     public void SetRenderResolution(int width, int height)
     {
         _renderWidth = width;
         _renderHeight = height;
+
+        if (_host is not null && width > 0 && height > 0)
+            _host.RequestRenderResolution(width, height);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the engine render resolution follows this control's
+    /// size, so a larger window renders more of the world instead of presenting the same image larger.
+    /// </summary>
+    /// <value>
+    /// <see langword="false"/> by default: the resolution is established once, at the first layout,
+    /// and every later resize is presentation only (the image is fitted, centered and letterboxed).
+    /// </value>
+    /// <remarks>
+    /// This opt-in is specific to this engine port (it sets
+    /// <see cref="RenderSurfaceHostBase.TrackAdapterSize"/>) and is the pre-decoupling behaviour:
+    /// each resize reallocates the backbuffer, rescales the views and forces a full redraw. It
+    /// supersedes <see cref="SetRenderResolution"/> on the next resize, so use one or the other.
+    /// </remarks>
+    public bool TrackWindowSize
+    {
+        get => _trackWindowSize;
+        set
+        {
+            _trackWindowSize = value;
+
+            if (_host is not null)
+                _host.TrackAdapterSize = value;
+        }
     }
 
     private void EnsureHost()
@@ -180,16 +224,23 @@ public class GameSurfaceCanvas : SKXamlCanvas
 
         if (_useGpuRendering)
         {
-            var gpuAdapter = new CodeBrixPlatformGpuRenderSurfaceAdapter(this, _renderWidth, _renderHeight);
+            var gpuAdapter = new CodeBrixPlatformGpuRenderSurfaceAdapter(this);
             _adapter = gpuAdapter;
             _host = new RenderSurfaceHost<BackbufferBase>(gpuAdapter, (w, h) => new GpuBackbuffer(w, h));
             gpuAdapter.AttachHost(_host);
         }
         else
         {
-            _adapter = new CodeBrixPlatformBitmapRenderSurfaceAdapter(this, _renderWidth, _renderHeight);
+            _adapter = new CodeBrixPlatformBitmapRenderSurfaceAdapter(this);
             _host = new RenderSurfaceHost<BackbufferBase>(_adapter, (w, h) => new BitmapBackbuffer(w, h));
         }
+
+        // Apply the choices made before the host existed. A pinned resolution requested while the
+        // control has no layout size yet is deferred by the host until its first valid size.
+        _host.TrackAdapterSize = _trackWindowSize;
+
+        if (_renderWidth > 0 && _renderHeight > 0)
+            _host.RequestRenderResolution(_renderWidth, _renderHeight);
     }
 
     /// <summary>
@@ -292,17 +343,20 @@ public class GameSurfaceCanvas : SKXamlCanvas
     }
 
     /// <summary>
-    /// Sets the image to be presented on the next paint. Called by the render-surface adapter
-    /// on the UI thread.
+    /// Sets the complete logical backbuffer image to be presented on the next paint. Called by the
+    /// render-surface adapter on the UI thread.
     /// </summary>
+    /// <remarks>
+    /// The image is always a complete frame: this control repaints its whole surface on every paint,
+    /// so a partial blit would leave the rest of it cleared. The engine's dirty rectangle therefore
+    /// only decides how much of the backbuffer was re-rendered, not how much is presented.
+    /// </remarks>
     /// <param name="image">The backbuffer image to present, or <c>null</c> to clear.</param>
-    /// <param name="bufferRect">The source region within <paramref name="image"/> to present.</param>
-    internal void SetImage(SKImage? image, SKRectI bufferRect)
+    internal void SetImage(SKImage? image)
     {
         lock (_gate)
         {
             _currentImage = image;
-            _currentBufferRect = bufferRect;
         }
 
         // Don't push live engine frames while the window is actively resizing; the resize itself
@@ -330,29 +384,34 @@ public class GameSurfaceCanvas : SKXamlCanvas
             image = _currentImage;
         }
 
-        if (image is null)
+        if (image is null || _adapter is not { } adapter)
             return;
 
-        float surfaceW = e.Info.Width;
-        float surfaceH = e.Info.Height;
-        float imageW = image.Width;
-        float imageH = image.Height;
+        int adapterWidth = adapter.Width;
+        int adapterHeight = adapter.Height;
 
-        if (surfaceW <= 0f || surfaceH <= 0f || imageW <= 0f || imageH <= 0f)
+        if (e.Info.Width <= 0 || e.Info.Height <= 0 || adapterWidth <= 0 || adapterHeight <= 0)
             return;
 
-        // Draw the whole backbuffer image, scaled to fit the surface while preserving the
-        // backbuffer's aspect ratio, centered. Where the surface aspect differs from the
-        // backbuffer aspect, the cleared-black background shows as letterbox/pillarbox bars.
-        float scale = Math.Min(surfaceW / imageW, surfaceH / imageH);
-        float drawW = imageW * scale;
-        float drawH = imageH * scale;
-        float offsetX = (surfaceW - drawW) * 0.5f;
-        float offsetY = (surfaceH - drawH) * 0.5f;
+        // The engine owns the aspect-fit: the adapter's presentation transform is the same one that
+        // normalizes pointer input, so what is drawn and what is clicked can never disagree. It is
+        // expressed in this control's own pixels (its layout size, which is what pointer events
+        // report), while the Skia surface is in physical pixels — larger on a scaled display — so
+        // map the one onto the other first.
+        int restoreTo = canvas.Save();
 
-        var srcRect = new SKRect(0f, 0f, imageW, imageH);
-        var dstRect = new SKRect(offsetX, offsetY, offsetX + drawW, offsetY + drawH);
-        canvas.DrawImage(image, srcRect, dstRect, new SKSamplingOptions(SKFilterMode.Nearest), null);
+        try
+        {
+            canvas.Scale(e.Info.Width / (float)adapterWidth, e.Info.Height / (float)adapterHeight);
+
+            // Draws the complete image into the letterboxed destination rectangle and clears the
+            // margins, honouring EngineConfiguration.RenderScalingFilter.
+            adapter.DrawImage(canvas, image, SKColors.Black);
+        }
+        finally
+        {
+            canvas.RestoreToCount(restoreTo);
+        }
     }
 }
 

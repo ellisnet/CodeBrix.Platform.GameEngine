@@ -878,24 +878,33 @@ public sealed class SpotBrixGameHost : CodeBrixGameHost
     }
 
     /// <summary>
-    /// Re-anchors the corner score overlays (and any game-over banner) when the window is resized.
-    /// The overlays are created once in <see cref="CreateTextBlockFields"/> using the backbuffer size
-    /// at that moment; without this they drift out of position on resize — most visibly the
-    /// width/height-anchored Player 2 (bottom-right) and Player 3 (top-right) labels.
+    /// Re-anchors the corner score overlays (and any game-over banner) to the corners of the game
+    /// area. The overlays are created once in <see cref="CreateTextBlockFields"/> from the backbuffer
+    /// size at that moment, so this only has anything to do when the render resolution itself
+    /// changes; a window resize is presentation only and leaves every anchor where it was.
     /// </summary>
-    protected override void OnRenderSurfaceResized(int width, int height)
+    /// <remarks>
+    /// The <paramref name="width"/> and <paramref name="height"/> reported here are the render
+    /// surface's own pixels — the game area is the backbuffer, which is what the overlays live in.
+    /// </remarks>
+    protected override void OnRenderSurfaceResized(int width, int height) => AnchorOverlays();
+
+    private void AnchorOverlays()
     {
         const int boxWidth = 200;
         const int boxHeight = 50;
 
-        RepositionField(_player1Text, _player1Rectangle, new Rectangle(10, 10, boxWidth, boxHeight));                                          // upper left
-        RepositionField(_player2Text, _player2Rectangle, new Rectangle(width - (boxWidth + 10), height - (boxHeight + 10), boxWidth, boxHeight)); // bottom right
-        RepositionField(_player3Text, _player3Rectangle, new Rectangle(width - (boxWidth + 10), 10, boxWidth, boxHeight));                     // upper right
-        RepositionField(_player4Text, _player4Rectangle, new Rectangle(10, height - (boxHeight + 10), boxWidth, boxHeight));                   // bottom left
+        int gameWidth = RenderSurface.Host.Backbuffer.Width;
+        int gameHeight = RenderSurface.Host.Backbuffer.Height;
+
+        RepositionField(_player1Text, _player1Rectangle, new Rectangle(10, 10, boxWidth, boxHeight));                                                  // upper left
+        RepositionField(_player2Text, _player2Rectangle, new Rectangle(gameWidth - (boxWidth + 10), gameHeight - (boxHeight + 10), boxWidth, boxHeight)); // bottom right
+        RepositionField(_player3Text, _player3Rectangle, new Rectangle(gameWidth - (boxWidth + 10), 10, boxWidth, boxHeight));                         // upper right
+        RepositionField(_player4Text, _player4Rectangle, new Rectangle(10, gameHeight - (boxHeight + 10), boxWidth, boxHeight));                       // bottom left
 
         if (_gameMessageText is not null && _gameMessageRectangle is not null)
         {
-            var msgBounds = new Rectangle(width / 2 - 180, height / 2 - 40, 360, 80);
+            var msgBounds = new Rectangle(gameWidth / 2 - 180, gameHeight / 2 - 40, 360, 80);
             _gameMessageText.ScreenBounds = msgBounds;
             _gameMessageRectangle.ScreenBounds = msgBounds;
         }

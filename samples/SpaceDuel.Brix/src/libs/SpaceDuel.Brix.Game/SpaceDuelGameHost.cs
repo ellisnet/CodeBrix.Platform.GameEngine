@@ -43,7 +43,8 @@ namespace SpaceDuel.Brix;
 /// Hosting is the GPU tier: the view model sets <see cref="GameSurfaceCanvas.UseGpuRendering"/>
 /// before the canvas builds its scene pipeline, and this host asks for an unthrottled frame rate
 /// (<c>TargetFPS 0</c>), no vertical sync and 4x MSAA once engine initialization completes. The
-/// render resolution tracks the window, so there is no <c>SetRenderResolution</c> call.
+/// render resolution is established once, from the first layout of the surface, and a later window
+/// resize presents that same image fitted and centred, so there is no <c>SetRenderResolution</c> call.
 /// </para>
 /// <para>
 /// Rotation here is visual only. Collision bounds stay axis-aligned, and the duel resolves ship and
@@ -402,17 +403,25 @@ public sealed class SpaceDuelGameHost : CodeBrixGameHost
     }
 
     /// <summary>
-    /// Re-anchors the view-space overlays that are pinned to a window edge or to the middle of the
-    /// screen when the render surface changes size.
+    /// Re-anchors the view-space overlays that are pinned to an edge or to the middle of the game
+    /// area. A window resize is presentation only, so this has anything to do only when the render
+    /// resolution itself changes.
     /// </summary>
-    /// <param name="width">The new render surface width, in pixels.</param>
-    /// <param name="height">The new render surface height, in pixels.</param>
+    /// <remarks>
+    /// The reported size is the render surface's own; the overlays are anchored to the backbuffer,
+    /// which is the space they are drawn in.
+    /// </remarks>
+    /// <param name="width">The new render surface width, in the surface's own pixels.</param>
+    /// <param name="height">The new render surface height, in the surface's own pixels.</param>
     protected override void OnRenderSurfaceResized(int width, int height)
     {
+        int gameWidth = RenderSurface.Host.Backbuffer.Width;
+        int gameHeight = RenderSurface.Host.Backbuffer.Height;
+
         if (_performanceText is not null)
         {
             _performanceText.ScreenBounds = new Rectangle(
-                width - PerformanceWidth - PerformanceMargin,
+                gameWidth - PerformanceWidth - PerformanceMargin,
                 PerformanceMargin,
                 PerformanceWidth,
                 PerformanceHeight);
@@ -421,8 +430,8 @@ public sealed class SpaceDuelGameHost : CodeBrixGameHost
         if (_messageText is not null)
         {
             _messageText.ScreenBounds = new Rectangle(
-                (width - MessageWidth) / 2,
-                (height - MessageHeight) / 2,
+                (gameWidth - MessageWidth) / 2,
+                (gameHeight - MessageHeight) / 2,
                 MessageWidth,
                 MessageHeight);
         }

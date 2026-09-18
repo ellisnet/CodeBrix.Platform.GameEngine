@@ -8,6 +8,7 @@ using CodeBrix.Platform.GameEngine.Scenes;
 using SilverAssertions;
 using SkiaSharp;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -39,6 +40,11 @@ public class EngineStateRoundTripTests : IDisposable
     public void Dispose()
     {
         ClearAllEngineState();
+
+        // Loading a resource makes the process-wide shared output adopt a sample rate; left alone
+        // it outlives these tests and fails later ones whose source has a different one.
+        AudioSystem.Shutdown();
+
         try
         {
             Directory.Delete(_workDirectory, recursive: true);
@@ -97,6 +103,7 @@ public class EngineStateRoundTripTests : IDisposable
 
         var blip = AudioResourceManager.Instance.LoadFromFile("blip", wavPath, volume: 0.75f, pan: -0.5f);
         blip.IsLooping = true;
+        blip.PlaybackSpeed = 1.5f;
 
         //Act
         Engine.Instance.State.SaveToFile(savePath);
@@ -156,7 +163,52 @@ public class EngineStateRoundTripTests : IDisposable
         AudioResourceManager.Instance.TryGet("blip", out var loadedBlip).Should().BeTrue();
         (Math.Abs(loadedBlip!.Volume - 0.75f) < 0.0001f).Should().BeTrue();
         (Math.Abs(loadedBlip.Pan - (-0.5f)) < 0.0001f).Should().BeTrue();
+        loadedBlip.PlaybackSpeed.Should().Be(1.5f);
         loadedBlip.IsLooping.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Wrapped_layer_flags_and_tiles_survive_the_roundtrip_and_stay_operational()
+    {
+        //Arrange - a layer that repeats on both axes, with tile state that must not be replaced.
+        var savePath = Path.Combine(_workDirectory, "save_wrap.json");
+
+        var scene = new Scene { ID = "scene-wrap" };
+        var layer = scene.AddLayer(columnCount: 4, rowCount: 4, width: 16, height: 16, zOrder: 0, parallax: 1f);
+        layer.WrapHorizontally = true;
+        layer.WrapVertically = true;
+        layer.OriginPx = new Point(7, 9);
+        layer[2, 3]!.Visible = false;
+        layer[3, 1]!.CollisionsEnabled = true;
+
+        //Act
+        Engine.Instance.State.SaveToFile(savePath);
+        EngineState.LoadFromFile(savePath);
+
+        //Assert - both flags round-trip and the restored layer wraps on both axes.
+        var loadedLayer = Scene.GetSceneByID("scene-wrap")!.First();
+        loadedLayer.WrapHorizontally.Should().BeTrue();
+        loadedLayer.WrapVertically.Should().BeTrue();
+        loadedLayer.OriginPx.Should().Be(new Point(7, 9));
+        loadedLayer.WrapGrid(new PointF(-1, -1)).Should().Be(new PointF(3, 3));
+        loadedLayer.ResolveWrappedTile(-1, -1).Should().BeSameAs(loadedLayer[3, 3]);
+
+        //Assert - loaded tiles keep their own state and back-reference instead of being replaced.
+        loadedLayer[2, 3]!.Visible.Should().BeFalse();
+        ReferenceEquals(loadedLayer[2, 3]!.SceneLayer, loadedLayer).Should().BeTrue();
+
+        //Assert - the rebuilt collider registry knows its layer, so periodic queries still work.
+        var loadedTile = loadedLayer[3, 1]!;
+        loadedTile.Collider.Should().NotBeNull();
+        loadedTile.Collider!.CollisionGroup = 1;
+        loadedTile.Collider.CollidesWith = 1;
+
+        var bounds = loadedTile.Collider.BoundsWorldPx;
+        var query = new Aabb(bounds.MinX + 64, bounds.MinY + 64, bounds.MinX + 66, bounds.MinY + 66);
+        var instances = new List<ColliderInstance>();
+        loadedLayer.ColliderRegistry.QueryInstances(query, 1, 1, instances);
+
+        instances.Any(instance => ReferenceEquals(instance.Collider, loadedTile.Collider)).Should().BeTrue();
     }
 
     [Fact]
@@ -176,6 +228,7 @@ public class EngineStateRoundTripTests : IDisposable
         var resource = loaded[0];
         resource.Volume = 0.6f;
         resource.Pan = 0.25f;
+        resource.PlaybackSpeed = 0.75f;
         resource.IsLooping = true;
         var key = resource.Key;
 
@@ -187,6 +240,7 @@ public class EngineStateRoundTripTests : IDisposable
         AudioResourceManager.Instance.TryGet(key, out var reloaded).Should().BeTrue();
         (Math.Abs(reloaded!.Volume - 0.6f) < 0.0001f).Should().BeTrue();
         (Math.Abs(reloaded.Pan - 0.25f) < 0.0001f).Should().BeTrue();
+        reloaded.PlaybackSpeed.Should().Be(0.75f); // applied by EngineState.MergeAudio
         reloaded.IsLooping.Should().BeTrue();
     }
 

@@ -38,8 +38,9 @@ public class MainViewModel : SimpleViewModel, IManageGameCanvas
     {
         // This sample is the GpuRendering-OpenGL (GPU) showcase, so GPU rendering is the default; set
         // GPURENDER_USE_CPU=1 to run the identical shader scene on the CpuRendering CPU path for
-        // comparison. Either way the render resolution tracks the window (no SetRenderResolution):
-        // the shader scene is resolution-independent, unlike SoftRender's fixed 320x200 buffer.
+        // comparison. Either way the render resolution is established from the first layout and a
+        // later resize just fits that image into the window (no SetRenderResolution): the shader
+        // scene is resolution-independent, unlike SoftRender's fixed 320x200 buffer.
         canvas.UseGpuRendering = Environment.GetEnvironmentVariable("GPURENDER_USE_CPU") != "1";
         Debug.WriteLine($"GpuRender render tier: {(canvas.UseGpuRendering ? "B (GPU)" : "A (CPU)")}");
 

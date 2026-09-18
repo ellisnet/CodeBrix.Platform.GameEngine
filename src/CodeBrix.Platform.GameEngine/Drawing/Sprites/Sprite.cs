@@ -2,6 +2,7 @@ using CodeBrix.Platform.GameEngine.Drawing.Animation;
 using CodeBrix.Platform.GameEngine.Drawing.Collisions;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Physics.Movement;
+using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
 using System.Text.Json;
@@ -30,6 +31,16 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
     /// Occurs when the sprite has moved to a new position on the scene layer.
     /// </summary>
     public event Action<SpriteMovedEventArgs>? SpriteMoved;
+
+    /// <summary>
+    /// Occurs when the sprite's visual bounds have changed - for example after a rotation, alignment,
+    /// offset, or frame-size change - and the affected region has been queued for refresh.
+    /// </summary>
+    /// <remarks>
+    /// This event reports appearance changes rather than movement; use <see cref="SpriteMoved"/> to observe
+    /// changes to the sprite's scene-layer coordinates. The handler receives the sprite whose bounds changed.
+    /// </remarks>
+    public event Action<Sprite>? VisualBoundsChanged;
 
     /// <summary>
     /// Occurs when the sprite is being disposed.
@@ -290,6 +301,41 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
 
     internal RectangleF GetVisualBoundsScreen(RectangleF renderRectScreen) =>
         GetRotatedBounds(renderRectScreen, _rotation);
+
+    /// <summary>
+    /// Draws this sprite to the supplied backbuffer, applying <see cref="Rotation"/> about the centre of
+    /// <paramref name="destRectScreen"/> before the frame is drawn.
+    /// </summary>
+    /// <param name="backbuffer">The backbuffer that receives the sprite's current frame.</param>
+    /// <param name="destRectScreen">The destination rectangle in screen coordinates.</param>
+    /// <remarks>
+    /// Rotation lives here rather than in each backbuffer so every rendering backend produces the same
+    /// transformed output. When <see cref="Rotation"/> is zero the base implementation is used unchanged.
+    /// </remarks>
+    public override void Draw(BackbufferBase backbuffer, RectangleF destRectScreen)
+    {
+        if (_rotation == 0f)
+        {
+            base.Draw(backbuffer, destRectScreen);
+            return;
+        }
+
+        float centerX = destRectScreen.Left + (destRectScreen.Width * 0.5f);
+        float centerY = destRectScreen.Top + (destRectScreen.Height * 0.5f);
+        var canvas = backbuffer.Canvas;
+
+        canvas.Save();
+
+        try
+        {
+            canvas.RotateDegrees(_rotation, centerX, centerY);
+            base.Draw(backbuffer, destRectScreen);
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
 
     /// <summary>
     /// Applies a world-pixel translation. Used by collision resolution.
@@ -677,6 +723,7 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
 
         // clear the events
         SpriteMoved = null;
+        VisualBoundsChanged = null;
         Disposing = null;
 
         base.Dispose();
@@ -688,7 +735,8 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
 
     /// <summary>
     /// Queues the union of the sprite's previous and current visual bounds for refresh,
-    /// inflated slightly to absorb rounding at the edges of a rotated rectangle.
+    /// inflated slightly to absorb rounding at the edges of a rotated rectangle, then raises
+    /// <see cref="VisualBoundsChanged"/>.
     /// </summary>
     private void InvalidateVisualChange(Rectangle oldBounds, Rectangle newBounds)
     {
@@ -698,6 +746,8 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         var dirtyBounds = Rectangle.Union(oldBounds, newBounds);
         dirtyBounds.Inflate(2, 2);
         _sceneLayer.RefreshQueue?.AddWorldRect(dirtyBounds);
+
+        VisualBoundsChanged?.Invoke(this);
     }
 
     /// <summary>

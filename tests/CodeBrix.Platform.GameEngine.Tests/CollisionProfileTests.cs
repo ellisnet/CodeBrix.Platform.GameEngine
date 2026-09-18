@@ -152,6 +152,40 @@ public class CollisionProfileTests : IDisposable
             scene.CollisionGroups.Triggers);
     }
 
+    [Fact]
+    public void SceneAddLayer_ignores_unexpected_null_sprite_entries()
+    {
+        //Arrange
+        var layer = new SceneLayer(columnCount: 1, rowCount: 1, width: 16, height: 16);
+        var bitmap = new SKBitmap(16, 16);
+        using var tilesheet = TilesheetFactory.FromBitmap("NullEntryProfile", bitmap);
+        tilesheet.DefaultRegion.TileSize = new Size(16, 16);
+
+        var sprite = SpriteManager.Instance.CreateSprite(
+            layer,
+            tilesheet.GetFrame(0, 0),
+            collisionProfileName: CollisionProfileNames.Actor);
+
+        // A partially built or restored sprite list can hold a null entry; joining a scene must
+        // step over it instead of throwing.
+        SpriteManager.Instance._spriteList.Insert(0, null!);
+
+        try
+        {
+            //Act
+            using var scene = new Scene();
+            Action addLayer = () => scene.AddLayer(layer);
+
+            //Assert
+            addLayer.Should().NotThrow();
+            sprite.Collider!.CollisionGroup.Should().Be(scene.CollisionGroups.Actors);
+        }
+        finally
+        {
+            SpriteManager.Instance._spriteList.RemoveAll(entry => entry is null);
+        }
+    }
+
     /// <summary>
     /// A tile that does not build a collider in its constructor, so a test can configure collision
     /// state first and attach the collider afterwards.

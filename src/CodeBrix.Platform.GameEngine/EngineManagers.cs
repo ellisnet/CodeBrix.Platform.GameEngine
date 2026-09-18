@@ -1,3 +1,4 @@
+using CodeBrix.Platform.GameEngine.Assets.Providers;
 using CodeBrix.Platform.GameEngine.Audio;
 using CodeBrix.Platform.GameEngine.Drawing.Direct;
 using CodeBrix.Platform.GameEngine.Drawing;
@@ -19,6 +20,12 @@ namespace CodeBrix.Platform.GameEngine; //was previously: Gondwana;
 public sealed class EngineManagers
 {
     internal EngineManagers() { }
+
+    /// <summary>
+    /// Gets the registry of game asset providers, which supply assets from bundles, archives or
+    /// folders and materialize them into the engine's own resource managers.
+    /// </summary>
+    public GameAssetProviderRegistry AssetProviders { get; } = GameAssetProviderRegistry.Instance;
 
     /// <summary>
     /// Gets the audio resource manager for loading and managing audio assets.

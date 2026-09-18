@@ -102,7 +102,7 @@ public sealed class View
     /// Typically the main gameplay layer (parallax = 1).
     /// </param>
     /// <param name="screenPoint">
-    /// Mouse position in adapter/screen pixels relative to the render surface.
+    /// Mouse position in logical Backbuffer ScreenPx, after adapter input normalization.
     /// </param>
     /// <param name="targetZoom">
     /// Desired zoom factor after the animation completes.
@@ -353,7 +353,7 @@ public sealed class View
     }
 
     /// <summary>
-    /// Converts a screen-space rectangle (on the adapter) into a world-space rectangle
+    /// Converts a screen-space rectangle (on the logical Backbuffer) into a world-space rectangle
     /// for the given layer, respecting zoom, camera position, viewport offsets,
     /// and the layer's parallax factor.
     ///
@@ -422,9 +422,10 @@ public sealed class View
                 pixels.Y + layer.EffectOffsetPx.Y);
         }
 
+        var wrappedOffset = layer is null ? PointF.Empty : CodeBrix.Platform.GameEngine.Drawing.WrappedDrawable.ScreenOffset(this, layer);
         return new PointF(
-            pixels.X + factor.X * targetRect.Width,
-            pixels.Y + factor.Y * targetRect.Height);
+            pixels.X + factor.X * targetRect.Width + wrappedOffset.X,
+            pixels.Y + factor.Y * targetRect.Height + wrappedOffset.Y);
     }
 
     /// <summary>

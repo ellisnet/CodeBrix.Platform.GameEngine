@@ -334,6 +334,61 @@ public class EffectsManagerTests
         }
     }
 
+    [Fact]
+    public void Update_first_call_warms_the_tick_without_skipping_an_effect()
+    {
+        //Arrange - a manager that has never been updated, and a tick five seconds past construction.
+        using var host = CreateHost(out View view, out _);
+        var effect = host.Effects.Run(view, new FadeOutEffect(1f));
+        long firstTick = HighResTimer.GetCurrentTick() + (5 * HighResTimer.TicksPerSecond);
+
+        //Act
+        host.Effects.Update(firstTick);
+
+        //Assert - the first update only records the baseline; the five-second gap is not charged.
+        effect.Status.Should().Be(EffectStatus.Running);
+        effect.Progress.Should().BeApproximately(0f, Tolerance);
+        view.EffectOpacity.Should().BeApproximately(1f, Tolerance);
+
+        //Act
+        host.Effects.Update(firstTick + (HighResTimer.TicksPerSecond / 2));
+
+        //Assert - the second update advances from the first real engine tick.
+        effect.Progress.Should().BeApproximately(0.5f, Tolerance);
+        view.EffectOpacity.Should().BeApproximately(0.5f, Tolerance);
+    }
+
+    [Fact]
+    public void ShiftTimeBaselineForResume_tolerates_a_manager_that_has_never_been_updated()
+    {
+        //Arrange - an effect started before the manager ever saw an engine tick.
+        using var host = CreateHost(out View view, out _);
+        var effect = host.Effects.Run(view, new FadeOutEffect(1f));
+
+        long pausedTicks = HighResTimer.TicksPerSecond * 5;
+        long resumeTick = HighResTimer.GetCurrentTick() + pausedTicks;
+
+        //Act
+        Action shift = () => host.Effects.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+
+        //Assert - there is no baseline to shift, so the call is a no-op rather than a throw.
+        shift.Should().NotThrow();
+
+        //Act - the first update after the resume still warms the baseline.
+        host.Effects.Update(resumeTick);
+
+        //Assert - the pause did not burst the effect.
+        effect.Status.Should().Be(EffectStatus.Running);
+        effect.Progress.Should().BeApproximately(0f, Tolerance);
+        view.EffectOpacity.Should().BeApproximately(1f, Tolerance);
+
+        //Act
+        host.Effects.Update(resumeTick + (HighResTimer.TicksPerSecond / 4));
+
+        //Assert
+        effect.Progress.Should().BeApproximately(0.25f, Tolerance);
+    }
+
     /// <summary>Creates a host with one 200 x 100 view and one 10 x 10 layer of 32 px tiles.</summary>
     private static TestRenderSurfaceHost CreateHost(out View view, out SceneLayer layer)
     {

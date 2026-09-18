@@ -54,9 +54,14 @@ player, hazards and relics, a foot probe through ColliderRegistry.QueryAabb,
 integrated velocity + gravity movement, horizontal camera follow with a dead
 zone, a view-bound DirectRectangle + TextBlock HUD, and a procedural tilesheet
 painted in code (TilesheetRegistry.LoadFromBitmap), so the sample ships no
-image assets. A/D or the arrow keys move, W / Up / Space jump, R restarts, Esc
-quits. samples/Platformer.Brix/README.md explains the level rules and how the
-sample is put together.
+image assets. Angry-mushroom enemies walk towards the player and fall into pits:
+side or underside contact returns the player to the start, while landing on a
+mushroom's head while descending flattens it and bounces the player. It is also
+the pixel-art reference for presentation filtering (RenderScalingFilter =
+NearestNeighbor, alongside the tile filter it already set). A/D or the arrow keys
+move, W / Up / Space jump, R restarts, Esc quits.
+samples/Platformer.Brix/README.md explains the level rules and how the sample is
+put together.
 
 samples/SpaceDuel.Brix
 ----------------------
@@ -80,7 +85,8 @@ board while the engine keeps running.
 samples/CoordinateTest
 ----------------------
 Mode A, direct Engine. Coordinate systems — orthogonal, isometric and hex — plus
-cameras and views.
+cameras and views, and a horizontally wrapped scene layer: pan left and the
+wrapped layer keeps going while the parallax layer beside it stops.
 
 samples/ParticleTest
 --------------------

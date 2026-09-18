@@ -189,6 +189,56 @@ public class TextBlock : DirectDrawingMovableBase
     public float VerticalPadding { get; set; } = 0f;
 
     /// <summary>
+    /// Sets symmetric horizontal and vertical padding and invalidates the cached line layout.
+    /// </summary>
+    /// <param name="horizontal">Horizontal padding in pixels applied to both the left and right sides.</param>
+    /// <param name="vertical">Vertical padding in pixels applied to both the top and bottom sides.</param>
+    /// <returns>The current <see cref="TextBlock"/> for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="horizontal"/> or <paramref name="vertical"/> is negative, infinite, or NaN.
+    /// </exception>
+    public TextBlock SetPadding(float horizontal, float vertical)
+    {
+        if (!float.IsFinite(horizontal) || horizontal < 0f)
+            throw new ArgumentOutOfRangeException(nameof(horizontal));
+        if (!float.IsFinite(vertical) || vertical < 0f)
+            throw new ArgumentOutOfRangeException(nameof(vertical));
+
+        HorizontalPadding = horizontal;
+        VerticalPadding = vertical;
+        _layoutDirty = true;
+        ForceRefresh();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the text-block size while preserving its current position, and invalidates the cached line layout.
+    /// </summary>
+    /// <param name="size">The new text-block size; both dimensions must be positive.</param>
+    /// <returns>The current <see cref="TextBlock"/> for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="size"/> has a width or height that is not greater than zero.
+    /// </exception>
+    /// <remarks>
+    /// For <see cref="DirectDrawingMode.View"/> drawings the new size is applied to <see cref="DirectDrawingBase.ScreenBounds"/>;
+    /// otherwise it is applied to <see cref="DirectDrawingBase.WorldBounds"/>.
+    /// </remarks>
+    public TextBlock SetSize(Size size)
+    {
+        if (size.Width <= 0 || size.Height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(size), size, "Text block size must be positive.");
+
+        if (Mode == DirectDrawingMode.View)
+            ScreenBounds = new Rectangle(ScreenBounds.Location, size);
+        else
+            WorldBounds = new Rectangle(WorldBounds.Location, size);
+
+        _layoutDirty = true;
+        ForceRefresh();
+        return this;
+    }
+
+    /// <summary>
     /// Sets the current text content and rebuilds layout as needed.
     /// If no reveal animation is active, the text is shown fully.
     /// If a reveal animation is active, the target length is synced to the new text.

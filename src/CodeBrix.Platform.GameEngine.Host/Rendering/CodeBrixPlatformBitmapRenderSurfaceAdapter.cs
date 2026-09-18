@@ -15,12 +15,10 @@ namespace CodeBrix.Platform.GameEngine.Host.Rendering;
 public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAdapterBase, IDisposable
 {
     private readonly GameSurfaceCanvas _canvas;
-    private readonly bool _fixedResolution;
     private SKImage? _currentImage;
     private readonly ConcurrentQueue<SKImage> _toDispose = new();
     private bool _disposed;
     private int _paintScheduled;
-    private SKRectI _latestBufferRect;
 
     // True while the canvas is off the visual tree (window closing or page navigated away).
     // Set on the UI thread; read from the engine thread in Present, so volatile.
@@ -29,32 +27,36 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
     /// <summary>
     /// Initializes a new instance of the <see cref="CodeBrixPlatformBitmapRenderSurfaceAdapter"/> class.
     /// </summary>
+    /// <remarks>
+    /// The adapter always tracks the canvas size: that size is the presentation destination, not the
+    /// render resolution. The render resolution is the host's, from
+    /// <see cref="CodeBrix.Platform.GameEngine.Configuration.EngineConfiguration.RenderScale"/> or
+    /// <see cref="GameSurfaceCanvas.SetRenderResolution"/>.
+    /// </remarks>
     /// <param name="canvas">The <see cref="GameSurfaceCanvas"/> this adapter presents to.</param>
-    /// <param name="fixedWidth">
-    /// A fixed render width in pixels, or 0 (the default) to track the canvas width and follow window resizes.
-    /// </param>
-    /// <param name="fixedHeight">
-    /// A fixed render height in pixels, or 0 (the default) to track the canvas height and follow window resizes.
-    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="canvas"/> is null.</exception>
-    public CodeBrixPlatformBitmapRenderSurfaceAdapter(GameSurfaceCanvas canvas, int fixedWidth = 0, int fixedHeight = 0)
+    public CodeBrixPlatformBitmapRenderSurfaceAdapter(GameSurfaceCanvas canvas)
         : base(
-            fixedWidth > 0 ? fixedWidth : Math.Max(1, (int)canvas.ActualWidth),
-            fixedHeight > 0 ? fixedHeight : Math.Max(1, (int)canvas.ActualHeight))
+            Math.Max(1, (int)canvas.ActualWidth),
+            Math.Max(1, (int)canvas.ActualHeight),
+            HasLayoutSize(canvas))
     {
         _canvas = canvas ?? throw new ArgumentNullException(nameof(canvas));
-        _fixedResolution = fixedWidth > 0 && fixedHeight > 0;
 
-        // Only follow the control's size when the render resolution is not pinned; a pinned
-        // resolution is letterboxed to fit by the canvas each paint.
-        if (!_fixedResolution)
-            _canvas.SizeChanged += OnSizeChanged;
+        // A resize changes only where and how large the frame is presented, so the adapter follows
+        // the control whatever the render resolution is.
+        _canvas.SizeChanged += OnSizeChanged;
 
         // Track whether the canvas is in the visual tree; Present stops scheduling paints
         // while it is not (see the comment there).
         _canvas.Unloaded += OnCanvasUnloaded;
         _canvas.Loaded += OnCanvasLoaded;
     }
+
+    // A canvas created but not laid out yet reports a zero size: the adapter then starts on a
+    // placeholder, and the first real layout establishes the logical render resolution once.
+    private static bool HasLayoutSize(GameSurfaceCanvas canvas)
+        => canvas is not null && canvas.ActualWidth >= 1 && canvas.ActualHeight >= 1;
 
     private void OnCanvasUnloaded(object sender, RoutedEventArgs e) => _canvasUnloaded = true;
 
@@ -72,6 +74,12 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The canvas repaints its whole surface on every paint, so this adapter always hands it the
+    /// complete frame and lets it draw through the shared presentation transform; the dirty
+    /// <paramref name="bufferRect"/> and its mapped <paramref name="destRect"/> would describe a
+    /// partial blit this control cannot do.
+    /// </remarks>
     public override void Present(SKImage bufferImage, SKRectI bufferRect, SKRect destRect)
     {
         if (_disposed)
@@ -87,7 +95,6 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
         var old = Interlocked.Exchange(ref _currentImage, bufferImage);
         if (old is not null && !ReferenceEquals(old, bufferImage))
             _toDispose.Enqueue(old);
-        _latestBufferRect = bufferRect;
 
         // While the canvas is off the visual tree (window closing or page navigated away), keep
         // caching the newest frame (the pause snapshot still reads it) but schedule no paints:
@@ -114,7 +121,7 @@ public sealed class CodeBrixPlatformBitmapRenderSurfaceAdapter : RenderSurfaceAd
         // Clear the latch first so a frame arriving during this paint schedules the next one.
         Interlocked.Exchange(ref _paintScheduled, 0);
 
-        _canvas.SetImage(Volatile.Read(ref _currentImage), _latestBufferRect);
+        _canvas.SetImage(Volatile.Read(ref _currentImage));
 
         while (_toDispose.TryDequeue(out var image))
             image.Dispose();

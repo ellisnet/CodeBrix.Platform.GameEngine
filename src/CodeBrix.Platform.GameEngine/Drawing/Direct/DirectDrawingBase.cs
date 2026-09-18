@@ -778,6 +778,21 @@ public abstract class DirectDrawingBase : IDirectDrawable, IComparable<DirectDra
     }
 
     /// <summary>
+    /// Cancels any active reveal animation, leaving the reveal progress at its current value.
+    /// </summary>
+    /// <returns>This <see cref="DirectDrawingBase"/> instance for method chaining.</returns>
+    /// <remarks>
+    /// After calling this method the reveal animation started by <see cref="RevealTo"/> stops immediately
+    /// and the drawing keeps whatever reveal progress it had reached. Use <see cref="SetReveal"/> to move
+    /// the reveal to a specific value afterwards.
+    /// </remarks>
+    public DirectDrawingBase CancelReveal()
+    {
+        _revealAnimating = false;
+        return this;
+    }
+
+    /// <summary>
     /// Marks the regions occupied by this direct drawing as dirty, forcing a redraw on the next frame.
     /// </summary>
     /// <remarks>

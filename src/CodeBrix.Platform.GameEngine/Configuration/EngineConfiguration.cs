@@ -18,6 +18,93 @@ namespace CodeBrix.Platform.GameEngine.Configuration; //was previously: Gondwana
 /// </summary>
 public partial class EngineConfiguration
 {
+    private float _renderScale = 1f;
+
+    /// <summary>
+    /// Gets or sets the factor that establishes logical Backbuffer dimensions from the current
+    /// render surface dimensions.
+    /// </summary>
+    /// <value>
+    /// A finite, positive scale. The default is <c>1</c>; values above one enable supersampling,
+    /// values below one render fewer pixels than the surface presents.
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// Later adapter resizes affect presentation only — the complete image is fitted into the
+    /// surface and centred, so the Backbuffer keeps its identity, its logical dimensions, its views
+    /// and its camera zoom. Setting this property is the way to ask for a new resolution: every
+    /// registered surface re-establishes its logical size from its CURRENT surface dimensions, on
+    /// the thread that owns its rendering.
+    /// </para>
+    /// <para>
+    /// Every surface's scaled dimensions are validated before any of them are changed, so a value
+    /// that would overflow one surface changes none of them.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The value is not finite, or is not greater than zero.
+    /// </exception>
+    public float RenderScale
+    {
+        get => _renderScale;
+        set
+        {
+            if (!float.IsFinite(value) || value <= 0)
+                throw new ArgumentOutOfRangeException(nameof(value), "RenderScale must be finite and positive.");
+
+            if (_renderScale == value)
+                return;
+
+            var surfaces = RenderSurfaceHostRegistry.Snapshot();
+
+            // Validate every dimension before publishing intent or queuing any changes.
+            foreach (var surface in surfaces)
+            {
+                if (surface.RenderSurfaceAdapter is { } adapter)
+                {
+                    PresentationTransform.ScaleDimension(adapter.Width, value);
+                    PresentationTransform.ScaleDimension(adapter.Height, value);
+                }
+            }
+
+            _renderScale = value;
+
+            foreach (var surface in surfaces)
+                surface.RequestRenderScale(value);
+        }
+    }
+
+    private RenderScalingFilter _renderScalingFilter = RenderScalingFilter.Linear;
+
+    /// <summary>
+    /// Gets or sets the filtering applied when the finished Backbuffer image is presented on a
+    /// render surface.
+    /// </summary>
+    /// <value>
+    /// <see cref="RenderScalingFilter.Linear"/> (the default) or
+    /// <see cref="RenderScalingFilter.NearestNeighbor"/> for pixel art.
+    /// </value>
+    /// <remarks>
+    /// This is independent of <see cref="CodeBrix.Platform.GameEngine.Rendering.Views.Viewport.Zoom"/>
+    /// and of per-tile filtering: it applies only to the presentation step. Setting it re-presents
+    /// every registered surface in full on its next frame.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not a defined enumeration member.</exception>
+    public RenderScalingFilter RenderScalingFilter
+    {
+        get => _renderScalingFilter;
+        set
+        {
+            if (!Enum.IsDefined(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+
+            _renderScalingFilter = value;
+
+            foreach (var surface in RenderSurfaceHostRegistry.Snapshot())
+                surface.InvalidatePresentation();
+        }
+    }
+
     private int _targetFPS = 60;
 
     /// <summary>
@@ -46,6 +133,33 @@ public partial class EngineConfiguration
                     gpuBb.TargetFps = _targetFPS;
             }
         }
+    }
+
+    private int _timerDrivenSimulationRate = 120;
+
+    /// <summary>
+    /// Gets or sets the number of fixed simulation updates performed per second in timer-driven
+    /// mode. The presentation cadence remains controlled independently by <see cref="TargetFPS"/>.
+    /// </summary>
+    /// <value>The fixed update rate in hertz. Values below one are clamped to one. The default is 120.</value>
+    public int TimerDrivenSimulationRate
+    {
+        get => _timerDrivenSimulationRate;
+        set => _timerDrivenSimulationRate = Math.Max(1, value);
+    }
+
+    private int _maxTimerDrivenSimulationSteps = 8;
+
+    /// <summary>
+    /// Gets or sets the maximum number of fixed simulation updates that one externally driven
+    /// <see cref="Engine.Tick"/> call may perform. Excess accumulated time is discarded to keep a
+    /// delayed frame from entering an unbounded catch-up loop.
+    /// </summary>
+    /// <value>The maximum updates per tick. Values below one are clamped to one. The default is 8.</value>
+    public int MaxTimerDrivenSimulationSteps
+    {
+        get => _maxTimerDrivenSimulationSteps;
+        set => _maxTimerDrivenSimulationSteps = Math.Max(1, value);
     }
 
     private bool _vSync = true;
@@ -106,7 +220,7 @@ public partial class EngineConfiguration
     /// <see cref="GpuBackbuffer"/> instances created after this property is set.  Because the
     /// GPU render-target surface must be recreated to change the sample count, the new value takes
     /// effect the next time <see cref="GpuBackbuffer.Initialize"/> is called on each surface
-    /// (e.g. on the next window resize).
+    /// (e.g. on an explicit render-resolution change).
     /// </para>
     /// <para>
     /// A value of <c>1</c> disables MSAA.  Common higher values are <c>2</c>, <c>4</c>, and
@@ -151,6 +265,35 @@ public partial class EngineConfiguration
     /// </summary>
     [JsonIgnore]
     public long SamplingTimeForCPSTicks => (long)(SamplingTimeForCPS * HighResTimer.TicksPerSecond);
+
+    // (float)TimeSpan.MaxValue.TotalSeconds rounds UP past TimeSpan.MaxValue (single precision has
+    // a 65,536-second step at that magnitude), so clamping to it would still make
+    // TimeSpan.FromSeconds throw. Step down to the largest float that a TimeSpan can express.
+    private static readonly float _maxWaitTimeoutSeconds = MathF.BitDecrement((float)TimeSpan.MaxValue.TotalSeconds);
+
+    private float _startInitializationWaitTimeout = 30f;
+
+    /// <summary>
+    /// Gets or sets how long <see cref="Engine.Start(SynchronizationContext)"/> waits when
+    /// another thread is already running <see cref="Engine.Initialize"/>.
+    /// </summary>
+    /// <value>
+    /// A positive timeout in seconds. Values that are not finite, or less than or equal to
+    /// <c>0</c>, are clamped to <c>0.001</c> seconds (1 millisecond); larger values are capped at
+    /// the largest timeout a <see cref="TimeSpan"/> can express. The default is 30 seconds.
+    /// </value>
+    /// <remarks>
+    /// The wait is bounded so a failed or hung initialization on another thread surfaces as an
+    /// <see cref="InvalidOperationException"/> instead of blocking the starting thread forever.
+    /// </remarks>
+    public float StartInitializationWaitTimeout
+    {
+        get => _startInitializationWaitTimeout;
+        set => _startInitializationWaitTimeout =
+            !float.IsFinite(value) || value <= 0f
+                ? 0.001f
+                : Math.Min(value, _maxWaitTimeoutSeconds);
+    }
 
     /// <summary>
     /// Minimum time (in seconds) allowed between Keyboard events.

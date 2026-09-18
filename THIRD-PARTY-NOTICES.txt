@@ -23,13 +23,18 @@ is not incorporated into these assemblies.
    Project:    Gondwana
    Author:     Michael Adkins (Hidden Worlds Games)
    Source:     https://github.com/Isthimius/Gondwana
-   Version:    master @ de1dcbf3 (2026-09-02)
+   Version:    v2.6.0 @ bfcc1fea3 (2026-09-17)
    License:    MIT
 
    Vendoring history: the original port matched upstream commit 64fd41df
    (2026-07-18). The upstream fixes and enhancements published between that
-   commit and de1dcbf3 were merged into this port on 2026-09-03; the pin above
-   records the upstream revision the core now tracks.
+   commit and de1dcbf3 (2026-09-02) were merged into this port on 2026-09-03,
+   and those published between de1dcbf3 and the v2.6.0 tag were merged on
+   2026-09-17; the pin above records the upstream revision the core now tracks.
+
+   Not vendored from the upstream project, and therefore not covered by this
+   port: its widget toolkit, its Blazor / WebGL rendering path, its NAudio-backed
+   audio backend packages, and its command-line and tilesheet-authoring tooling.
 
    The core library CodeBrix.Platform.GameEngine is a port of the Gondwana
    engine's core project. Source files were copied and adapted: namespaces were
@@ -42,7 +47,7 @@ is not incorporated into these assemblies.
      * SharpZipLib         -> CodeBrix.Compression
      * NAudio              -> CodeBrix.Audio
      * Newtonsoft.Json     -> System.Text.Json + CodeBrix.Json.Extensions
-     * SkiaSharp 3.119.2   -> SkiaSharp 4.151.0 (SKFilterQuality -> SKSamplingOptions,
+     * SkiaSharp 3.119.2   -> SkiaSharp 4.152.0 (SKFilterQuality -> SKSamplingOptions,
                               SKPaint text API -> SKFont)
      * SkiaSharp.HarfBuzz  -> removed (unused by the core)
 

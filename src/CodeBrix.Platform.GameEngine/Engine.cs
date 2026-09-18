@@ -76,6 +76,13 @@ public sealed class Engine : IDisposable
     private long _lastForegroundTick = HighResTimer.GetCurrentTick();
     private long _lastCycleTick = HighResTimer.GetCurrentTick();
 
+    // Timer-driven (externally ticked) fixed-step state: the simulation accumulator plus the
+    // presentation cadence tracked against the driver clock rather than the simulation clock.
+    private readonly FixedStepAccumulator _timerDrivenSteps = new();
+    private long _timerDrivenForegroundAccumulatedTicks;
+    private long _lastTimerDrivenForegroundDriverTick;
+    private int _timerDrivenForegroundTargetFps;
+
     private long _grossCyclesThisMeasure = 0;
     private long _netCyclesThisMeasure = 0;
     private double _grossCPS = 0;
@@ -83,6 +90,7 @@ public sealed class Engine : IDisposable
 
     private Task? _cycleTask;
     private EngineConfigurationFile? _configurationFile;
+    private bool _deferredDisposeScheduled;
 
     // Throttling state for logging unhandled exceptions raised from within an engine cycle.
     private long _lastCycleExceptionLogTick;
@@ -350,63 +358,73 @@ public sealed class Engine : IDisposable
 
         _isInitializing = true;
 
-        if (UiDispatcher == null)
-            PreInitialization?.Invoke();
-        else
-            UiDispatcher!.Post(() => PreInitialization?.Invoke());
-
+        // Everything below runs inside a try/finally: an initialization that throws must never
+        // leave the engine stuck reporting IsInitializing, and a thread already waiting on
+        // _initDone must always be released (it re-checks IsInitialized and reports the failure).
         try
         {
-            // A previous initialization may still own a configuration file with automatic saving
-            // enabled; disposing it writes those pending changes before it is replaced.
-            _configurationFile?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error saving the engine configuration during initialization.");
-        }
+            if (UiDispatcher == null)
+                PreInitialization?.Invoke();
+            else
+                UiDispatcher!.Post(() => PreInitialization?.Invoke());
 
-        _configurationFile = EngineConfigurationFile.Load(configFileName, autoSaveConfig);
-        Configuration = _configurationFile.EngineConfig;
-
-        ConfigureLogging(Configuration);
-
-        if (Configuration.StateFiles?.Any() ?? false)
-        {
-            foreach (var stateFile in Configuration.StateFiles)
+            try
             {
-                EngineState.MergeFromFile(stateFile.File, stateFile.IsCompressed, stateFile.OverwriteExisting, stateFile.EngineStateParts);
+                // A previous initialization may still own a configuration file with automatic saving
+                // enabled; disposing it writes those pending changes before it is replaced.
+                _configurationFile?.Dispose();
             }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error saving the engine configuration during initialization.");
+            }
+
+            _configurationFile = EngineConfigurationFile.Load(configFileName, autoSaveConfig);
+            Configuration = _configurationFile.EngineConfig;
+
+            ConfigureLogging(Configuration);
+
+            if (Configuration.StateFiles?.Any() ?? false)
+            {
+                foreach (var stateFile in Configuration.StateFiles)
+                {
+                    EngineState.MergeFromFile(stateFile.File, stateFile.IsCompressed, stateFile.OverwriteExisting, stateFile.EngineStateParts);
+                }
+            }
+
+            if (keyboardAdapter != null)
+                KeyboardEventPoller.Initialize(keyboardAdapter);
+
+            if (mouseAdapter != null)
+                MouseEventPoller.Initialize(mouseAdapter);
+
+            if (touchAdapter != null)
+                Input.TouchAdapter = touchAdapter;
+
+            Input.GamepadManager = gamepadManager;
+
+            if (UiDispatcher == null)
+                PostInitialization?.Invoke();
+            else
+                UiDispatcher!.Post(() => PostInitialization?.Invoke());
+
+            EnginePluginRegistry.InvokeInitialize(this);
+
+            // Only a run that reached this point counts as initialized.
+            _isInitialized = true;
+
+            if (UiDispatcher == null)
+                InitializationComplete?.Invoke();
+            else
+                UiDispatcher!.Post(() => InitializationComplete?.Invoke());
         }
+        finally
+        {
+            _isInitializing = false;
 
-        if (keyboardAdapter != null)
-            KeyboardEventPoller.Initialize(keyboardAdapter);
-
-        if (mouseAdapter != null)
-            MouseEventPoller.Initialize(mouseAdapter);
-
-        if (touchAdapter != null)
-            Input.TouchAdapter = touchAdapter;
-
-        Input.GamepadManager = gamepadManager;
-
-        if (UiDispatcher == null)
-            PostInitialization?.Invoke();
-        else
-            UiDispatcher!.Post(() => PostInitialization?.Invoke());
-
-        EnginePluginRegistry.InvokeInitialize(this);
-
-        _isInitializing = false;
-        _isInitialized = true;
-
-        if (UiDispatcher == null)
-            InitializationComplete?.Invoke();
-        else
-            UiDispatcher!.Post(() => InitializationComplete?.Invoke());
-
-        // signal that init is done
-        _initDone.Set();
+            // signal that init is done (successfully or not)
+            _initDone.Set();
+        }
     }
 
     /// <summary>
@@ -465,16 +483,25 @@ public sealed class Engine : IDisposable
     /// <list type="bullet">
     ///   <item><description>The engine's main loop runs on a background task, not the UI thread.</description></item>
     ///   <item><description>All rendering and timing operations are controlled through <see cref="Cycle"/>.</description></item>
-    ///   <item><description>The <see cref="UiDispatcher"/> guarantees that event notifications 
+    ///   <item><description>The <see cref="UiDispatcher"/> guarantees that event notifications
     ///   targeting the UI are executed safely on the originating thread.</description></item>
     /// </list>
+    /// <para>
+    /// When another thread is already running <see cref="Initialize"/>, this method waits for it
+    /// for at most <see cref="EngineConfiguration.StartInitializationWaitTimeout"/> seconds rather
+    /// than waiting forever, and reports an initialization that timed out or failed as an
+    /// <see cref="InvalidOperationException"/>.
+    /// </para>
     /// </remarks>
     /// <param name="uiContext">
-    /// The <see cref="SynchronizationContext"/> that defines the UI thread context to which 
+    /// The <see cref="SynchronizationContext"/> that defines the UI thread context to which
     /// UI-related operations and events will be dispatched.
     /// </param>
     /// <exception cref="InvalidOperationException">
-    /// Thrown if <paramref name="uiContext"/> is <c>null</c>.
+    /// Thrown if <paramref name="uiContext"/> is <c>null</c>; if initialization running on another
+    /// thread does not complete within
+    /// <see cref="EngineConfiguration.StartInitializationWaitTimeout"/> seconds; or if
+    /// initialization completed without success (on this thread or another).
     /// </exception>
     /// <seealso cref="Initialize"/>
     /// <seealso cref="Stop"/>
@@ -491,16 +518,30 @@ public sealed class Engine : IDisposable
         {
             if (IsInitializing)
             {
-                _initDone.Wait();        // someone else is initializing—wait for it
+                // someone else is initializing—wait for it, but never forever
+                var initializationWaitTimeoutSeconds = Configuration.StartInitializationWaitTimeout;
+                var initializationWaitTimeout = TimeSpan.FromSeconds(initializationWaitTimeoutSeconds);
+
+                if (!_initDone.Wait(initializationWaitTimeout))
+                    throw new InvalidOperationException(
+                        $"Engine initialization did not complete within {initializationWaitTimeoutSeconds:0.###} seconds.");
+
+                if (!IsInitialized)
+                    throw new InvalidOperationException(
+                        "Engine initialization failed on another thread. Call Initialize() again and resolve the initialization error.");
             }
             else
             {
                 Initialize();            // we're the initializer—do it now
             }
+
+            if (!IsInitialized)
+                throw new InvalidOperationException("Engine failed to initialize.");
         }
 
-        IsRunning = true;
         _isTimerDriven = false;
+        EngineSimulationClock.UseWallClock();
+        IsRunning = true;
 
         _startTick = HighResTimer.GetCurrentTick();
         _lastCPSSamplingTick = _startTick;
@@ -546,8 +587,9 @@ public sealed class Engine : IDisposable
     /// such as single-threaded WebAssembly (WASM) runtimes. Instead of spawning a
     /// <see cref="Task"/> to drive the loop, it binds the <see cref="EngineDispatcher"/>
     /// to the calling thread and returns immediately. The caller is then responsible for
-    /// advancing the engine by calling <see cref="Tick"/> on each timer tick (e.g. via
-    /// a platform-specific timer such as <c>DispatcherTimer</c>).
+    /// advancing the engine by calling <see cref="Tick"/> for each presentation opportunity
+    /// (for example a platform timer such as <c>DispatcherTimer</c>). Each call may perform
+    /// multiple fixed simulation updates but no more than one foreground render.
     /// </para>
     /// <para>
     /// Unlike <see cref="Start(SynchronizationContext)"/>, this method will throw if
@@ -563,7 +605,8 @@ public sealed class Engine : IDisposable
     /// Thrown if <paramref name="uiContext"/> is <c>null</c>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown if initialization is currently in progress on another thread.
+    /// Thrown if initialization is currently in progress on another thread, or if initialization
+    /// completed without success.
     /// </exception>
     /// <seealso cref="Tick"/>
     /// <seealso cref="Start(SynchronizationContext)"/>
@@ -583,34 +626,48 @@ public sealed class Engine : IDisposable
                     "Blocking waits are not supported in timer-driven (single-threaded) mode.");
 
             Initialize();
+
+            if (!IsInitialized)
+                throw new InvalidOperationException("Engine failed to initialize.");
         }
 
         // Bind the dispatcher to the calling (UI) thread — Tick() will be called from here.
         EngineDispatcher.BindToCurrentThread();
 
-        IsRunning = true;
-        _isTimerDriven = true;
-
         _startTick = HighResTimer.GetCurrentTick();
         _lastCPSSamplingTick = _startTick;
         _lastCycleTick = _startTick;
+        _lastBackgroundTick = _startTick;
+        _lastForegroundTick = _startTick;
+        _timerDrivenSteps.Reset(_startTick);
+        _timerDrivenForegroundAccumulatedTicks = 0;
+        _lastTimerDrivenForegroundDriverTick = _startTick;
+        _timerDrivenForegroundTargetFps = Configuration.TargetFPS;
+        EngineSimulationClock.BeginTimerDriven(_startTick);
+
+        _isTimerDriven = true;
+        IsRunning = true;
 
         // _cycleTask is intentionally left null; the caller drives the loop via Tick().
     }
 
     /// <summary>
-    /// Advances the engine by one cycle.
+    /// Advances the timer-driven engine by one externally presented frame.
     /// </summary>
     /// <remarks>
     /// <para>
     /// This method is intended for use with the timer-driven startup path initiated by
     /// <see cref="StartTimerDriven(SynchronizationContext)"/>. The caller (typically a
     /// platform timer such as a <c>DispatcherTimer</c>) should invoke this method once per
-    /// timer tick to drive the engine loop.
+    /// presentation opportunity. Elapsed time is accumulated into zero or more fixed simulation
+    /// steps, capped by <see cref="EngineConfiguration.MaxTimerDrivenSimulationSteps"/>, followed
+    /// by at most one foreground render.
     /// </para>
     /// <para>
     /// If the engine is not currently running, this method returns immediately without
-    /// performing any work.
+    /// performing any work. While the engine is globally paused (see <see cref="Pause"/>), the
+    /// tick performs the pause transition once and is then a cheap no-op — no simulation time
+    /// accumulates.
     /// </para>
     /// </remarks>
     /// <seealso cref="StartTimerDriven(SynchronizationContext)"/>
@@ -628,7 +685,61 @@ public sealed class Engine : IDisposable
             return;
         }
 
-        Cycle();
+        if (!_isTimerDriven)
+        {
+            Cycle();
+            return;
+        }
+
+        EngineDispatcher.Drain();
+
+        long driverTick = HighResTimer.GetCurrentTick();
+        var batch = _timerDrivenSteps.Advance(
+            driverTick,
+            Configuration.TimerDrivenSimulationRate,
+            Configuration.MaxTimerDrivenSimulationSteps);
+
+        bool render = IsTimerDrivenForegroundDue(driverTick);
+        double frameDelta = HighResTimer.GetDuration(_lastForegroundTick, driverTick);
+
+        // The step batch is this mode's "inside a cycle" window: Pause() called from a handler
+        // on the timer thread must defer its transition to the next Tick() rather than re-enter
+        // the rendering path (see Pause).
+        _inCycle = true;
+        try
+        {
+            if (batch.StepCount == 0)
+            {
+                if (render)
+                    RenderFrame(driverTick, frameDelta);
+
+                if (Configuration.SamplingTimeForCPS > 0)
+                    CalculateCPS(driverTick);
+
+                return;
+            }
+
+            double fixedDelta = batch.StepTicks / (double)HighResTimer.TicksPerSecond;
+
+            for (int step = 0; step < batch.StepCount && IsRunning; step++)
+            {
+                long simulationTick = batch.GetStepTick(step);
+                EngineSimulationClock.SetTimerDrivenTick(simulationTick);
+
+                bool isLastStep = step == batch.StepCount - 1;
+                RunSimulationCycle(
+                    simulationTick,
+                    fixedDelta,
+                    render && isLastStep,
+                    driverTick,
+                    frameDelta,
+                    sampleCps: isLastStep);
+            }
+        }
+        finally
+        {
+            _inCycle = false;
+        }
     }
 
     /// <summary>
@@ -663,6 +774,8 @@ public sealed class Engine : IDisposable
             return;
 
         IsRunning = false;
+        _isTimerDriven = false;
+        EngineSimulationClock.UseWallClock();
 
         // Release a cycle loop parked by the global pause so it can observe the stop.
         lock (_parkMonitor)
@@ -671,6 +784,35 @@ public sealed class Engine : IDisposable
         }
 
         InvokeShutdownAfterCycleStops();
+    }
+
+    /// <summary>
+    /// Stops the engine and waits for its background cycle to finish before returning.
+    /// Resources used by rendering can then be released without racing that cycle.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Call from the hosting thread, outside an engine callback. Timer-driven hosts must stop
+    /// their platform timer and call this between ticks on the timer's thread. This does not
+    /// dispose engine state. Unlike <see cref="Stop"/>, it blocks until an in-flight background
+    /// cycle completes, even if <see cref="Stop"/> was already called.
+    /// </para>
+    /// <para>
+    /// A cycle loop parked by the global <see cref="Pause"/> is released by the stop, so a paused
+    /// engine can be shut down without resuming it first.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Called from the active background engine thread.</exception>
+    /// <seealso cref="Stop"/>
+    /// <seealso cref="Dispose()"/>
+    public void StopAndWait()
+    {
+        var cycleTask = _cycleTask;
+        if (cycleTask is not null && !cycleTask.IsCompleted && EngineDispatcher.IsOnEngineThread)
+            throw new InvalidOperationException("StopAndWait must be called outside the background engine thread.");
+
+        Stop();
+        cycleTask?.GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -1006,7 +1148,9 @@ public sealed class Engine : IDisposable
     /// resumed cycle sees no time jump: no giant movement delta, no timer burst, no animation
     /// churn. Baselines captured DURING the pause (objects created by a Paused handler) are
     /// never pushed into the future. Also shifts the engine start tick so
-    /// <see cref="TotalTicksEngineRunning"/> excludes paused time. Caller holds the pause gate.
+    /// <see cref="TotalTicksEngineRunning"/> excludes paused time. In timer-driven mode the
+    /// update-side baselines live on the fixed simulation clock, which is frozen while paused, so
+    /// only the wall-clock (render and driver) baselines move. Caller holds the pause gate.
     /// </summary>
     /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
     /// <param name="resumeTick">The current tick at the moment of resume.</param>
@@ -1015,23 +1159,45 @@ public sealed class Engine : IDisposable
         if (pausedTicks <= 0)
             return;
 
+        // In timer-driven mode the UPDATE side runs on the fixed simulation clock, which does not
+        // advance while the engine is paused — those baselines are already correct and must not be
+        // pushed forward. The RENDER side (and the external driver's own clock) still runs on wall
+        // time and is shifted in both modes.
+        bool shiftUpdateSideBaselines = !_isTimerDriven;
+
         if (IsRunning)
         {
             _startTick += pausedTicks;
             _lastCycleTick = HighResTimer.ShiftBaselineForResume(_lastCycleTick, pausedTicks, resumeTick);
-            _lastBackgroundTick = HighResTimer.ShiftBaselineForResume(_lastBackgroundTick, pausedTicks, resumeTick);
             _lastForegroundTick = HighResTimer.ShiftBaselineForResume(_lastForegroundTick, pausedTicks, resumeTick);
             _lastCPSSamplingTick = HighResTimer.ShiftBaselineForResume(_lastCPSSamplingTick, pausedTicks, resumeTick);
+
+            if (shiftUpdateSideBaselines)
+            {
+                _lastBackgroundTick = HighResTimer.ShiftBaselineForResume(_lastBackgroundTick, pausedTicks, resumeTick);
+            }
+            else
+            {
+                // Without this the first Tick() after a long pause would see the whole pause as
+                // elapsed driver time: a full (capped) burst of simulation steps and a forced render.
+                _timerDrivenSteps.ShiftForResume(pausedTicks);
+                _lastTimerDrivenForegroundDriverTick = HighResTimer.ShiftBaselineForResume(
+                    _lastTimerDrivenForegroundDriverTick, pausedTicks, resumeTick);
+            }
         }
 
-        Timer.ShiftAllForResume(pausedTicks, resumeTick);
-        SpriteManager.Instance.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+        Timer.ShiftAllForResume(pausedTicks, resumeTick, shiftPreCycleTimers: shiftUpdateSideBaselines);
         DirectDrawingManager.Instance.ShiftTimeBaselinesForResume(pausedTicks, resumeTick);
 
         // Display effects advance from a stored foreground tick; without this shift the first
         // resumed frame would advance every running effect by the whole length of the pause.
         foreach (var surface in RenderSurfaceHostRegistry.All)
             surface.Effects.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
+
+        if (!shiftUpdateSideBaselines)
+            return;
+
+        SpriteManager.Instance.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
 
         foreach (var tile in Tile.TilesAnimating.ToArray())
             tile.TileAnimator?.ShiftTimeBaselineForResume(pausedTicks, resumeTick);
@@ -1190,9 +1356,10 @@ public sealed class Engine : IDisposable
     /// <value>The number of complete engine cycles executed per second, including throttled cycles.</value>
     /// <remarks>
     /// <para>
-    /// This metric reflects all calls to <see cref="Cycle"/>, regardless of whether
-    /// a foreground render was performed. It represents the engine's update frequency
-    /// for background tasks such as input polling, timers, and animations.
+    /// This metric reflects all simulation updates, regardless of whether a foreground render
+    /// was performed. In timer-driven mode a single <see cref="Tick"/> may contribute zero or
+    /// multiple updates. It represents the update frequency for background tasks such as input
+    /// polling, timers, and animations.
     /// </para>
     /// <para>
     /// This value is updated at the interval specified by <see cref="EngineConfiguration.SamplingTimeForCPS"/>.
@@ -1359,37 +1526,104 @@ public sealed class Engine : IDisposable
         EngineDispatcher.Drain();
 
         long tick = HighResTimer.GetCurrentTick();
-        var deltaMs = HighResTimer.GetDuration(_lastCycleTick, tick);
+        var deltaSeconds = HighResTimer.GetDuration(_lastCycleTick, tick);
         _lastCycleTick = tick;
 
-        EnginePluginRegistry.InvokePreCycle(this, deltaMs);
+        RunSimulationCycle(
+            tick,
+            deltaSeconds,
+            IsForegroundDue(tick),
+            tick,
+            deltaSeconds,
+            sampleCps: true);
+    }
 
-        DoBackgroundTasks(tick);
+    /// <summary>
+    /// Runs one simulation update, optionally followed by a foreground render. In the desktop
+    /// loop the simulation and render clocks are the same tick; in timer-driven mode the
+    /// simulation runs on fixed steps while the render uses the external driver's clock.
+    /// </summary>
+    /// <param name="simulationTick">The tick this update represents.</param>
+    /// <param name="simulationDelta">The update delta, in seconds.</param>
+    /// <param name="render">Whether a foreground render follows this update.</param>
+    /// <param name="renderTick">The tick a render (and CPS sampling) is attributed to.</param>
+    /// <param name="frameDelta">The elapsed time since the previous render, in seconds.</param>
+    /// <param name="sampleCps">Whether this update may sample the cycles-per-second counters.</param>
+    private void RunSimulationCycle(
+        long simulationTick,
+        double simulationDelta,
+        bool render,
+        long renderTick,
+        double frameDelta,
+        bool sampleCps)
+    {
+        EnginePluginRegistry.InvokePreCycle(this, simulationDelta);
 
-        // if TargetFPS <= 0, render to screen unbounded
-        // otherwise, check if throttle time has passed since last tick...
-        if ((Configuration.TargetFPS <= 0)
-            || (tick - _lastForegroundTick) >= HighResTimer.TicksPerSecond / Configuration.TargetFPS)
-        {
-            EnginePluginRegistry.InvokePreFrameRender(this, deltaMs);
+        DoBackgroundTasks(simulationTick);
 
-            DoForegroundTasks(tick);
-
-            EnginePluginRegistry.InvokePostFrameRender(this, deltaMs);
-
-            // save time of this last tick; increment CPS counter
-            _lastForegroundTick = tick;
-            _netCyclesThisMeasure++;
-        }
+        if (render)
+            RenderFrame(renderTick, frameDelta);
 
         // increment CPS counter
         _grossCyclesThisMeasure++;
 
-        // if 0 or negative, sampling is turned off
-        if (Configuration.SamplingTimeForCPS > 0)
-            CalculateCPS(tick);
+        // if SamplingTimeForCPS is 0 or negative, sampling is turned off
+        if (sampleCps && Configuration.SamplingTimeForCPS > 0)
+            CalculateCPS(renderTick);
 
-        EnginePluginRegistry.InvokePostCycle(this, deltaMs);
+        EnginePluginRegistry.InvokePostCycle(this, simulationDelta);
+    }
+
+    // if TargetFPS <= 0, render to screen unbounded; otherwise check whether the throttle time
+    // has passed since the last rendered frame
+    private bool IsForegroundDue(long tick) =>
+        Configuration.TargetFPS <= 0
+        || (tick - _lastForegroundTick) >= HighResTimer.TicksPerSecond / Configuration.TargetFPS;
+
+    private bool IsTimerDrivenForegroundDue(long tick)
+    {
+        int targetFps = Configuration.TargetFPS;
+        long elapsedTicks = Math.Max(0, tick - _lastTimerDrivenForegroundDriverTick);
+        _lastTimerDrivenForegroundDriverTick = tick;
+
+        if (targetFps <= 0)
+        {
+            _timerDrivenForegroundAccumulatedTicks = 0;
+            _timerDrivenForegroundTargetFps = targetFps;
+            return true;
+        }
+
+        if (_timerDrivenForegroundTargetFps != targetFps)
+        {
+            _timerDrivenForegroundTargetFps = targetFps;
+            _timerDrivenForegroundAccumulatedTicks = 0;
+        }
+
+        _timerDrivenForegroundAccumulatedTicks += elapsedTicks;
+
+        long frameIntervalTicks = Math.Max(1, HighResTimer.TicksPerSecond / targetFps);
+        if (_timerDrivenForegroundAccumulatedTicks < frameIntervalTicks)
+            return false;
+
+        // Render at most once per externally driven Tick(), but preserve the fractional
+        // remainder so small driver timing jitter cannot permanently lower the effective
+        // render rate. Whole missed intervals are discarded rather than causing an unbounded
+        // render catch-up sequence after a long host stall.
+        _timerDrivenForegroundAccumulatedTicks %= frameIntervalTicks;
+        return true;
+    }
+
+    private void RenderFrame(long tick, double delta)
+    {
+        EnginePluginRegistry.InvokePreFrameRender(this, delta);
+
+        DoForegroundTasks(tick);
+
+        EnginePluginRegistry.InvokePostFrameRender(this, delta);
+
+        // save time of this last rendered frame; increment the net (frame) counter
+        _lastForegroundTick = tick;
+        _netCyclesThisMeasure++;
     }
 
     private void DoBackgroundTasks(long tick)
@@ -1553,6 +1787,9 @@ public sealed class Engine : IDisposable
         {
             if (disposing)
             {
+                if (IsDisposing)
+                    return;
+
                 IsDisposing = true;
 
                 // stop the loop first so handlers don't race the cycle thread
@@ -1565,86 +1802,125 @@ public sealed class Engine : IDisposable
                     Logger.LogError(ex, "Unhandled exception calling Stop()");
                 }
 
-                // wait for the background loop to actually exit
+                // wait for the background loop to actually exit unless we're already on it
                 try
                 {
-                    _cycleTask?.Wait();
+                    var cycleTask = _cycleTask;
+                    if (cycleTask is not null && EngineDispatcher.IsOnEngineThread && !cycleTask.IsCompleted)
+                    {
+                        // Disposal requested from inside the cycle itself: waiting here would be a
+                        // self-wait that never completes, so hand the managed cleanup to a
+                        // continuation that runs the moment the cycle loop exits.
+                        if (!_deferredDisposeScheduled)
+                        {
+                            _deferredDisposeScheduled = true;
+                            cycleTask.ContinueWith(
+                                _ => CompleteManagedDisposal(),
+                                System.Threading.CancellationToken.None,
+                                System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously,
+                                System.Threading.Tasks.TaskScheduler.Default);
+                        }
+
+                        return;
+                    }
+
+                    if (cycleTask is not null && !EngineDispatcher.IsOnEngineThread)
+                        cycleTask.Wait();
                 }
                 catch (Exception ex)
                 {
                     Logger.LogError(ex, "Error waiting for engine loop to exit.");
                 }
 
-                // raise Disposing on UI thread if possible; otherwise inline
-                if (UiDispatcher is not null)
-                    UiDispatcher.Post(() => SafeInvoke(Disposing));
-                else
-                    SafeInvoke(Disposing);
-
-                // managed cleanup...
-                Input.KeyboardEventPoller?.StopMonitoringAllKeys();
-                MouseEventPoller.Reset();
-                TouchEventPoller.Reset();
-
-                if (Input.GamepadManager is not null)
-                    foreach (var gamepadAdapter in Input.GamepadManager.ConnectedAdapters)
-                        Input.GamepadEventPoller?.StopMonitoringAllButtons(gamepadAdapter.GamepadId);
-
-                try
-                {
-                    // Disposing the configuration file writes pending changes when autoSaveConfig is on.
-                    _configurationFile?.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError(ex, "Error saving the engine configuration during disposal.");
-                }
-                finally
-                {
-                    _configurationFile = null;
-                }
-
-                if (EngineLogger.Mode == EngineLoggingMode.Asynchronous)
-                    EngineLogger.StopAsyncLogging(flush: Configuration.FlushAsyncLogsOnShutdown);
-
-                Timer.ClearAll();
-                State.Clear();
-
-                // Release the shared audio output: stops any remaining voices and frees the
-                // native device (and un-pins any AudioSystem.Initialize format). Harmless
-                // when the game never played audio; the shared output restarts automatically
-                // if something plays later in the process.
-                try
-                {
-                    Audio.AudioSystem.Shutdown();
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError(ex, "Error shutting down the shared audio output during engine disposal.");
-                }
-
-                // The pause snapshots are owned by their surfaces/presenters; just drop the
-                // engine's reference.
-                LastFrameBeforePause = null;
-
-                lock (_enginePausableLoops)
-                {
-                    _enginePausableLoops.Clear();
-                }
+                CompleteManagedDisposal();
             }
-
-            // unmanaged cleanup...
-            IsDisposed = true;
-
-            if (disposing)
+            else
             {
-                // now signal we're fully torn down
-                if (UiDispatcher is not null)
-                    UiDispatcher.Post(() => SafeInvoke(Disposed));
-                else
-                    SafeInvoke(Disposed);
+                // unmanaged cleanup...
+                IsDisposed = true;
             }
         }
+    }
+
+    /// <summary>
+    /// Performs the managed half of disposal: the <see cref="Disposing"/> event, input and
+    /// configuration teardown, timer/state/audio cleanup, and finally the <see cref="Disposed"/>
+    /// event. Runs inline for an ordinary <see cref="Dispose()"/> call, or from a continuation on
+    /// the cycle task when disposal was requested from inside an engine cycle.
+    /// </summary>
+    private void CompleteManagedDisposal()
+    {
+        if (IsDisposed)
+            return;
+
+        // raise Disposing on UI thread if possible; otherwise inline
+        if (UiDispatcher is not null)
+            UiDispatcher.Post(() => SafeInvoke(Disposing));
+        else
+            SafeInvoke(Disposing);
+
+        // managed cleanup...
+        Input.KeyboardEventPoller?.StopMonitoringAllKeys();
+        MouseEventPoller.Reset();
+        TouchEventPoller.Reset();
+
+        if (Input.GamepadManager is not null)
+            foreach (var gamepadAdapter in Input.GamepadManager.ConnectedAdapters)
+                Input.GamepadEventPoller?.StopMonitoringAllButtons(gamepadAdapter.GamepadId);
+
+        try
+        {
+            // Disposing the configuration file writes pending changes when autoSaveConfig is on.
+            _configurationFile?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving the engine configuration during disposal.");
+        }
+        finally
+        {
+            _configurationFile = null;
+        }
+
+        if (EngineLogger.Mode == EngineLoggingMode.Asynchronous)
+            EngineLogger.StopAsyncLogging(flush: Configuration.FlushAsyncLogsOnShutdown);
+
+        Timer.ClearAll();
+        State.Clear();
+
+        // Release the shared audio output: stops any remaining voices and frees the
+        // native device (and un-pins any AudioSystem.Initialize format). Harmless
+        // when the game never played audio; the shared output restarts automatically
+        // if something plays later in the process.
+        try
+        {
+            Audio.AudioSystem.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error shutting down the shared audio output during engine disposal.");
+        }
+
+        // The pause snapshots are owned by their surfaces/presenters; just drop the
+        // engine's reference.
+        LastFrameBeforePause = null;
+
+        lock (_enginePausableLoops)
+        {
+            _enginePausableLoops.Clear();
+        }
+
+        // Asset providers are runtime registrations, not saved state; drop and dispose them.
+        Managers.AssetProviders.Clear();
+
+        // unmanaged cleanup...
+        IsDisposed = true;
+
+        // now signal we're fully torn down
+        if (UiDispatcher is not null)
+            UiDispatcher.Post(() => SafeInvoke(Disposed));
+        else
+            SafeInvoke(Disposed);
     }
 
     private static void SafeInvoke(Action? evnt)
@@ -1666,7 +1942,7 @@ public sealed class Engine : IDisposable
     /// </para>
     /// <list type="bullet">
     ///   <item><description>Stopping the main engine loop</description></item>
-    ///   <item><description>Waiting for the background thread to exit</description></item>
+    ///   <item><description>Waiting for the background thread to exit when disposal is initiated off the engine thread</description></item>
     ///   <item><description>Raising the <see cref="Disposing"/> event</description></item>
     ///   <item><description>Cleaning up input subsystems</description></item>
     ///   <item><description>Saving configuration changes when automatic saving is enabled</description></item>

@@ -6,6 +6,7 @@ using SilverAssertions;
 using SkiaSharp;
 using Xunit;
 
+
 namespace CodeBrix.Platform.GameEngine.Tests;
 
 /// <summary>
@@ -91,6 +92,171 @@ public class RenderSurfaceHostTests
         //  render path can skip the frame outright; see RenderToBackbuffer's null-scene guard.
         scene.BoundRenderSurfaceHost.Should().BeNull();
         host.Scene.Should().BeNull();
+    }
+
+    [Fact]
+    public void GlRenderToCanvas_returns_false_for_a_surface_that_is_not_gl_rendered()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
+        using var destination = SKSurface.Create(new SKImageInfo(320, 200));
+
+        //Act
+        bool rendered = host.GlRenderToCanvas(destination.Canvas);
+        bool drawn = host.GlDrawCurrentFrameToCanvas(destination.Canvas);
+        SKImage? snapshot = host.GlSnapshotCurrentFrame();
+
+        //Assert - the CPU path is driven by the engine loop, not by a GPU paint callback.
+        rendered.Should().BeFalse();
+        drawn.Should().BeFalse();
+        snapshot.Should().BeNull();
+    }
+
+    [Fact]
+    public void GlRenderToCanvas_rejects_a_null_destination_canvas()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+
+        //Act
+        Action renderToNothing = () => host.GlRenderToCanvas(null!);
+        Action drawToNothing = () => host.GlDrawCurrentFrameToCanvas(null!);
+
+        //Assert
+        renderToNothing.Should().Throw<ArgumentNullException>();
+        drawToNothing.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void GlDrawCurrentFrameToCanvas_copies_the_current_surface_to_the_destination()
+    {
+        //Arrange - a GPU backbuffer starts on its CPU-fallback raster surface (no GRContext),
+        //  which is enough to prove the surface-to-canvas copy.
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+        using var destination = SKSurface.Create(new SKImageInfo(320, 200));
+        destination.Canvas.Clear(SKColors.Blue);
+        host.Backbuffer.Canvas.Clear(SKColors.Red);
+
+        //Act
+        bool drawn = host.GlDrawCurrentFrameToCanvas(destination.Canvas);
+
+        //Assert
+        drawn.Should().BeTrue();
+        ReadPixel(destination, 10, 10).Should().Be(SKColors.Red);
+    }
+
+    [Fact]
+    public void GlSnapshotCurrentFrame_returns_the_current_frame_without_rendering_a_new_one()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+        int renderCount = 0;
+        Action onRenderBegin = () => renderCount++;
+        host.RenderBackbufferBegin += onRenderBegin;
+        host.Backbuffer.Canvas.Clear(SKColors.Lime);
+
+        //Act
+        using SKImage? snapshot = host.GlSnapshotCurrentFrame();
+
+        //Assert
+        host.RenderBackbufferBegin -= onRenderBegin;
+        snapshot.Should().NotBeNull();
+        renderCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void GlRenderToCanvas_renders_a_new_frame_when_the_engine_is_not_paused()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+        using var destination = SKSurface.Create(new SKImageInfo(320, 200));
+        int renderCount = 0;
+        Action onRenderBegin = () => renderCount++;
+        host.RenderBackbufferBegin += onRenderBegin;
+
+        //Act
+        bool rendered = host.GlRenderToCanvas(destination.Canvas);
+
+        //Assert
+        host.RenderBackbufferBegin -= onRenderBegin;
+        rendered.Should().BeTrue();
+        renderCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void GlRenderToCanvas_re_presents_the_current_frame_while_the_engine_is_paused()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+        using var destination = SKSurface.Create(new SKImageInfo(320, 200));
+        destination.Canvas.Clear(SKColors.Blue);
+        host.Backbuffer.Canvas.Clear(SKColors.Red);
+        int renderCount = 0;
+        Action onRenderBegin = () => renderCount++;
+        host.RenderBackbufferBegin += onRenderBegin;
+        bool rendered;
+
+        //Act
+        Engine.Instance.Pause();
+
+        try
+        {
+            rendered = host.GlRenderToCanvas(destination.Canvas);
+        }
+        finally
+        {
+            Engine.Instance.Resume();
+            host.RenderBackbufferBegin -= onRenderBegin;
+        }
+
+        //Assert - the global pause must not let a GPU presenter advance the scene: the frame
+        //  that was last rendered is re-presented instead.
+        rendered.Should().BeTrue();
+        renderCount.Should().Be(0);
+        ReadPixel(destination, 10, 10).Should().Be(SKColors.Red);
+    }
+
+    [Fact]
+    public void GlRenderToCanvas_renders_while_paused_when_the_caller_asks_for_it()
+    {
+        //Arrange
+        using var adapter = new FakeRenderSurfaceAdapter();
+        using var host = new RenderSurfaceHost<GpuBackbuffer>(adapter);
+        using var destination = SKSurface.Create(new SKImageInfo(320, 200));
+        int renderCount = 0;
+        Action onRenderBegin = () => renderCount++;
+        host.RenderBackbufferBegin += onRenderBegin;
+        bool rendered;
+
+        //Act - this is the adapter-driven paused-overlay frame, matching GlRenderAndSnapshot.
+        Engine.Instance.Pause();
+
+        try
+        {
+            rendered = host.GlRenderToCanvas(destination.Canvas, renderWhilePaused: true);
+        }
+        finally
+        {
+            Engine.Instance.Resume();
+            host.RenderBackbufferBegin -= onRenderBegin;
+        }
+
+        //Assert
+        rendered.Should().BeTrue();
+        renderCount.Should().Be(1);
+    }
+
+    private static SKColor ReadPixel(SKSurface surface, int x, int y)
+    {
+        using var image = surface.Snapshot();
+        using var bitmap = SKBitmap.FromImage(image);
+        return bitmap.GetPixel(x, y);
     }
 
     /// <summary>A render-surface adapter that presents nowhere.</summary>

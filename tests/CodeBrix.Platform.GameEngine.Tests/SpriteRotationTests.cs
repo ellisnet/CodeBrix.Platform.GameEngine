@@ -4,10 +4,13 @@ using System.Drawing;
 using System.Numerics;
 using CodeBrix.Platform.GameEngine.Drawing.Coordinates;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
+using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using CodeBrix.Platform.GameEngine.Rendering;
+using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
 using SilverAssertions;
+using SkiaSharp;
 using Xunit;
 
 namespace CodeBrix.Platform.GameEngine.Tests;
@@ -15,13 +18,15 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// <summary>
 /// Covers <see cref="Sprite.Rotation"/> and the axis-aligned bounds it produces:
 /// <see cref="Sprite.VisualBoundsWorld"/> and <see cref="Sprite.GetVisualBoundsScreen(View)"/>.
-/// Rotation is a rendering concern only — the collision rectangle stays axis-aligned.
+/// Rotation is a rendering concern only — the collision rectangle stays axis-aligned. Also covers
+/// <see cref="Sprite.Draw"/>, which applies the rotation itself so every backbuffer renders it the same way.
 /// </summary>
 public class SpriteRotationTests : IDisposable
 {
     private const float Tolerance = 0.001f;
 
     private readonly List<Scene> _scenes = new();
+    private readonly List<Tilesheet> _tilesheets = new();
 
     /// <summary>Clears the global sprite and scene registries this fixture populated.</summary>
     public void Dispose()
@@ -32,6 +37,12 @@ public class SpriteRotationTests : IDisposable
             scene.Dispose();
 
         _scenes.Clear();
+
+        //Disposed last: a sprite still holding a frame reads its tilesheet while it is being torn down.
+        foreach (var tilesheet in _tilesheets)
+            tilesheet.Dispose();
+
+        _tilesheets.Clear();
         Scene.ClearAllScenes();
         GC.SuppressFinalize(this);
     }
@@ -233,5 +244,61 @@ public class SpriteRotationTests : IDisposable
         //Assert
         sprite.VisualBoundsWorld.Should().Be(Rectangle.FromLTRB(24, -24, 40, 40));
         SpriteManager.Instance.GetSpritesInWorldRectRange(probeRect, layer).Should().Contain(sprite);
+    }
+
+    [Fact]
+    public void Draw_rotates_the_frame_around_the_destination_centre_on_a_bitmap_backbuffer()
+    {
+        //Arrange
+        using var backbuffer = new BitmapBackbuffer(12, 12);
+
+        //Act + Assert
+        AssertRotationRendered(backbuffer);
+    }
+
+    [Fact]
+    public void Draw_rotates_the_frame_around_the_destination_centre_on_a_gpu_backbuffer()
+    {
+        //Arrange
+        using var backbuffer = new GpuBackbuffer(12, 12);
+
+        //Act + Assert
+        AssertRotationRendered(backbuffer);
+    }
+
+    /// <summary>
+    /// Draws a 4x2 red frame rotated a quarter turn into a 12x12 backbuffer at (4, 5, 4, 2). The rotation
+    /// about the destination centre (6, 6) turns that rectangle into x 5..7, y 4..8, so the pixel above the
+    /// unrotated top-left corner is covered and the unrotated top-left corner itself is not. The canvas
+    /// matrix must be back to identity afterwards.
+    /// </summary>
+    /// <param name="backbuffer">The backbuffer under test.</param>
+    private void AssertRotationRendered(BackbufferBase backbuffer)
+    {
+        //Arrange
+        var bitmap = new SKBitmap(4, 2);
+        bitmap.Erase(SKColors.Red);
+
+        var tilesheet = TilesheetFactory.FromBitmap($"rotation-{backbuffer.GetType().Name}", bitmap);
+        _tilesheets.Add(tilesheet);
+        tilesheet.DefaultRegion.TileSize = new Size(4, 2);
+
+        var layer = CreateLayer();
+        var sprite = SpriteManager.Instance.CreateSprite(layer, tilesheet.GetFrame(0, 0));
+        sprite.RenderSize = new Size(4, 2);
+        sprite.SetPosition(new Vector2(3f, 4f));
+        sprite.Rotation = 90f;
+
+        //Act
+        backbuffer.Canvas.Clear(SKColors.Transparent);
+        sprite.Draw(backbuffer, new RectangleF(4f, 5f, 4f, 2f));
+
+        //Assert
+        using SKImage snapshot = backbuffer.Snapshot();
+        using SKBitmap rendered = SKBitmap.FromImage(snapshot);
+
+        rendered.GetPixel(5, 4).Should().Be(SKColors.Red);
+        rendered.GetPixel(4, 5).Alpha.Should().Be(0);
+        backbuffer.Canvas.TotalMatrix.IsIdentity.Should().BeTrue();
     }
 }

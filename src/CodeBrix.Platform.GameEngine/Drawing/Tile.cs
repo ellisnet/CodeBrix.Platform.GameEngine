@@ -2,6 +2,7 @@ using System.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Animation;
 using CodeBrix.Platform.GameEngine.Drawing.Collisions;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
+using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
@@ -59,6 +60,8 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
     private bool _collisionTypeByFrame;
     private bool _collisionTypeExplicitlySet;
     private string? _collisionProfileName;
+    private long _sortKeyRenderPassId;
+    private TileSortKey _sortKey;
 
     #endregion fields
 
@@ -592,31 +595,74 @@ public abstract class Tile : IDrawable, ICollisionEntity, IComparable<Tile>, IDi
         if (tile is null)
             return -1;
 
-        float thisLoc = GetTileLocForCompare(this);
-        float tileLoc = GetTileLocForCompare(tile);
+        var thisKey = GetSortKeyForCompare();
+        var tileKey = tile.GetSortKeyForCompare();
 
         // Handle fixed position vs non-fixed first
-        if (IsPositionFixed && !tile.IsPositionFixed)
+        if (thisKey.IsPositionFixed && !tileKey.IsPositionFixed)
             return -1;
 
-        if (!IsPositionFixed && tile.IsPositionFixed)
+        if (!thisKey.IsPositionFixed && tileKey.IsPositionFixed)
             return 1;
 
         // Use tuple comparison for the rest (Y, Z, X)
-        return (thisLoc, zOrder, SceneLayerCoordinates.X)
-             .CompareTo((tileLoc, tile.zOrder, tile.SceneLayerCoordinates.X));
+        return (thisKey.Location, thisKey.ZOrder, thisKey.SceneLayerX)
+             .CompareTo((tileKey.Location, tileKey.ZOrder, tileKey.SceneLayerX));
     }
 
     /// <summary>
-    /// if position is fixed, use top of primary (i.e., non-overhanging) area;
-    /// otherwise, use bottom of location for comparison
+    /// Returns the values this tile sorts by, reusing the value captured earlier in the
+    /// same render pass when one is available.
     /// </summary>
-    private static float GetTileLocForCompare(Tile tile)
+    private TileSortKey GetSortKeyForCompare()
     {
-        return tile.IsPositionFixed
-            ? tile.DrawLocationWorld.Top + tile.Overhang.Top
-            : tile.DrawLocationWorld.Bottom - tile.Overhang.Bottom - 1;
+        var renderContext = RenderContext.Current;
+
+        // Outside an active render pass preserve the historical live comparison
+        // semantics. During rendering, capture the expensive virtual/property values
+        // once per tile and reuse them for every comparison in this sort pass.
+        if (renderContext is null)
+            return CaptureSortKey();
+
+        long renderPassId = renderContext.PassId;
+        if (_sortKeyRenderPassId != renderPassId)
+        {
+            _sortKey = CaptureSortKey();
+            _sortKeyRenderPassId = renderPassId;
+        }
+
+        return _sortKey;
     }
+
+    /// <summary>
+    /// Reads the tile's live sort values. If position is fixed, uses the top of the primary
+    /// (i.e., non-overhanging) area; otherwise uses the bottom of the location for comparison.
+    /// </summary>
+    private TileSortKey CaptureSortKey()
+    {
+        bool isPositionFixed = IsPositionFixed;
+        Rectangle drawLocationWorld = DrawLocationWorld;
+        Spacing overhang = Overhang;
+        float location = isPositionFixed
+            ? drawLocationWorld.Top + overhang.Top
+            : drawLocationWorld.Bottom - overhang.Bottom - 1;
+
+        return new TileSortKey(
+            isPositionFixed,
+            location,
+            zOrder,
+            SceneLayerCoordinates.X);
+    }
+
+    /// <summary>
+    /// The immutable set of values a tile is sorted by within a single render pass.
+    /// </summary>
+    private readonly record struct TileSortKey(
+        bool IsPositionFixed,
+        float Location,
+        int ZOrder,
+        float SceneLayerX);
+
     #endregion IComparable<Tile> Members
 
     #region IDisposable Members

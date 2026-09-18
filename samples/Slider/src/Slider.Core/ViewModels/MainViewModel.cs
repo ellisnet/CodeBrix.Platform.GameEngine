@@ -120,8 +120,10 @@ public class MainViewModel : SimpleViewModel, IManageGameCanvas
 
     private void BuildPuzzle(int columns, int rows)
     {
-        // ActualWidth/Height are UI-thread properties; capture them before any marshaling.
-        var size = new Size((int)_canvas.ActualWidth, (int)_canvas.ActualHeight);
+        // The puzzle is laid out in the engine's logical render space — the backbuffer — not in the
+        // size of the window: a resize presents that same image fitted and centred, so rebuilding
+        // from the control's size would lay the board out for a space the engine does not draw in.
+        var size = new Size(_canvas.Host.Backbuffer.Width, _canvas.Host.Backbuffer.Height);
 
         if (!_engineStarted)
         {

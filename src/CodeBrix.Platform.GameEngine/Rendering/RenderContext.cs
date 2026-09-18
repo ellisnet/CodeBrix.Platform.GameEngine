@@ -18,12 +18,15 @@ internal sealed class RenderContext
 {
     [ThreadStatic]
     private static RenderContext? _current;
+    private static long _nextPassId;
+
     internal static RenderContext? Current => _current;
 
     private readonly RenderContext? _prior;
 
     private RenderContext(View view, long tick, RenderContext? prior)
     {
+        PassId = Interlocked.Increment(ref _nextPassId);
         View = view;
         Tick = tick;
 
@@ -42,6 +45,12 @@ internal sealed class RenderContext
 
         _prior = prior;
     }
+
+    /// <summary>
+    /// A process-wide unique identifier for this render pass, used by per-pass caches
+    /// (for example the tile sort-key cache) to detect when a cached value is stale.
+    /// </summary>
+    internal long PassId { get; }
 
     internal View View { get; }
     internal long Tick { get; }

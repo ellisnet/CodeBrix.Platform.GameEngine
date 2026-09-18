@@ -58,6 +58,66 @@ public sealed class FontManager : IDisposable
     }
 
     /// <summary>
+    /// Loads a font from a stream and stores it under the given key.
+    /// If the key already exists, the old font is disposed and replaced.
+    /// </summary>
+    /// <param name="key">Logical name for the font.</param>
+    /// <param name="stream">The stream containing the font data. It is read to the end from its
+    /// current position; the caller keeps ownership and disposes it.</param>
+    /// <returns>The loaded font.</returns>
+    /// <remarks>
+    /// This is the overload to use for a font that lives inside an archive or any other container
+    /// that cannot hand out a file path. The stream does not have to be seekable.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when the key is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the font could not be loaded.</exception>
+    public SKTypeface LoadFromStream(string key, Stream stream)
+    {
+        ThrowIfDisposed();
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Font key cannot be null or whitespace.", nameof(key));
+
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+
+        return LoadFromBytes(key, buffer.ToArray());
+    }
+
+    /// <summary>
+    /// Loads a font from an in-memory copy of a font file and stores it under the given key.
+    /// If the key already exists, the old font is disposed and replaced.
+    /// </summary>
+    /// <param name="key">Logical name for the font.</param>
+    /// <param name="fontData">The complete contents of a font file.</param>
+    /// <returns>The loaded font.</returns>
+    /// <exception cref="ArgumentException">Thrown when the key is null or whitespace, or the data is empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the data is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the font could not be loaded.</exception>
+    public SKTypeface LoadFromBytes(string key, byte[] fontData)
+    {
+        ThrowIfDisposed();
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Font key cannot be null or whitespace.", nameof(key));
+
+        ArgumentNullException.ThrowIfNull(fontData);
+
+        if (fontData.Length == 0)
+            throw new ArgumentException("Font data cannot be empty.", nameof(fontData));
+
+        var typeface = SKTypeface.FromData(SKData.CreateCopy(fontData));
+        if (typeface == null)
+            throw new InvalidOperationException($"Failed to load font from data for key: {key}");
+
+        ReplaceInternal(key, typeface);
+        return typeface;
+    }
+
+    /// <summary>
     /// Loads a font from an embedded resource in the specified assembly and stores it under the given key.
     /// If the key already exists, the old font is disposed and replaced.
     /// </summary>

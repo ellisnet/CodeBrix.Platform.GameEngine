@@ -12,8 +12,10 @@ using CodeBrix.Platform.GameEngine.Host.Hosting;
 using CodeBrix.Platform.GameEngine.Host.Rendering;
 using CodeBrix.Platform.GameEngine.Input.Keyboard;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
+using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Scenes;
+using CodeBrix.Platform.GameEngine.Timers;
 using Platformer.Brix.Game.Art;
 using SkiaSharp;
 using Windows.System;
@@ -28,7 +30,8 @@ namespace Platformer.Brix.Game;
 /// </summary>
 /// <remarks>
 /// The player runs with A/D or the left/right arrows and jumps with W, the up arrow or the space
-/// bar. Collect every sun relic, then reach the red flag. R restarts, Esc raises
+/// bar. Collect every sun relic, then reach the red flag. Angry mushrooms walk towards the player:
+/// land on one to flatten it, meet it any other way and the run restarts. R restarts, Esc raises
 /// <see cref="ExitRequested"/>.
 /// </remarks>
 public sealed class PlatformerGameHost : CodeBrixGameHost
@@ -45,11 +48,17 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     private const float Gravity = 30f;
     private const float JumpSpeed = 14f;
     private const float MaxFallSpeed = 18f;
+    private const float EnemyWalkSpeed = 2f;
+    private const float EnemySpawnIntervalSeconds = 10f;
 
     // The player's own collision profile, matching the group and interaction mask the demo this
     // sample is ported from assigned directly to the collider: the "Actors" group, colliding with
     // the fixed world tiles only.
     private const string PlayerCollisionProfile = "Player";
+
+    // The mushrooms share the player's profile shape — the "Actors" group colliding with the fixed
+    // world tiles — under a name of their own, so the two roles stay distinct in the scene.
+    private const string EnemyCollisionProfile = "Enemy";
 
     private static readonly Vector2 SpawnPosition = new(2f, 15f);
 
@@ -57,6 +66,7 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     private readonly List<SceneLayerTile> _hazards = [];
     private readonly List<SceneLayerTile> _relics = [];
     private readonly List<ICollider> _groundProbeResults = [];
+    private readonly List<MushroomEnemy> _enemies = [];
 
     private Tilesheet _tilesheet = null!;
     private SceneLayer _backgroundLayer = null!;
@@ -65,6 +75,11 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     private Sprite _player = null!;
     private TextBlock _hudText = null!;
     private TextBlock _messageText = null!;
+
+    private long _lastEnemyTick;
+    private float _spawnElapsed;
+    private int _enemyId;
+    private Rectangle _previousPlayerArea;
 
     private bool _jumpQueued;
     private bool _grounded;
@@ -124,6 +139,11 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
             collisionGroup: "Actors",
             collidesWith: ["WorldStatic"]);
 
+        scene.CollisionProfiles.Define(
+            EnemyCollisionProfile,
+            collisionGroup: "Actors",
+            collidesWith: ["WorldStatic"]);
+
         _backgroundLayer = scene.AddLayer(
             WorldColumns,
             WorldRows,
@@ -158,6 +178,10 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
         if (backbuffer is BitmapBackbuffer bitmapBackbuffer)
             bitmapBackbuffer.FilterQuality = ImageFilterQuality.None;
 
+        // ...and never smooth the finished 960x576 frame either, when the surface presents it
+        // larger than that. Tile filtering and presentation filtering are separate settings.
+        Engine.Configuration.RenderScalingFilter = RenderScalingFilter.NearestNeighbor;
+
         var view = RenderSurface.Host.ViewManager.Views[0];
         view.Camera.WorldBoundsPx = Scene!.GetWorldBoundsPx();
         view.Camera.SnapTo(PointF.Empty);
@@ -190,6 +214,8 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
         var camera = RenderSurface.Host.ViewManager.Views[0].Camera;
         camera.DeadZonePx = new Rectangle(360, 0, 240, RenderHeight);
         camera.FollowCenteredX(_player, speed: 9f);
+
+        SpawnEnemy();
     }
 
     /// <inheritdoc />
@@ -258,6 +284,7 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     /// <inheritdoc />
     protected override void OnEngineInitialized()
     {
+        _lastEnemyTick = HighResTimer.GetCurrentTick();
         Engine.Configuration.TargetFPS = 60;
         Engine.BeforeBackgroundTasksExecute += BeforeBackgroundTasksExecute;
         Engine.AfterBackgroundTasksExecute += AfterBackgroundTasksExecute;
@@ -432,6 +459,15 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
         if (_gameState != PlayState.Playing)
             return;
 
+        var tick = HighResTimer.GetCurrentTick();
+        var elapsed = Math.Max(0f, HighResTimer.GetDuration(_lastEnemyTick, tick));
+        _lastEnemyTick = tick;
+        UpdateEnemies(elapsed);
+
+        // The contact test in AfterBackgroundTasksExecute compares this frame's movement against
+        // the rectangles as they stood before the engine integrated it.
+        _previousPlayerArea = _player.CollisionArea;
+
         var velocity = _player.Movement.MovementState.Velocity;
         var moveLeft = _keysDown.Contains(VirtualKey.A) || _keysDown.Contains(VirtualKey.Left);
         var moveRight = _keysDown.Contains(VirtualKey.D) || _keysDown.Contains(VirtualKey.Right);
@@ -465,6 +501,9 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
 
         _grounded = IsStandingOnSolid();
         CollectRelics();
+
+        if (ResolveEnemyContacts())
+            return;
 
         if (_hazards.Any(hazard =>
                 hazard.Visible &&
@@ -530,6 +569,144 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
         }
     }
 
+    private void SpawnEnemy()
+    {
+        // Choose real ground near the player, keeping clear of the pits and the respawn point.
+        var playerX = _player.GetPosition().X;
+        var column = Enumerable.Range(6, WorldColumns - 7)
+            .Where(x => _worldLayer[x, 16]!.CollisionsEnabled && Math.Abs(x - playerX) >= 5f)
+            .OrderBy(x => Math.Abs(x - (playerX + 8f)))
+            .First();
+
+        var sprite = Engine.Managers.Sprites.CreateSprite(
+            _worldLayer,
+            _tilesheet[PlatformerArt.EnemyWalkFrame, 0],
+            $"mushroom-{++_enemyId}",
+            EnemyCollisionProfile);
+
+        sprite.SetPosition(new Vector2(column, 15f));
+        sprite.Visible = true;
+        sprite.ZOrder = 19;
+        sprite.AdjustCollisionArea = new CollisionAdjust(
+            top: 3,
+            bottom: 0,
+            left: 3,
+            right: 3);
+
+        sprite.CollisionType = TileCollisionType.Blocking;
+        sprite.Movement.SetAcceleration(new Vector2(0f, Gravity));
+
+        _enemies.Add(new MushroomEnemy(sprite));
+    }
+
+    private void UpdateEnemies(float elapsed)
+    {
+        _spawnElapsed += elapsed;
+
+        while (_spawnElapsed >= EnemySpawnIntervalSeconds)
+        {
+            _spawnElapsed -= EnemySpawnIntervalSeconds;
+            SpawnEnemy();
+        }
+
+        for (var i = _enemies.Count - 1; i >= 0; i--)
+        {
+            var enemy = _enemies[i];
+            var sprite = enemy.Sprite;
+            enemy.PreviousArea = sprite.CollisionArea;
+            enemy.Age += elapsed;
+
+            if (enemy.Flattened)
+            {
+                // Hold the flattened pose briefly, then fade over 0.6 seconds.
+                var fade = Math.Clamp((enemy.Age - 0.2f) / 0.6f, 0f, 1f);
+                sprite.CurrentFrame = _tilesheet[
+                    PlatformerArt.EnemyFlattenedFrame +
+                    (int)(fade * (PlatformerArt.EnemyFadeFrames - 1)),
+                    0];
+
+                if (fade < 1f)
+                    continue;
+            }
+            else if (sprite.GetPosition().Y <= WorldRows + 2)
+            {
+                var dx = _player.GetPosition().X - sprite.GetPosition().X;
+                sprite.Movement.SetVelocity(new Vector2(
+                    Math.Abs(dx) < 0.1f ? 0f : Math.Sign(dx) * EnemyWalkSpeed,
+                    Math.Min(sprite.Movement.MovementState.Velocity.Y, MaxFallSpeed)));
+
+                sprite.CurrentFrame = _tilesheet[
+                    PlatformerArt.EnemyWalkFrame + (int)(enemy.Age / 0.16f) % 2,
+                    0];
+                continue;
+            }
+
+            // Faded out, or fallen down a pit.
+            RemoveEnemy(i);
+        }
+    }
+
+    private bool ResolveEnemyContacts()
+    {
+        for (var i = 0; i < _enemies.Count; i++)
+        {
+            var enemy = _enemies[i];
+
+            if (enemy.Flattened)
+                continue;
+
+            var area = _player.CollisionArea;
+            var target = enemy.Sprite.CollisionArea;
+
+            if (EnemyContact.IsStomp(
+                    _previousPlayerArea,
+                    area,
+                    enemy.PreviousArea,
+                    target,
+                    _player.Movement.MovementState.Velocity.Y))
+            {
+                enemy.Flattened = true;
+                enemy.Age = 0f;
+                enemy.Sprite.CollisionsEnabled = false;
+                enemy.Sprite.Movement.StopAllMovement();
+                enemy.Sprite.CurrentFrame = _tilesheet[PlatformerArt.EnemyFlattenedFrame, 0];
+
+                // Settle the player's feet on the flattened mushroom, then bounce.
+                var position = _player.GetPosition();
+                position.Y += (target.Top - area.Bottom) / (float)PlatformerArt.TileSize;
+                _player.SetPosition(position);
+
+                var velocity = _player.Movement.MovementState.Velocity;
+                _player.Movement.SetVelocity(new Vector2(velocity.X, -JumpSpeed * 0.65f));
+                _grounded = false;
+            }
+            else if (area.IntersectsWith(target))
+            {
+                RemoveEnemy(i);
+                Respawn("Mushrooms have a personal-space problem.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ClearEnemies()
+    {
+        for (var i = _enemies.Count - 1; i >= 0; i--)
+            RemoveEnemy(i);
+    }
+
+    private void RemoveEnemy(int index)
+    {
+        var sprite = _enemies[index].Sprite;
+        sprite.Visible = false;
+        sprite.CollisionsEnabled = false;
+        sprite.Movement.StopAllMovement();
+        sprite.Dispose();
+        _enemies.RemoveAt(index);
+    }
+
     private void SetPlayerFacing(bool left)
     {
         _facingLeft = left;
@@ -541,6 +718,7 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     private void Respawn(string message)
     {
         _player.SetPosition(SpawnPosition);
+        _previousPlayerArea = _player.CollisionArea;
         _player.Movement.SetVelocity(Vector2.Zero);
         _player.Movement.SetAcceleration(new Vector2(0f, Gravity));
         _grounded = false;
@@ -551,6 +729,7 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     {
         _gameState = PlayState.Won;
         _keysDown.Clear();
+        ClearEnemies();
         _player.Movement.StopAllMovement();
         _messageText.SetText("YOU FOUND THE OLD ROAD\nPress R to play again");
         _messageText.Visible = true;
@@ -563,11 +742,15 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     {
         _gameState = PlayState.Playing;
         _relicsCollected = 0;
+        ClearEnemies();
+        _spawnElapsed = 0f;
+        _lastEnemyTick = HighResTimer.GetCurrentTick();
 
         foreach (var relic in _relics)
             relic.Visible = true;
 
         Respawn("The road begins again.");
+        SpawnEnemy();
         UpdateHud(force: true);
     }
 
@@ -608,6 +791,22 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     }
 
     #endregion private methods
+
+    /// <summary>
+    /// Tracks one angry mushroom: its sprite, the collision rectangle it had before the current
+    /// frame's movement, how long it has been in its current state, and whether it is flattened.
+    /// </summary>
+    /// <param name="sprite">The sprite drawn for this mushroom.</param>
+    private sealed class MushroomEnemy(Sprite sprite)
+    {
+        internal Sprite Sprite { get; } = sprite;
+
+        internal Rectangle PreviousArea { get; set; } = sprite.CollisionArea;
+
+        internal float Age { get; set; }
+
+        internal bool Flattened { get; set; }
+    }
 
     private enum PlayState
     {

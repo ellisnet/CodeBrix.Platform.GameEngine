@@ -248,6 +248,12 @@ public sealed class SoundChannel : IDisposable, IEnginePausableAudio, IMixerVoic
 
         _output.Stop();
         reader.Position = 0;
+
+        // The rate stage buffers ahead of the reader and latches end-of-source, so rewinding the
+        // reader alone would replay stale frames - and, once the clip has run to the end, would
+        // refuse to read at all, leaving the channel silent on every later play.
+        _rateProvider?.Reset();
+
         _output.Play();
     }
 

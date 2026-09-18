@@ -15,7 +15,7 @@ namespace CodeBrix.Platform.GameEngine.Physics.Collisions; //was previously: Gon
 /// </summary>
 internal sealed class CollisionResolver
 {
-    private readonly List<ICollider> _queryResults = new();
+    private readonly List<ColliderInstance> _queryResults = new();
     private readonly ColliderRegistry _world;
 
     /// <summary>
@@ -60,16 +60,17 @@ internal sealed class CollisionResolver
         // Broad-phase query based on current rect.
         var aabb = Aabb.FromRectangle(rect);
 
-        _world.QueryAabb(aabb, mover.CollisionGroup, mover.CollidesWith, _queryResults, ignore: mover);
+        _world.QueryInstances(aabb, mover.CollisionGroup, mover.CollidesWith, _queryResults, ignore: mover);
 
         int totalDx = 0;
         int totalDy = 0;
         bool hitX = false;
         bool hitY = false;
 
-        foreach (var otherCollider in _queryResults)
+        foreach (var instance in _queryResults)
         {
-            var otherRect = otherCollider.BoundsWorldPx.ToRectangle();
+            var otherCollider = instance.Collider;
+            var otherRect = instance.BoundsWorldPx.ToRectangle();
 
             if (!rect.IntersectsWith(otherRect))
                 continue;

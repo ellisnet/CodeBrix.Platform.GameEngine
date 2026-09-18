@@ -158,7 +158,7 @@ to filter down to one class or method while iterating:
     ... .Tests.dll -class 'CodeBrix.Platform.GameEngine.Tests.TimerTests'
     ... .Tests.dll -method 'CodeBrix.Platform.GameEngine.Tests.TimerTests.Add_with_a_sub_tick_length_throws'
 
-Current counts: 456 engine-core tests, 45 gamepad tests, 2 host tests (1 of the
+Current counts: 756 engine-core tests, 45 gamepad tests, 19 host tests (1 of the
 host tests skips without a UI head).
 
 ENGINE CORE TESTS

@@ -21,9 +21,20 @@ namespace CodeBrix.Platform.GameEngine.Audio; //was previously: Gondwana.Audio;
 [JsonReferenceable]
 public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
 {
+    /// <summary>
+    /// The lowest <see cref="PlaybackSpeed"/> the engine accepts; slower values are clamped to it.
+    /// </summary>
+    public const float MinimumPlaybackSpeed = 0.25f;
+
+    /// <summary>
+    /// The highest <see cref="PlaybackSpeed"/> the engine accepts; faster values are clamped to it.
+    /// </summary>
+    public const float MaximumPlaybackSpeed = 4.0f;
+
     private readonly IWavePlayer outputDevice;
     private readonly WaveStream waveStream;
     private readonly WaveFormat? rawPcmFormat;              // set only for LoadFromPcm resources
+    private VariableRateSampleProvider? rateProvider;       // rate/speed stage, when the graph needs one
     private PanningSampleProvider? monoPanProvider;         // for mono sources only
     private StereoPanSampleProvider? stereoPanProvider;     // for stereo sources only
     private VolumeSampleProvider? volumeProvider;           // final stage
@@ -81,7 +92,31 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
         waveStream = audioStream;
         this.rawPcmFormat = rawPcmFormat;
         outputDevice = new WaveOutEvent();
-        outputDevice.Init(BuildAudioGraph(waveStream, volume, pan));
+
+        try
+        {
+            outputDevice.Init(BuildAudioGraph(waveStream, volume, pan));
+        }
+        catch
+        {
+            // The voice this resource just claimed on the shared output would otherwise be
+            // stranded: nothing owns a half-constructed resource, so nothing would ever dispose
+            // it. The caller still owns the wave stream it handed in. Cleanup must never mask
+            // the load failure, so the original exception is rethrown either way.
+            try
+            {
+                outputDevice.Dispose();
+            }
+            catch (Exception cleanupException)
+            {
+                Engine.Logger.LogError(
+                    cleanupException, "Failed to release the output device for audio resource {Key} after initialization failed.", key);
+            }
+
+            GC.SuppressFinalize(this);
+            throw;
+        }
+
         outputDevice.PlaybackStopped += OnPlaybackStopped;
 
         AudioPauseRegistry.Register(this);
@@ -107,21 +142,13 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
         _volume = Math.Clamp(volume, 0f, 1f); // keep the Volume property in sync with the graph's gain stage
         ISampleProvider baseProvider = source.ToSampleProvider();
 
-        if (AudioSystem.IsInitialized && baseProvider.WaveFormat.SampleRate != AudioSystem.DeviceSampleRate)
-        {
-            // The app pinned the device rate (AudioSystem.Initialize) and this source's rate
-            // differs — CodeBrix.Audio has no resampler, so without this stage the voice
-            // initialization below would throw. Inert for apps that never pin.
-            baseProvider = new VariableRateSampleProvider(baseProvider, AudioSystem.DeviceSampleRate);
-        }
-
         int ch = baseProvider.WaveFormat.Channels;
         if (ch < 1)
         {
             Engine.Logger.LogWarning(
                 "AudioResource {Key} has invalid channel count: {ChannelCount}", Key, ch);
 
-            // just pass through, no pan stage
+            // just pass through, no rate or pan stage
             volumeProvider = new VolumeSampleProvider(baseProvider)
             {
                 Volume = AudioMixer.EffectiveVolume(volume, _bus)
@@ -129,6 +156,22 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
 
             return volumeProvider;
         }
+
+        // Every resource carries the rate/speed stage. It is what PlaybackSpeed drives, and it is
+        // also what makes an odd-rate source playable once the app has pinned the device format
+        // (AudioSystem.Initialize) — CodeBrix.Audio has no resampler of its own. At unity, where
+        // the source already runs at the output rate and the speed is 1.0, the stage hands the
+        // source straight through: the same samples, the final one included, read no further
+        // ahead than the device asked for.
+        var outputSampleRate = AudioSystem.IsInitialized
+            ? AudioSystem.DeviceSampleRate
+            : baseProvider.WaveFormat.SampleRate;
+
+        rateProvider = new VariableRateSampleProvider(baseProvider, outputSampleRate)
+        {
+            Pitch = _playbackSpeed
+        };
+        baseProvider = rateProvider;
 
         switch (ch)
         {
@@ -337,6 +380,41 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
         }
     }
 
+    private float _playbackSpeed = 1.0f;
+
+    /// <summary>
+    /// Gets or sets the playback speed multiplier. 1.0 (the default) is the recorded speed, 0.5
+    /// plays at half speed and 2.0 at double speed; values are clamped to
+    /// <see cref="MinimumPlaybackSpeed"/>–<see cref="MaximumPlaybackSpeed"/>. PITCH FOLLOWS SPEED:
+    /// this is sample-rate playback (resampling), not time-stretching, so a faster speed also
+    /// sounds higher. May be changed while playing, and is persisted with the resource.
+    /// </summary>
+    /// <remarks>
+    /// Every resource's audio graph carries the rate/speed stage this property drives, so the
+    /// speed applies to any loaded sound. At the default speed the stage hands the source through
+    /// unchanged, so a resource that never varies its speed sounds exactly as it did and reads no
+    /// further ahead than the output device asks for — <see cref="CurrentTime"/> stays truthful.
+    /// A <see cref="AudioResourceManager.TryPlaySfx"/> trigger plays through the shared voice pool
+    /// rather than this resource's own graph, so it keeps the recorded speed regardless.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The value is <see cref="float.NaN"/>.</exception>
+    public float PlaybackSpeed
+    {
+        get => _playbackSpeed;
+        set
+        {
+            if (float.IsNaN(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The playback speed must be a number.");
+            }
+
+            _playbackSpeed = Math.Clamp(value, MinimumPlaybackSpeed, MaximumPlaybackSpeed);
+
+            if (rateProvider != null)
+                rateProvider.Pitch = _playbackSpeed;
+        }
+    }
+
     #endregion public properties
 
     #region public methods
@@ -358,6 +436,11 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
                 outputDevice.Stop();
 
             waveStream.Position = 0;
+
+            // The rate stage buffers ahead of the stream and latches end-of-source, so rewinding
+            // the stream alone would leave it serving stale frames - and, at a loop boundary,
+            // refusing to read at all, which turns looping into a silent stop/start cycle.
+            rateProvider?.Reset();
         }
 
         if (!IsPlaying)
@@ -406,6 +489,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
 
         Pause();
         waveStream.CurrentTime = position;
+        rateProvider?.Reset(); // drop the frames the rate stage buffered from the old position
 
         if (wasPlaying)
             Resume();
@@ -510,6 +594,7 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
         {
             existing.Volume = Volume;
             existing.Pan = Pan;
+            existing.PlaybackSpeed = PlaybackSpeed;
             existing.IsLooping = IsLooping;
             return;
         }
@@ -535,9 +620,12 @@ public class AudioResource : IDisposable, IEnginePausableAudio, IMixerVoice
             throw new InvalidOperationException($"AudioResource '{Key}' has no persisted source.");
         }
 
-        // Apply looping after load (LoadFromStream/File sets volume/pan during graph creation)
+        // Apply looping and speed after load (LoadFromStream/File sets volume/pan during graph creation)
         if (mgr.TryGet(Key, out var loaded) && loaded is not null)
+        {
+            loaded.PlaybackSpeed = PlaybackSpeed;
             loaded.IsLooping = IsLooping;
+        }
     }
 
     #endregion public methods

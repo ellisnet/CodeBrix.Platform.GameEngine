@@ -1,4 +1,5 @@
 using CodeBrix.Platform.GameEngine.Drawing;
+using CodeBrix.Platform.GameEngine.Drawing.Coordinates;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
@@ -119,11 +120,12 @@ public abstract class BackbufferBase : IDisposable
     /// <remarks>
     /// <para>
     /// Derived classes must implement this method to handle the actual rendering of tile graphics
-    /// to the canvas. The implementation should:
+    /// to the canvas. Drawable types apply their own visual transforms before invoking this method.
+    /// The implementation should:
     /// </para>
     /// <list type="bullet">
     /// <item><description>Extract the appropriate tile frame from the tile's tilesheet</description></item>
-    /// <item><description>Apply any tile-specific rendering properties (opacity, transformations, etc.)</description></item>
+    /// <item><description>Apply backend-specific sampling and blending behavior</description></item>
     /// <item><description>Draw the tile graphics to the destination rectangle</description></item>
     /// <item><description>Handle edge cases such as missing graphics or invalid tile data</description></item>
     /// </list>
@@ -211,8 +213,8 @@ public abstract class BackbufferBase : IDisposable
     /// the <see cref="SizeChanged"/> event is raised.
     /// </para>
     /// <para>
-    /// Resizing may be triggered by window resize events, display mode changes, or programmatic
-    /// requests from the rendering system.
+    /// Resizing is an explicit logical-resolution request. Window and adapter resizing only
+    /// changes presentation and must not request Backbuffer resizing.
     /// </para>
     /// </remarks>
     protected internal virtual void RequestResize(int width, int height)
@@ -264,7 +266,7 @@ public abstract class BackbufferBase : IDisposable
 
     /// <summary>
     /// Union of all rectangle areas redrawn on the current frame, to be rendered to the UI adapter.
-    /// <para />***** IMPORTANT: DirtyRectangle is ALWAYS in adapter/control SCREEN pixels. *****
+    /// <para />***** IMPORTANT: DirtyRectangle is ALWAYS in logical Backbuffer ScreenPx. *****
     /// </summary>
     protected internal Rectangle DirtyRectangle { get; private set; }
 
@@ -303,8 +305,10 @@ public abstract class BackbufferBase : IDisposable
         // Rect is expected to be in the current canvas coordinate space.
         Canvas.DrawRect(rectPx.ToSKRect(), _fillPaint);
 
-        // mark area as dirty so it gets presented to the UI adapter
-        AddToBackbufferDirtyRectangle(rectPx);
+        // Mark the area as dirty so it gets presented to the UI adapter. GL surfaces always
+        // present the full backbuffer and do not maintain dirty regions.
+        if (!IsGlThreadRendered)
+            AddToBackbufferDirtyRectangle(rectPx);
 
         Canvas.Restore();
     }
@@ -314,10 +318,13 @@ public abstract class BackbufferBase : IDisposable
         Canvas.Save();
         Canvas.ClipRect(clipRect.ToSKRect());
 
-        var tiles = new List<Tile>();
+        var tiles = new List<(Tile Tile, WrappedDrawable? Instance)>();
 
-        foreach (var drawable in drawables)
+        foreach (var entry in drawables)
         {
+            var instance = entry as WrappedDrawable;
+            var drawable = instance?.Owner ?? entry;
+            using var scope = instance?.Enter(view);
             if (!drawable.Visible)
                 continue;
 
@@ -330,16 +337,21 @@ public abstract class BackbufferBase : IDisposable
             }
             drawable.Draw(this, destRectScreen);
 
-            // A rotated sprite paints outside its destination rectangle, so the presented
-            // dirty region has to cover the rotated bounds instead.
-            var dirtyRectScreen = sprite is not null
-                ? sprite.GetVisualBoundsScreen(destRectScreen)
-                : destRectScreen;
+            // GPU/GL surfaces always present the complete backbuffer. Avoid calculating visual
+            // bounds just to pass them to dirty-region tracking that the GPU path never consumes.
+            if (!IsGlThreadRendered)
+            {
+                // A rotated sprite paints outside its destination rectangle, so the presented
+                // dirty region has to cover the rotated bounds instead.
+                var dirtyRectScreen = sprite is not null
+                    ? sprite.GetVisualBoundsScreen(destRectScreen)
+                    : destRectScreen;
 
-            AddToBackbufferDirtyRectangle(dirtyRectScreen.ToPixelAlignedRect());
+                AddToBackbufferDirtyRectangle(dirtyRectScreen.ToPixelAlignedRect());
+            }
 
             if (drawable is Tile tile)
-                tiles.Add(tile);
+                tiles.Add((tile, instance));
         }
 
         PostDrawTiles(view, tiles);
@@ -347,47 +359,78 @@ public abstract class BackbufferBase : IDisposable
         Canvas.Restore();
     }
 
-    private void PostDrawTiles(View view, List<Tile> tiles)
+    private void PostDrawTiles(View view, List<(Tile Tile, WrappedDrawable? Instance)> tiles)
     {
-        foreach (var tile in tiles)
+        foreach (var entry in tiles)
         {
-            // WORLD -> SCREEN conversion
-            var worldPts = tile.OutlinePointsWorld;
-            var ptsScreen = new SKPoint[worldPts.Length];
+            var tile = entry.Tile;
+            using var scope = entry.Instance?.Enter(view);
+            var layer = tile.SceneLayer;
+            bool drawFog = tile.EnableFog;
+            bool drawGrid = layer.ShowGridLines && tile.Visible && tile.IsPositionFixed;
+            bool drawCollision = layer.ShowCollisionBoxes && tile.Visible && tile.CollisionsEnabled;
 
-            for (int i = 0; i < worldPts.Length; i++)
+            if (!drawFog && !drawGrid && !drawCollision)
+                continue;
+
+            // Orthogonal grid outlines are rectangles. Avoid building two transient point arrays
+            // and performing four point-wise world-to-screen transforms for every fixed tile.
+            // Rectangle conversion uses the same view transform while preserving the grid cell
+            // bounds (includeOverhang: false) used by the polygon path below.
+            if (drawGrid
+                && !drawFog
+                && layer.CoordinateSystemType == CoordinateSystemTypes.Orthogonal)
             {
-                var p = worldPts[i];
-                var sp = view.WorldPxToScreenPx(
-                    tile.SceneLayer,
-                    new PointF(p.X, p.Y)
-                );
+                var worldRect = layer.CoordinateSystem.GetPixelRangeForTile(tile, includeOverhang: false);
+                var screenRect = view.WorldRectToScreenRect(layer, worldRect);
+                Canvas.DrawRect(screenRect.ToSKRect(), GridLinePaint);
 
-                ptsScreen[i] = new SKPoint(sp.X, sp.Y);
+                if (drawCollision)
+                {
+                    var colRectScreenFast = tile.GetCollisionAreaScreen(view).ToSKRect();
+                    Canvas.DrawRect(colRectScreenFast, CollisionBoxPaint);
+                }
+
+                continue;
             }
 
-            // close polygon when needed
-            static SKPoint[] Enclose(SKPoint[] pts)
+            // Polygon geometry is only needed for fog or non-orthogonal grid outlines.
+            if (drawFog || drawGrid)
             {
-                if (pts.Length == 0) return pts;
-                var arr = new SKPoint[pts.Length + 1];
-                Array.Copy(pts, arr, pts.Length);
-                arr[^1] = pts[0];
-                return arr;
+                // WORLD -> SCREEN conversion
+                var worldPts = tile.OutlinePointsWorld;
+                var ptsScreen = new SKPoint[worldPts.Length];
+
+                for (int i = 0; i < worldPts.Length; i++)
+                {
+                    var p = worldPts[i];
+                    var sp = view.WorldPxToScreenPx(
+                        layer,
+                        new PointF(p.X, p.Y)
+                    );
+
+                    ptsScreen[i] = new SKPoint(sp.X, sp.Y);
+                }
+
+                if (drawFog)
+                {
+                    using var builder = new SKPathBuilder();
+                    builder.AddPoly(ptsScreen, close: true);
+                    using var path = builder.Snapshot();
+                    Canvas.DrawPath(path, FogPaint);
+                }
+
+                if (drawGrid && ptsScreen.Length > 0)
+                {
+                    // close the polygon
+                    var enclosed = new SKPoint[ptsScreen.Length + 1];
+                    Array.Copy(ptsScreen, enclosed, ptsScreen.Length);
+                    enclosed[^1] = ptsScreen[0];
+                    Canvas.DrawPoints(SKPointMode.Polygon, enclosed, GridLinePaint);
+                }
             }
 
-            if (tile.EnableFog)
-            {
-                using var builder = new SKPathBuilder();
-                builder.AddPoly(ptsScreen, close: true);
-                using var path = builder.Snapshot();
-                Canvas.DrawPath(path, FogPaint);
-            }
-
-            if (tile.SceneLayer.ShowGridLines && tile.Visible && tile.IsPositionFixed)
-                Canvas.DrawPoints(SKPointMode.Polygon, Enclose(ptsScreen), GridLinePaint);
-
-            if (tile.SceneLayer.ShowCollisionBoxes && tile.Visible && tile.CollisionsEnabled)
+            if (drawCollision)
             {
                 var colRectScreen = tile.GetCollisionAreaScreen(view).ToSKRect();
                 Canvas.DrawRect(colRectScreen, CollisionBoxPaint);
@@ -396,7 +439,7 @@ public abstract class BackbufferBase : IDisposable
     }
 
     /// <summary>
-    /// ***** IMPORTANT: should ALWAYS be in adapter/control SCREEN pixels. *****
+    /// ***** IMPORTANT: should ALWAYS be in logical Backbuffer ScreenPx. *****
     /// This is used to signal to the UI adapter what needs to be repainted.
     /// No-op for GL-thread-rendered backbuffers: the adapter always presents the full surface,
     /// so there is no partial-blit dirty region to track.

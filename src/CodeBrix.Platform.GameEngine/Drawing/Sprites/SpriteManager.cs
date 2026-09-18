@@ -23,7 +23,7 @@ public sealed class SpriteManager : IDisposable
     internal readonly List<Sprite> _spriteList = new();
     private readonly object _spriteListLock = new();
 
-    private long _lastTick = HighResTimer.GetCurrentTick();
+    private long _lastTick = EngineSimulationClock.GetCurrentTick();
 
     /// <summary>
     /// Event raised when a new sprite is created.
@@ -343,6 +343,11 @@ public sealed class SpriteManager : IDisposable
 
         foreach (var sprite in snapshot)
         {
+            // A restored or partially built sprite list can hold a null entry; skip it rather
+            // than letting a layer join a scene throw.
+            if (sprite is null)
+                continue;
+
             if (ReferenceEquals(sprite.SceneLayer, sceneLayer))
                 sprite.RefreshCollisionProfile();
         }

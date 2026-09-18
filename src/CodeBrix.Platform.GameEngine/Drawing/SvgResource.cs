@@ -38,7 +38,19 @@ public sealed class SvgResource : IDisposable
         return Load(stream);
     }
 
-    internal static SvgResource Load(Stream stream)
+    /// <summary>
+    /// Loads an SVG resource from a stream.
+    /// </summary>
+    /// <param name="stream">The stream containing the SVG document. It is read from its current
+    /// position; the caller keeps ownership and disposes it.</param>
+    /// <returns>A loaded <see cref="SvgResource"/> instance.</returns>
+    /// <remarks>
+    /// This is the overload to use for an SVG that lives inside an archive or any other container
+    /// that cannot hand out a file path.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the stream does not contain a parsable SVG document.</exception>
+    public static SvgResource Load(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
 

@@ -35,8 +35,9 @@ public sealed class Viewport
     public event Action<ViewportZoomChangedEventArgs>? ZoomChanged;
 
     /// <summary>
-    /// Screen-space rectangle (in SCREEN / RenderSurface pixels) where this view is drawn.
-    /// This defines the on-screen position and size of the viewport for this view.
+    /// Screen-space rectangle (in logical Backbuffer ScreenPx) where this view is drawn.
+    /// This defines the position and size of the viewport for this view on the logical Backbuffer;
+    /// the adapter then fits that complete image into the render surface it presents on.
     /// </summary>
     public Rectangle TargetRectPx
     {

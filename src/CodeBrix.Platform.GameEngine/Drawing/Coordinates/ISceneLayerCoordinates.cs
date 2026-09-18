@@ -18,6 +18,13 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Coordinates; //was previously: Go
 internal interface ISceneLayerCoordinates
 {
     /// <summary>
+    /// Returns the world-space repetition lattice this projection produces for a wrapped layer.
+    /// </summary>
+    /// <param name="layer">The layer whose grid and tile dimensions define the lattice.</param>
+    /// <returns>The validated period vectors for <paramref name="layer"/>.</returns>
+    LayerPeriod GetWrapPeriod(SceneLayer layer) => LayerPeriod.Create(this, layer);
+
+    /// <summary>
     /// Returns the projection-defined world-space pixel anchor of the tile at the
     /// given grid coordinate (col,row) in this SceneLayer.
     /// 

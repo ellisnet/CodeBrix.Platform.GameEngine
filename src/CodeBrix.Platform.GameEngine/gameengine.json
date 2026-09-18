@@ -1,9 +1,14 @@
 {
   "EngineConfig": {
     "TargetFPS": 60,
+    "RenderScale": 1,
+    "RenderScalingFilter": "Linear",
     "SamplingTimeForCPS": 1.5,
     "TimeBetweenKeyboardEvents": 0.03,
     "TimeBetweenGamepadEvents": 0.03,
-    "TimeBetweenMouseEvents": 0.03
+    "TimeBetweenMouseEvents": 0.03,
+    "StartInitializationWaitTimeout": 30,
+    "TimerDrivenSimulationRate": 120,
+    "MaxTimerDrivenSimulationSteps": 8
   }
 }

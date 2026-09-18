@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Numerics;
+using System.Reflection;
 using CodeBrix.Platform.GameEngine.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing.Coordinates;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
@@ -16,7 +17,8 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// world-pixel translation used to rebuild the absolute position from the INTEGER collision
 /// rectangle (losing sub-pixel position on every solid push-out), and <c>ZOrder</c> hid the base
 /// property instead of overriding it, so the minimum-of-one clamp was bypassed whenever the sprite
-/// was reached through a <see cref="Tile"/>-typed reference.
+/// was reached through a <see cref="Tile"/>-typed reference. Also covers the
+/// <see cref="Sprite.VisualBoundsChanged"/> notification.
 /// </summary>
 public class SpriteTests : IDisposable
 {
@@ -121,4 +123,60 @@ public class SpriteTests : IDisposable
         sprite.ZOrder.Should().Be(7);
         tile.ZOrder.Should().Be(7);
     }
+
+    [Fact]
+    public void VisualBoundsChanged_is_raised_when_the_visual_bounds_change()
+    {
+        //Arrange
+        var layer = CreateLayer();
+        var sprite = CreateSprite(layer, new Vector2(2f, 2f));
+        var reported = new List<Sprite>();
+        sprite.VisualBoundsChanged += changed => reported.Add(changed);
+
+        //Act - rotating changes the rotated visual bounds without changing the layer coordinates.
+        sprite.Rotation = 90f;
+
+        //Assert
+        reported.Count.Should().Be(1);
+        ReferenceEquals(sprite, reported[0]).Should().BeTrue();
+    }
+
+    [Fact]
+    public void VisualBoundsChanged_is_not_raised_when_the_value_is_unchanged()
+    {
+        //Arrange
+        var layer = CreateLayer();
+        var sprite = CreateSprite(layer, new Vector2(2f, 2f));
+        sprite.Rotation = 45f;
+
+        int raised = 0;
+        sprite.VisualBoundsChanged += _ => raised++;
+
+        //Act
+        sprite.Rotation = 45f;
+
+        //Assert
+        raised.Should().Be(0);
+    }
+
+    [Fact]
+    public void VisualBoundsChanged_subscribers_are_released_when_the_sprite_is_disposed()
+    {
+        //Arrange
+        var layer = CreateLayer();
+        var sprite = CreateSprite(layer, new Vector2(2f, 2f));
+        sprite.VisualBoundsChanged += _ => { };
+        VisualBoundsChangedHandler(sprite).Should().NotBeNull();
+
+        //Act
+        sprite.DisposeImmediate();
+
+        //Assert
+        VisualBoundsChangedHandler(sprite).Should().BeNull();
+    }
+
+    private static object? VisualBoundsChangedHandler(Sprite sprite) =>
+        typeof(Sprite)
+            .GetField("VisualBoundsChanged", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(sprite);
 }

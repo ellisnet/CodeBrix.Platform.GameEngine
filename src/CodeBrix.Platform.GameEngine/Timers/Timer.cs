@@ -146,7 +146,13 @@ public sealed class Timer : IDisposable
     /// <see cref="long"/>.</exception>
     public static Timer Add(string timerID, TimerType type, TimerCycles cycles, double length)
     {
-        var timer = new Timer(type, cycles, HighResTimer.GetCurrentTick(), length)
+        // Pre-cycle timers are raised on the update (simulation) cadence, so in timer-driven
+        // mode they must start from the simulation clock rather than wall-clock time.
+        long startTick = type == TimerType.PreCycle
+            ? EngineSimulationClock.GetCurrentTick()
+            : HighResTimer.GetCurrentTick();
+
+        var timer = new Timer(type, cycles, startTick, length)
         {
             TimerID = timerID
         };
@@ -231,10 +237,20 @@ public sealed class Timer : IDisposable
     /// </summary>
     /// <param name="pausedTicks">The duration of the pause, in ticks.</param>
     /// <param name="resumeTick">The current tick at the moment of resume.</param>
-    internal static void ShiftAllForResume(long pausedTicks, long resumeTick)
+    /// <param name="shiftPreCycleTimers">
+    /// Whether pre-cycle timers are shifted too. In timer-driven mode pre-cycle timers run on the
+    /// simulation clock, which does not advance while the engine is paused, so their schedules
+    /// must be left alone; pass <see langword="false"/> there.
+    /// </param>
+    internal static void ShiftAllForResume(long pausedTicks, long resumeTick, bool shiftPreCycleTimers = true)
     {
         foreach (var (_, timer) in _timers.ToArray())
+        {
+            if (!shiftPreCycleTimers && timer.Type == TimerType.PreCycle)
+                continue;
+
             timer._lastEventTick = HighResTimer.ShiftBaselineForResume(timer._lastEventTick, pausedTicks, resumeTick);
+        }
     }
 
     internal static void RaiseTimerEvents(TimerType type, long engineTick)

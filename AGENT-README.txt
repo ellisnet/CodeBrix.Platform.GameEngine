@@ -173,6 +173,7 @@ The Engine is a thread-safe singleton: Engine.Instance. Lifecycle:
     Engine.Instance.Pause();            // global pause (see PAUSE section)
     Engine.Instance.Resume();
     Engine.Instance.Stop();             // halts the loop; engine reusable
+    Engine.Instance.StopAndWait();      // stops AND joins the cycle thread
     Engine.Instance.Dispose();          // full teardown; engine NOT reusable
 
     void Initialize(string? configFileName = null, bool? autoSaveConfig = null,
@@ -184,11 +185,46 @@ The Engine is a thread-safe singleton: Engine.Instance. Lifecycle:
     void Start(SynchronizationContext uiContext)
     void StartTimerDriven(SynchronizationContext uiContext)   // + Tick() per timer tick
     void Tick()
+    void Stop();  void StopAndWait();  void Pause();  void Resume()
+    void Dispose()
 
 Start() must receive the UI thread's SynchronizationContext (the parameterless
 overload captures SynchronizationContext.Current, so call it ON the UI thread).
 For single-threaded runtimes, StartTimerDriven(uiContext) + a platform timer
 calling Engine.Instance.Tick() replaces the background thread.
+
+STARTING IS BOUNDED AND RETRYABLE. Initialize() signals completion even when it
+throws, so a failed attempt leaves the engine reporting IsInitializing == false
+and can simply be retried. Start(uiContext) waits at most
+Configuration.StartInitializationWaitTimeout seconds (default 30) for an
+initialization running on ANOTHER thread, then throws InvalidOperationException
+— on timeout, on a failure that happened on that other thread, or when its own
+Initialize() call did not succeed. StartTimerDriven throws the same
+"Engine failed to initialize." for its own failed Initialize().
+
+TIMER-DRIVEN MODE IS FIXED-STEP. In that mode one Tick() is "one presentation
+opportunity": it runs zero or more FIXED simulation steps and then at most one
+foreground render.
+    Configuration.TimerDrivenSimulationRate      -- fixed updates/second (120)
+    Configuration.MaxTimerDrivenSimulationSteps  -- most steps per Tick() (8)
+Excess accumulated time beyond that cap is discarded, so a stalled or delayed
+timer cannot enter an unbounded catch-up burst. The render cadence still
+follows TargetFPS. Update-side clocks (pre-cycle timers, sprite movement, tile
+animation) read the fixed SIMULATION clock in this mode instead of wall time;
+the simulation clock is frozen while the engine is paused, so nothing replays
+the paused interval on the first resumed tick. Start(uiContext) (the background
+thread) is unchanged: it stays wall-clock driven.
+
+SHUTDOWN CONTRACT. Stop() halts the loop and returns; StopAndWait() stops the
+engine and BLOCKS until the background cycle has actually finished, so a host
+can release native drawing resources without racing a frame in flight. It
+throws InvalidOperationException when called from the active engine thread, and
+it releases a cycle loop that is parked by the global pause. GameHostBase.Dispose
+now does StopEngine() -> Engine.StopAndWait() FIRST, before any cleanup hook
+(OnDisposing / UnhookEvents) and before the engine is disposed. Disposing the
+engine FROM the engine thread (or from inside a cycle) no longer self-deadlocks:
+the managed cleanup is deferred to a continuation that runs when the cycle task
+completes, and Dispose() is re-entrancy safe.
 
 State and metrics on Engine.Instance: IsInitialized, IsInitializing, IsRunning,
 IsPaused, IsDisposed, IsDisposing, CyclesPerSecond, FramesPerSecond,
@@ -387,9 +423,15 @@ Key members:
                                surface has no real size.
     SetRenderResolution(int width, int height)
                             -- pins the engine render resolution; frames are
-                               aspect-fit letterboxed into the control. Call
-                               BEFORE first access to Host. Non-positive values
-                               track the control size instead.
+                               aspect-fit letterboxed into the control. Safe to
+                               call BEFORE the first access to Host (and it no
+                               longer forces the render tier when you do). Pass
+                               0/0 to leave the resolution to RenderScale.
+                               See RENDER RESOLUTION AND PRESENTATION.
+    TrackWindowSize         -- bool, default false. true makes the render
+                               resolution follow the control's size, so a bigger
+                               window shows MORE world instead of the same image
+                               larger. Use this OR SetRenderResolution, not both.
     UseGpuRendering         -- opt-in to GpuRendering (GPU); set BEFORE
                                first access to Host, like SetRenderResolution.
                                Default false = CpuRendering (CPU). See RENDER MODES.
@@ -414,6 +456,10 @@ Key members:
 During a live window resize the canvas suppresses engine presents and re-blits
 the last frame at the new size; live presenting resumes ~500 ms after the size
 settles. Do not fight this by forcing refreshes from resize handlers.
+
+The canvas does not compute its own aspect fit: it presents through
+RenderSurfaceAdapterBase.DrawImage, the same transform pointer input is
+normalized with, so what is painted and what is clicked can never disagree.
 
 RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode A only
 --------------------------------------------------------------------------------
@@ -441,9 +487,14 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     scaling/rotation, full-surface shader effects (SKRuntimeEffect/SkSL runs
     ON the GPU — the GpuRender sample's plasma runs ~60 FPS on GpuRendering vs
     single-digit FPS on CpuRendering at 1024x640). A plain tile blit may not benefit.
-  * EngineConfiguration.MsaaSampleCount applies (surface re-init on change);
-    VSync has no effect on this adapter (no swap chain — pacing comes from
-    TargetFPS); CPSCalculated reports the actual rendered GPU FPS (GpuFps).
+  * EngineConfiguration.MsaaSampleCount applies the next time the GPU render
+    target is ALLOCATED — that is once, at start-up, and again only on an
+    explicit render-resolution change; a window resize no longer reallocates it.
+    Set it before the first GPU frame (SpaceDuel.Brix sets it from
+    Engine.InitializationComplete). VSync has no effect on this adapter (no swap
+    chain — pacing comes from TargetFPS); CPSCalculated reports the actual
+    rendered GPU PRESENTATION rate (GpuFps), which can differ from NetCPS where
+    the platform's presentation cadence is independent of the engine's.
   * Dirty-region rendering is OFF for a scene bound to a GPU host: binding
     clears every layer's refresh queue and closes it, so nothing accumulates,
     and DirectDrawing.ForceRefresh() is a no-op there (correct — the GL path
@@ -480,6 +531,99 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     longer keeps the process alive (stopping the engine on close remains the
     application's job, but exit no longer depends on it).
   * The mode is fixed once Host is created; presenter mode (Mode B) is CPU-only.
+
+RENDER RESOLUTION AND PRESENTATION (Mode A)
+--------------------------------------------------------------------------------
+THE RESOLUTION THE GAME RENDERS AT AND THE SIZE IT IS SHOWN AT ARE TWO
+DIFFERENT THINGS. A render surface establishes its logical Backbuffer
+resolution ONCE — from the first valid surface size times
+EngineConfiguration.RenderScale — and every later window resize changes
+PRESENTATION only: the finished image is fitted into the control, centred, and
+the remaining area is cleared with Backbuffer.ClearColor (letterbox /
+pillarbox). Resizing no longer resizes the Backbuffer, no longer rescales Views
+and no longer shows more of the world.
+
+  Three ways to choose the resolution — pick ONE per surface:
+    Engine.Configuration.RenderScale = 0.5f;     // derived: surface size x scale
+    canvas.SetRenderResolution(1280, 720);       // pinned: an exact size
+    canvas.TrackWindowSize = true;               // follow the window (opt-in)
+
+    EngineConfiguration.RenderScale           float, finite and > 0, default 1
+                                              (> 1 supersamples). Changing it
+                                              re-establishes every registered
+                                              surface from its CURRENT size.
+    EngineConfiguration.RenderScalingFilter   RenderScalingFilter.Linear
+                                              (default) or NearestNeighbor for
+                                              pixel art. PRESENTATION filtering
+                                              only — independent of
+                                              Viewport.Zoom and of per-tile /
+                                              per-image filter quality. A pixel-
+                                              art game wants both set
+                                              (Platformer.Brix shows this).
+    RenderSurfaceHostBase.RequestRenderResolution(int width, int height)
+                                              the pinned form; GameSurfaceCanvas
+                                              .SetRenderResolution forwards to it.
+                                              Throws ArgumentOutOfRangeException
+                                              below 1x1; a request made before
+                                              the first layout is applied when
+                                              the surface gets one.
+    RenderSurfaceHostBase.TrackAdapterSize    bool, default false; the canvas
+                                              exposes it as TrackWindowSize. true
+                                              re-establishes the resolution on
+                                              EVERY surface resize (the old
+                                              behaviour), superseding a pinned
+                                              size on the next resize.
+    RenderSurfaceHostBase.LogicalWidth / LogicalHeight
+                                              the resolution this surface renders
+                                              at, INCLUDING a requested change the
+                                              rendering thread has not applied
+                                              yet. Views are sized from it, so a
+                                              pinned resolution is visible to game
+                                              code in the same breath as the
+                                              request.
+    RenderSurfaceHostBase.PresentationScale   the live fitted scale (read-only).
+    RenderSurfaceAdapterBase.Presentation     PresentationTransform (Scale,
+                                              DestinationRect; Fit,
+                                              TryAdapterPxToScreenPx,
+                                              ScreenRectToAdapterRect).
+    RenderSurfaceAdapterBase.AdapterPxToScreenPx(PointF)
+                                              control pixels -> logical ScreenPx.
+    RenderSurfaceAdapterBase.DrawImage(SKCanvas, SKImage, SKColor)
+                                              present an image through that same
+                                              transform (bars cleared, filter
+                                              honoured).
+
+  * LAY CONTENT OUT FROM Host.Backbuffer.Width/Height (or LogicalWidth/Height),
+    never from the canvas or adapter size. ViewManager sizes every view from the
+    logical resolution.
+  * ScreenPx MEANS LOGICAL BACKBUFFER PIXELS EVERYWHERE — View.ScreenPxToWorldPx
+    / ScreenPxToGrid, Viewport.TargetRectPx, TouchPoint.Position, direct-drawing
+    ScreenBounds. Mouse and touch positions from this host are normalized before
+    they reach the pollers, so engine input is already in that space. A pointer
+    over the letterbox bars keeps its outside coordinates (negative, or past the
+    logical size) instead of being clamped, so drags and capture still work.
+  * A game doing its OWN UI-level hit testing on the canvas (ParticleTest's
+    campfire) should call canvas.RenderSurfaceAdapter.AdapterPxToScreenPx(point)
+    rather than re-deriving the fit. Do not feed an already-normalized ScreenPx
+    value through the transform twice.
+  * OnRenderSurfaceResized(width, height) still fires, but the size it reports is
+    the SURFACE's, not ScreenPx, and a resize no longer changes the Backbuffer.
+    Overlays that used to be re-anchored there should be anchored from the
+    Backbuffer size once (Spot.Brix, SpaceDuel.Brix and GpuRender show the shape).
+  * GPU surfaces allocate their render target once and again only on an explicit
+    resolution change (GpuBackbuffer.RequestResize / EnsureInitialized), so a
+    drag-resize costs nothing. On a head with no GPU context the GPU tier's
+    temporary CPU raster surface honours the request too.
+  * The three GL presentation helpers on RenderSurfaceHostBase —
+    GlRenderToCanvas(SKCanvas, bool renderWhilePaused = false),
+    GlDrawCurrentFrameToCanvas(SKCanvas) and GlSnapshotCurrentFrame() — let a GPU
+    presenter draw the backbuffer surface straight onto a platform canvas with no
+    intermediate SKImage, and re-present the current frame on presentation loops
+    that run faster than the render cadence. All three return false/null on a
+    surface that is not GL-thread rendered, and must be called from the platform
+    GPU paint callback with the GRContext current. GlRenderToCanvas honours the
+    global pause: while paused it RE-PRESENTS the frame last rendered (and
+    returns true) instead of advancing the scene, unless renderWhilePaused.
 
 MODE A WALKTHROUGH 1: DERIVING FROM CodeBrixGameHost (recommended)
 --------------------------------------------------------------------------------
@@ -539,7 +683,8 @@ Minimal game skeleton (the Spot.Brix sample is the full worked example):
         protected override void OnEnginePaused() { /* save game / pause screen */ }
         protected override void OnEngineResumed() { /* tear down pause screen */ }
         protected override void OnRenderSurfaceResized(int w, int h)
-            { /* reposition HUD overlays pinned to edges */ }
+            { /* the SURFACE resized; the game area did not. Anchor HUD
+                 overlays from Host.Backbuffer.Width/Height, not from w/h. */ }
     }
 
 Page wiring (identical in every sample):
@@ -888,8 +1033,27 @@ device, so overlapping sounds are cheap):
   RESOURCE PATH (typical for Mode A): AudioResourceManager.Instance loads
   clips (LoadFromFile / LoadFromStream / LoadFromPcm /
   LoadFromEngineAssetsFile); each AudioResource owns a voice: Play(fromStart),
-  Pause(), Resume(), Stop(), Seek(), IsLooping, Volume, Pan, Duration,
-  PlaybackCompleted. Clone() gives an independent voice of the same clip.
+  Pause(), Resume(), Stop(), Seek(), IsLooping, Volume, Pan, PlaybackSpeed,
+  Duration, PlaybackCompleted. Clone() gives an independent voice of the same
+  clip.
+
+    PLAYBACK SPEED. AudioResource.PlaybackSpeed is a playback-rate multiplier,
+    1.0 by default and clamped to AudioResource.MinimumPlaybackSpeed (0.25) —
+    AudioResource.MaximumPlaybackSpeed (4.0); NaN throws
+    ArgumentOutOfRangeException. PITCH FOLLOWS SPEED: this is resampling, not
+    time-stretching, so a slower speed also sounds lower. It applies to EVERY
+    loaded resource, can be changed while the clip is playing, is carried over
+    by Clone(), and is saved and restored with the engine state. ONE EXCEPTION:
+    a TryPlaySfx trigger plays through the shared voice pool rather than the
+    resource's own graph, so it keeps the recorded speed. Music tracks keep
+    their own Speed, and SoundChannel keeps its own live Pitch.
+
+    A FAILED LOAD LEAVES NOTHING BEHIND. When LoadFromFile / LoadFromStream /
+    LoadFromPcm / asset-pack loading fails part way through, the reader, the
+    stream under it, the temporary file the load wrote and any partially built
+    resource are all released, no key is left registered, no voice is stranded
+    on the shared output — and the ORIGINAL load exception still reaches the
+    caller.
 
   SHORT-EFFECT PRELOAD (automatic): container-format sounds (.wav/.mp3/.ogg/
   .flac) no longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds
@@ -1233,7 +1397,8 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     SceneLayer AddLayer(SceneLayer sceneLayer);   void RemoveAllLayers()
 
   * Layers: ZOrder (lower renders behind), Parallax (1 = moves with camera,
-    <1 background, >1 foreground), Visible, WrapHorizontally/Vertically,
+    <1 background, >1 foreground), Visible, WrapHorizontally/WrapVertically
+    (make the layer periodic — see LAYER WRAPPING),
     OriginPx (world origin of tile (0,0)), ShowGridLines/ShowCollisionBoxes
     (debug overlays). Prefer SetTileSize(w,h) over setting TileWidth and
     TileHeight separately (one refresh instead of two). Nearly every layer
@@ -1247,8 +1412,10 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     isometric diamond; tile art fits that footprint with transparent
     bounding-box corners. The CoordinateTest sample exercises the first five.
     Conversions: layer.GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile,
-    CardinalDirections); tile indexers return null out of bounds (no
-    auto-wrap — call WrapGrid first when wrapping).
+    CardinalDirections); tile indexers stay bounds-checked and return null out
+    of bounds — they NEVER wrap. On a periodic layer use ResolveWrappedTile, or
+    WrapGrid before indexing (see LAYER WRAPPING). Adjacency does follow the
+    enabled wrapping axes.
     NAMING NOTE: the member formerly called `Oblique` is now `ObliqueRight`.
     Its numeric value is still 5 and the enum serializes as an int, so saved
     layers are unaffected — only source has to be retargeted.
@@ -1273,6 +1440,92 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
     automatically.
   * Scene, SceneLayer and every Tile carry a TypedValueBag (ValueBag) for the
     game's own per-object data (see VALUE BAGS; not serialized).
+
+LAYER WRAPPING (Mode A)
+--------------------------------------------------------------------------------
+Two flags make a layer PERIODIC — an endlessly repeating world with no seam:
+
+    // 'world' here is a 100-column, 80-row layer
+    world.WrapHorizontally = true;    // the COLUMN axis repeats
+    world.WrapVertically   = true;    // the ROW axis repeats
+
+    SceneLayerTile? t = world.ResolveWrappedTile(-1, 80);      // canonical [99, 0]
+    PointF canonical  = world.WrapGrid(new PointF(101, -1));   // (1, 79)
+
+Nothing is cloned. The grid owns ONE canonical tile per cell, and the engine
+draws, picks and collides with TRANSLATED IMAGES of that content. Both flags
+default to false; they keep their serialized names, so a scene saved with a
+flag already true becomes periodic when it is loaded.
+
+  * "Horizontal" means the COLUMN axis and "vertical" means the ROW axis. On a
+    projected grid those axes need not be horizontal or vertical on screen: an
+    isometric or oblique layer repeats along DIAGONAL period vectors.
+  * PERIOD RULES. One world-space period vector per grid axis, derived through
+    the layer's coordinate strategy from its own dimensions. A whole period must
+    produce the same world displacement everywhere on the layer, including
+    negative positions and both stagger parities. HEX PARITY: a flat-top hex
+    layer needs an EVEN column count to wrap columns, a pointed-top hex layer an
+    EVEN row count to wrap rows. Pixel-rounded projections (odd tile dimensions
+    against an odd isometric period, for instance) need a consistent integral
+    period. The period vectors must also be nonzero and independent.
+    Validation happens on the first OPERATIONAL use, not in the property setter
+    or at load, so ordinary construction and JSON property order stay free; a
+    bad configuration throws InvalidOperationException at use.
+  * ResolveWrappedTile(column, row) vs the indexer: layer[col, row] is
+    bounds-checked and never wraps; ResolveWrappedTile floor-mods the ENABLED
+    axes only and still returns null for an out-of-range disabled axis.
+    WrapGrid(PointF) follows the same enabled-axes-only rule, preserves
+    fractions, returns its input unchanged when neither axis wraps, and rejects
+    a non-finite value with ArgumentOutOfRangeException.
+    GetWrappedOffsets(contentBounds, queryBounds) returns the world-space
+    translations whose copies intersect the query.
+  * COLLISIONS AT SEAMS. Static tiles and dynamic colliders are queried as a
+    canonical collider PLUS a translated bounds pair:
+        void ColliderRegistry.QueryInstances(in Aabb area, int layerMask,
+                                             int collidesWithMask,
+                                             List<ColliderInstance> results,
+                                             ICollider? ignore = null)
+        readonly record struct ColliderInstance(ICollider Collider,
+                                                Aabb BoundsWorldPx)
+    Use QueryInstances (and each instance's BoundsWorldPx) for seam-accurate
+    custom queries. QueryAabb still exists and now returns UNIQUE CANONICAL
+    identities: a collider whose images overlap the query several times is
+    reported ONCE, and its ordinary bounds do not describe a seam instance.
+    Masks and the `ignore` collider apply to canonical identities in both, so an
+    object never collides with its own repeated copies. Collision adjustments
+    and per-frame collision regions are applied BEFORE the translation; the
+    automatic resolver pushes out against the overlapping image while the
+    trigger/solid events still carry the canonical colliders.
+  * CAMERAS. A camera moves continuously along a wrapped axis — it is never
+    teleported — and clamping to WorldBoundsPx happens in the PERIOD-VECTOR
+    BASIS, so wrapped axes are unconstrained and non-wrapped ones still clamp.
+    Topology comes from the followed object's layer (FollowCentered /
+    FollowCenteredX / FollowCenteredY set it; PanTo / PanToOverDuration / Follow
+    / ClearFollow clear it), otherwise from the first VISIBLE layer in scene
+    insertion order, independent of Z-order. Following picks the equivalent
+    target image nearest the current camera centre, so a sprite normalized
+    across a seam does not scroll the camera backwards through the map.
+  * SPRITES AND MOVEMENT. Layer wrapping does NOT enable Movement.WrapX /
+    WrapY: whether a sprite's own position is normalized at a boundary stays an
+    independent, per-sprite opt-in, and movement-only wrapping still works on a
+    non-periodic layer. Sprites (and their artwork straddling an edge) render at
+    every equivalent position; each image is the same canonical sprite with the
+    same gameplay state.
+  * DIRECT DRAWINGS. A DirectDrawingMode.SceneLayer drawing repeats with its
+    layer, on the same period vectors, so a health bar and its sprite stay
+    together. VIEW-BOUND DRAWINGS, HUDs and view-space UI NEVER repeat.
+  * RENDERING AND COST. Every intersecting repetition is drawn, corners
+    included, selected from actual artwork bounds with overhang honoured and
+    sorted on translated positions; fog, grid lines and collision outlines
+    follow each image. A bitmap (CPU) host composes the FULL view while any
+    visible layer wraps, so every copy refreshes; the GPU path already renders
+    full frames. Selection scans canonical content, so very large layers and
+    heavily zoomed-out views cost more than a non-periodic layer. Candidate and
+    visible instance ranges are capped at one million and throw
+    InvalidOperationException rather than generating unbounded work.
+  * SAVE / LOAD. Both flags round-trip, tiles are restored in place, and the
+    rebuilt ColliderRegistry is re-attached to its layer, so periodic queries
+    work immediately after a load.
 
 VIEWS AND CAMERAS (Mode A)
 --------------------------------------------------------------------------------
@@ -1433,6 +1686,11 @@ THE TILESHEET DEFINITION MODEL (.gts) — namespace ...Drawing.Tilesheets.GTS:
         void Save(string filePath, Tilesheet tilesheet, bool makePathsRelative = true)
         string ToJson(Tilesheet tilesheet, string? baseDirectory = null,
                       bool makePathsRelative = false)
+    TilesheetDefinitionValidator (static) — AUTHORING diagnostics, no runtime cost
+        IReadOnlyList<string> Validate(TilesheetDefinition definition,
+                                       int? imageWidth = null,
+                                       int? imageHeight = null)
+        (long Columns, long Rows) GridSize(TilesheetRegionDefinition region)
 Round trip: build a Tilesheet in code, Save(path, sheet) writes the .gts; the
 save system's separateGtsFiles option and LoadFromDefinitionFile use the same
 format.
@@ -1450,6 +1708,22 @@ format.
     path you are happy to have a .png appear beside.
   * FromTilesheet writes one Frames record per frame coordinate, so a large
     region produces a large .gts (a 100x100 region = 10,000 records).
+  * Load / FromJson throw InvalidDataException ("GTS Regions cannot contain null
+    entries.") for a Regions array carrying a null entry, instead of failing
+    later with a NullReferenceException.
+  * VALIDATING A DEFINITION BEFORE USING IT. TilesheetDefinitionValidator.Validate
+    returns a list of human-readable problems — duplicate or empty region names,
+    a non-positive area or tile size, an area outside the image (pass
+    imageWidth/imageHeight to check that), negative padding/margin/overhang,
+    inverted collision geometry on a region or a frame, frames outside the
+    region's grid, duplicate frame coordinates, an undefined collision type,
+    null region or frame entries. An empty list means "no problems found". It
+    creates no runtime tiles and decodes no image, so an authoring tool can
+    check a .gts without loading its artwork. NEGATIVE collision adjustments
+    stay legal (they EXPAND the collision area); only inverted geometry is
+    reported. GridSize exposes the frame-grid arithmetic the loader uses (tile
+    size plus tile padding per frame, region margin removed from the area
+    first), so a tool can show the cell count a region will produce.
 
 SPRITES: create ONLY via the manager (the constructor is not public):
 
@@ -1476,6 +1750,16 @@ SPRITES: create ONLY via the manager (the constructor is not public):
     (GetSpritesInWorldRectRange / GetSpritesInViewRectRange /
     GetSpritesAtViewPixel) and the SceneLayer sprite query all use them, so a
     rotated sprite is picked and repainted correctly.
+    THE ROTATION IS APPLIED IN Sprite.Draw, not inside each backbuffer, so every
+    rendering backend produces the same transformed output. A custom
+    BackbufferBase no longer has to implement sprite rotation (and no longer
+    gets it for free), and a custom drawable that overrides Draw is responsible
+    for its own visual transforms.
+  * Sprite.VisualBoundsChanged (Action<Sprite>?) is raised whenever a sprite's
+    rotated VISUAL bounds change — rotation, alignment, offset, frame size —
+    after the affected region has been queued for refresh. Use SpriteMoved for
+    coordinate changes. Subscribers are released on disposal, alongside
+    SpriteMoved and Disposing.
   * CompositeSprite.GetPosition() returns GRID coordinates, matching
     SetPosition and AddChildWithOffset (it used to return world pixels).
   * CloneSprite(sprite, layer) binds the clone's MovementController and collider
@@ -1675,15 +1959,25 @@ THE COLLISION MODEL TYPES (namespace ...Physics.Collisions):
     CollisionProfileRegistry    Define(name, collisionGroup, collidesWith,
                                 collidesWithAll), Get(name), TryGet(name, out),
                                 GetProfileNames()
+    ColliderInstance            readonly record struct (ICollider Collider,
+                                Aabb BoundsWorldPx) — one overlapping IMAGE of a
+                                canonical collider on a periodic layer
     ColliderRegistry            (one per SceneLayer) StaticColliders, DynamicColliders,
                                 Register(ICollider), Unregister(ICollider),
                                 void QueryAabb(in Aabb area, int layerMask,
                                                int collidesWithMask,
                                                List<ICollider> results,
+                                               ICollider? ignore = null),
+                                void QueryInstances(in Aabb area, int layerMask,
+                                               int collidesWithMask,
+                                               List<ColliderInstance> results,
                                                ICollider? ignore = null)
   A typical game-logic query: build an Aabb around the player, call QueryAabb
   with CollisionMasks.All for both masks and a reusable List<ICollider>, then
-  inspect each result's Owner (the Tile) and ResponseType.
+  inspect each result's Owner (the Tile) and ResponseType. QueryAabb returns
+  UNIQUE CANONICAL identities, so on a periodic layer a collider overlapping the
+  query through several of its images is reported once; use QueryInstances when
+  the translated per-image bounds matter (see LAYER WRAPPING).
 
 DIRECT DRAWINGS AND PARTICLES (Mode A, immediate-mode)
 --------------------------------------------------------------------------------
@@ -1707,6 +2001,7 @@ and self-register with DirectDrawingManager (dispose to remove).
         .SetColors(fore, back).SetAlignment(SKTextAlign.Center, VerticalAlign.Center)
         .EnableWrapping().SetMaxLines(6).UseShadow().SetShadow(...)
         .UseOutline().PulseColor(...).StartTypewriter(...)/.StartWordReveal(...)
+        .SetPadding(horizontal, vertical).SetSize(new Size(w, h))
         .SetText("...")   // updatable every frame (score/FPS readouts)
     DirectComposite(host, DirectDrawingMode.View)
         .Add(child1).Add(child2)      // group; has .Movement (pixel space)
@@ -1720,6 +2015,17 @@ and self-register with DirectDrawingManager (dispose to remove).
             OnSpawn = (ref Particle p) => { /* per-particle custom */ } });
         // plus Burst(emitter, count), ActiveParticleCount, GlobalEmitScale,
         // CullingMarginX for off-surface emitters
+
+TextBlock.SetPadding(float horizontal, float vertical) and
+TextBlock.SetSize(Size size) are fluent setters that validate their arguments
+(ArgumentOutOfRangeException for negative or non-finite padding, or a
+non-positive size), invalidate the cached line layout and refresh. SetSize keeps
+the drawing's current location and writes ScreenBounds in View mode,
+WorldBounds otherwise.
+
+DirectDrawingBase.CancelReveal() stops an in-flight RevealTo animation at its
+current progress and returns the drawing for chaining — the reveal counterpart
+to CancelFade().
 
 Fonts for TextBlock come from SKTypeface or from FontManager (see FONTS AND
 SVG). Custom drawables derive from DirectDrawingBase (or
@@ -2078,6 +2384,60 @@ immediately.
     audio entry; SvgResourceManager.Instance.LoadFromEngineAssetsFile(pack)
     does the same for SVGs; TilesheetRegistry.LoadFromAssetsFile /
     LoadFromDefinitionAsset pull images and .gts definitions.
+  * static void AssetsFile.Validate(string path, string? password = null,
+    bool testData = true) is the STRICT check an authoring tool wants: it
+    rejects an entry key that cannot be parsed, names an undefined asset type or
+    an empty asset name, or collides with another entry, and then runs the
+    archive integrity check (testData: false skips payload verification but
+    still checks the keys). Run-time loading stays permissive, and the inspected
+    bundle is NOT added to AssetsFile.AllAssetsFiles.
+
+ASSET PROVIDERS: Engine.Managers.AssetProviders
+--------------------------------------------------------------------------------
+An asset PROVIDER catalogs assets that live in somebody else's layout — a
+third-party art pack, an archive, a folder tree — and materializes them into the
+engine's own registries on demand. The core describes and dispatches; the
+provider does the transforming. Nothing specific to one asset collection lives
+in the engine.
+
+    Engine.Managers.AssetProviders.Register(myProvider);
+    var providers = Engine.Managers.AssetProviders;
+    Tilesheet sheet = providers.LoadTilesheet("artpack:ui/buttons");
+
+  * A provider implements IGameAssetProvider (ProviderId, SupportedKinds,
+    Describe(query?), TryDescribe(key, out descriptor), OpenRaw(descriptor))
+    plus whichever capability interfaces it can serve: ITilesheetAssetSource,
+    IAudioAssetSource, IFontAssetSource, ITiledMapAssetSource. SupportedKinds
+    must list the kinds it can materialize — the registry gates on it as well as
+    on the capability interface.
+  * KEYS ARE NAMESPACED: "<providerId>:<provider-relative identifier>", matched
+    case-insensitively; a ProviderId may not contain a colon. The key is also
+    the registry key of the materialized object.
+  * GameAssetKind: Unknown, Image, SpriteAtlas, Audio, Font, Vector, TiledMap,
+    Model3D, Document, Archive, Other. GameAssetDescriptor carries ProviderId,
+    Key, Kind, Name, Pack, Path, SizeBytes and a free-form Properties map;
+    GameAssetQuery filters a Describe() call.
+  * The registry dispatches LoadTilesheet(key, TilesheetMaterializeOptions?),
+    LoadAudio(key, volume, pan), LoadFont(key) and ImportTiledMap(key, scene,
+    TiledMapImportOptions?) to the owning provider, and returns the engine's own
+    types (Tilesheet, AudioResource, SKTypeface, TiledMapImport with
+    TiledObjectGroup / TiledObject / TiledTileInfo). An asset whose kind the
+    engine cannot represent, or whose provider does not implement the matching
+    capability, raises UnsupportedGameAssetException ("This type of asset is not
+    supported at this time."); a key no provider owns raises KeyNotFoundException.
+  * LIFETIME: Register is idempotent by ProviderId — registering a different
+    instance under an identifier that is already taken REPLACES the old provider
+    and disposes it. Unregister(id, dispose = true) and Clear() dispose too, and
+    Engine.Dispose() clears the registry. Provider registrations are runtime
+    state and are never saved with engine state.
+  * THREADING: registry bookkeeping is locked, but provider calls happen outside
+    the lock, so a provider implementation must be callable from more than one
+    thread.
+  * Related loading unlocks: FontManager.LoadFromStream(key, Stream) /
+    LoadFromBytes(key, byte[]), SvgResourceManager.LoadFromStream(key, Stream)
+    with SvgResource.Load(Stream) now public, and Tilesheet.GetRegion(name)
+    backed by a case-insensitive name index (constant time on a sheet carrying
+    hundreds of single-tile regions; the public API is unchanged).
 
 CONFIGURATION: EngineConfiguration / EngineConfigurationFile
 --------------------------------------------------------------------------------
@@ -2085,9 +2445,23 @@ Engine.Instance.Configuration (loaded by Initialize; default file
 "gameengine.json"; a missing file just yields defaults):
 
     TargetFPS = 60                    -- render throttle; 0 = uncapped
+    RenderScale = 1                   -- logical resolution = surface size x this
+                                         (finite, > 0; > 1 supersamples). See
+                                         RENDER RESOLUTION AND PRESENTATION
+    RenderScalingFilter = Linear      -- presentation filtering: Linear or
+                                         NearestNeighbor (pixel art)
     VSync = true                      -- GPU (GpuRendering) backbuffers only
-    MsaaSampleCount = 1               -- GPU only; applies at next surface init
+    MsaaSampleCount = 1               -- GPU only; applies the next time the GPU
+                                         render target is allocated
     SamplingTimeForCPS = 1.5          -- seconds between CPSCalculated events
+    StartInitializationWaitTimeout = 30
+                                      -- seconds Start() waits for an
+                                         initialization running on another
+                                         thread before it throws
+    TimerDrivenSimulationRate = 120   -- timer-driven mode: fixed simulation
+                                         updates per second
+    MaxTimerDrivenSimulationSteps = 8 -- most fixed updates one Tick() may run;
+                                         excess accumulated time is discarded
     TimeBetweenKeyboardEvents = 0.03  -- repeat-event throttle floors (seconds)
     TimeBetweenMouseEvents / TouchEvents / GamepadEvents = 0.03
                                       -- these ARE enforced (the mouse one used
@@ -2128,12 +2502,21 @@ defaults. The shipped file looks like this:
     {
       "EngineConfig": {
         "TargetFPS": 60,
+        "RenderScale": 1,
+        "RenderScalingFilter": "Linear",
         "SamplingTimeForCPS": 1.5,
         "TimeBetweenKeyboardEvents": 0.03,
         "TimeBetweenGamepadEvents": 0.03,
-        "TimeBetweenMouseEvents": 0.03
+        "TimeBetweenMouseEvents": 0.03,
+        "StartInitializationWaitTimeout": 30,
+        "TimerDrivenSimulationRate": 120,
+        "MaxTimerDrivenSimulationSteps": 8
       }
     }
+
+  * RenderScalingFilter is bound BY NAME ("Linear" / "NearestNeighbor"). A
+    hand-edited file carrying an unknown name binds as Linear rather than
+    throwing.
 
   * AUTO-SAVE WORKS. With autoSave true (Engine.Initialize(..., autoSaveConfig:
     true), or AutoSave on the file object) the configuration — including
@@ -2162,16 +2545,18 @@ PLUGINS (namespace ...Extensibility): IEnginePlugin hooks the cycle without
 subscribing to events —
     string Name;  string Version
     void OnInitialize(Engine engine)
-    void OnPreCycle(Engine engine, double deltaMs)
-    void OnPreFrameRender(Engine engine, double deltaMs)
-    void OnPostFrameRender(Engine engine, double deltaMs)
-    void OnPostCycle(Engine engine, double deltaMs)
+    void OnPreCycle(Engine engine, double deltaSeconds)
+    void OnPreFrameRender(Engine engine, double deltaSeconds)
+    void OnPostFrameRender(Engine engine, double deltaSeconds)
+    void OnPostCycle(Engine engine, double deltaSeconds)
     void OnPostRenderCanvas(Engine engine, RenderSurfaceHostBase host, SKCanvas canvas)
                                                   // default no-op overlay hook
     void OnShutdown(Engine engine)
     EnginePluginRegistry.Register(IEnginePlugin) / Unregister(IEnginePlugin) / All
 The same thread rules as the matching events apply (engine thread; the canvas
 hook follows the surface's render thread, UI thread under GpuRendering).
+THE HOOK PARAMETER IS NAMED deltaSeconds (it was deltaMs, and the value was
+always seconds). Source-compatible unless a plugin used the named argument.
 
 LOGGING (namespace ...Logging): the engine logs through
 Microsoft.Extensions.Logging. EngineLogger (static):
@@ -2222,6 +2607,8 @@ contents yourself if they matter.
 FONTS: FontManager.Instance (namespace ...Rendering.Text) is a keyed SKTypeface
 cache for TextBlock fonts:
     SKTypeface LoadFromFile(string key, string filePath)
+    SKTypeface LoadFromStream(string key, Stream stream)
+    SKTypeface LoadFromBytes(string key, byte[] fontData)
     SKTypeface LoadFromResource(string key, Assembly assembly, string resourceName)
     SKTypeface LoadFromResource(string key, string resourceName)
     SKTypeface Get(string key);  bool TryGet(string key, out SKTypeface? typeface)
@@ -2231,12 +2618,17 @@ cache for TextBlock fonts:
 SVG: SvgResourceManager.Instance (namespace ...Drawing) is the keyed store for
 vector art that DirectSvg draws:
     SvgResource LoadFromFile(string key, string path)
+    SvgResource LoadFromStream(string key, Stream stream)
     List<SvgResource> LoadFromEngineAssetsFile(AssetsFile resourceFile)
     bool Contains(string key);  SvgResource? Get(string key)
     Dictionary<string, SvgResource> GetAll();  void Unload(string key);  void Clear()
-    SvgResource: static Load(string path); IntrinsicSize (SizeF);
+    SvgResource: static Load(string path); static Load(Stream stream);
+                 IntrinsicSize (SizeF);
                  SKBitmap Rasterize(int width, int height);
                  SKBitmap Rasterize(float scale = 1.0f); Dispose()
+The stream/bytes loaders exist so a font or an SVG can come straight out of an
+archive entry, with the same replace-by-key semantics as the file loaders; a
+non-seekable stream is fine.
 
 COMPLETE EXAMPLES
 =================
@@ -2509,11 +2901,16 @@ SOUND EFFECTS
 
 RENDERING
   [] Pin a render resolution (SetRenderResolution) when the game's layout
-     assumes fixed coordinates; letterboxing is automatic, and pointer
-     mapping across the letterbox is provided (WindowToBuffer).
+     assumes fixed coordinates, or set RenderScale to derive one; letterboxing
+     is automatic and engine pointer input is already in logical ScreenPx.
   [] Do not force refreshes during window resizes; the canvas already
-     suppresses and resumes presenting around a resize.
-  [] Size-anchored HUD content: reposition in OnRenderSurfaceResized.
+     suppresses and resumes presenting around a resize, and a resize no longer
+     changes the render resolution at all.
+  [] Size-anchored HUD content: anchor it ONCE from Host.Backbuffer.Width/Height
+     rather than re-anchoring on every OnRenderSurfaceResized.
+  [] A wrapped (periodic) layer composes the full view on the CPU tier and
+     scans canonical content to pick its images — keep wrapped layers and
+     zoomed-out views within reason.
   [] GpuRendering pays off for blending, scaling/rotation and SkSL shader
      scenes; a plain tile blit may not benefit and still re-renders the full
      surface every frame (no dirty rectangles on GPU).
@@ -2551,17 +2948,22 @@ MUTUAL-EXCLUSIVITY RULES (each throws if violated)
   [] InputPump.PollNow() only when the engine loop is NOT running.
   [] AudioSystem.Initialize before SoundChannel/callback streams.
   [] Presenter.Configure before the Mode-B loop starts (OnLoadContent).
-  [] SetRenderResolution / UseGpuRendering BEFORE the first access to Host.
+  [] UseGpuRendering BEFORE the first access to Host (SetRenderResolution is
+     safe before or after, and TrackWindowSize is the alternative to it — use
+     one or the other, not both).
   [] ConfigureSingleFullView / Bind only from FirstStarted onward, on the UI
      thread.
 
 RESOURCES AND SHUTDOWN
   [] Dispose the game host on page close; it stops the loop, unhooks events,
-     and (CodeBrixGameHost) tears the engine down in the right order. After
-     Engine.Dispose() the singleton is dead for the process — do not try to
-     restart it. SoftwareRenderedGameHostBase.Dispose does NOT dispose the
-     engine; call AudioSystem.Shutdown() / MusicManager.Instance.Dispose()
-     yourself in that mode.
+     and (CodeBrixGameHost) tears the engine down in the right order — it stops
+     platform scheduling and JOINS the cycle (Engine.StopAndWait) BEFORE any
+     cleanup hook runs. After Engine.Dispose() the singleton is dead for the
+     process — do not try to restart it. SoftwareRenderedGameHostBase.Dispose
+     does NOT dispose the engine; call AudioSystem.Shutdown() /
+     MusicManager.Instance.Dispose() yourself in that mode.
+  [] Releasing native drawing resources by hand: call Engine.StopAndWait()
+     first, from a thread that is NOT the engine thread (it throws there).
   [] Unsubscribe any engine events you subscribed outside the host bases
      (the bases unhook their own).
   [] Scenes self-register globally: Dispose() them (or Scene.ClearAllScenes())
@@ -2587,6 +2989,30 @@ API TRAPS
      edge, negative grows it. Positive Bottom/Right no longer push outward.
   [] One render-surface host per Scene — Bind throws if the scene is already
      bound elsewhere. Use several Views on the one host instead.
+  [] A WINDOW RESIZE NO LONGER RESIZES THE BACKBUFFER. The resolution is
+     established once and every later resize only letterboxes the image. Lay
+     content out from Host.Backbuffer.Width/Height (or LogicalWidth/Height),
+     never from the canvas/adapter size, and never from OnRenderSurfaceResized's
+     arguments — those are the SURFACE's size, not ScreenPx.
+  [] Presentation filtering defaults to Linear. A pixel-art game scaled up into
+     a larger window goes blurry until it sets
+     Configuration.RenderScalingFilter = NearestNeighbor (that is separate from
+     tile/image filter quality — set both).
+  [] layer[col, row] NEVER wraps, even on a periodic layer; use
+     ResolveWrappedTile, or WrapGrid first. WrapGrid normalizes only the ENABLED
+     axes and returns its input unchanged when neither axis wraps.
+  [] ColliderRegistry.QueryAabb reports unique CANONICAL colliders, so on a
+     periodic layer one result can stand for several visible images; use
+     QueryInstances when the translated bounds matter.
+  [] IEnginePlugin hook parameters are deltaSeconds, not deltaMs (the value
+     was always seconds) — only named arguments break.
+  [] In timer-driven mode Engine.Tick() is one PRESENTATION opportunity: zero or
+     more fixed simulation steps (TimerDrivenSimulationRate, capped by
+     MaxTimerDrivenSimulationSteps) and at most one render. Excess accumulated
+     time is discarded rather than replayed.
+  [] Engine.StopAndWait() throws if called from the engine thread; Engine
+     .Dispose() called there defers its managed cleanup to a continuation, so
+     the Disposed event arrives after the cycle task finishes, not inline.
   [] Viewport.Zoom > 1 zooms IN. Code written against the older, inverted
      behaviour has to drop its compensation.
   [] Timer.Add validates its length: zero, negative, NaN, infinite and
@@ -2690,7 +3116,13 @@ consumer for the subsystems it exercises. None of them is in the repository
       horizontal camera follow with a dead zone, a view-bound
       DirectRectangle + TextBlock HUD, and a procedural tilesheet painted in
       code (TilesheetRegistry.LoadFromBitmap), so the sample ships no image
-      assets.
+      assets. Angry-mushroom enemies walk towards the player and fall into
+      pits: side or underside contact returns the player to the start, while
+      landing on a mushroom's head while descending flattens it, bounces the
+      player, and fades the mushroom out over its fade strip. It is also the
+      pixel-art reference for presentation filtering — it sets
+      RenderScalingFilter = NearestNeighbor so the letterboxed image stays
+      crisp when the window is enlarged.
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/SpaceDuel.Brix
       Mode A via CodeBrixGameHost on the GPU tier: Sprite.Rotation on ships and
       lasers, MovementController.WrapX/WrapY for a wrap-around world, two
@@ -2705,7 +3137,8 @@ consumer for the subsystems it exercises. None of them is in the repository
       EngineDispatcher.Post, engine mouse events, rebuild-while-running.
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/CoordinateTest
       Mode A, direct Engine: coordinate systems (orthogonal, isometric, hex),
-      cameras/views.
+      cameras/views, and a horizontally wrapped scene layer — pan left and the
+      wrapped layer keeps going while the parallax layer beside it stops.
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/ParticleTest
       Mode A, direct Engine: ParticleSurface/emitters, DirectComposite/
       TextBlock/DirectRectangle, movement easing — plus the campfire click =
@@ -2722,8 +3155,10 @@ consumer for the subsystems it exercises. None of them is in the repository
       GPU-first counterpart — resolution-independent SkSL plasma + starfield
       via a custom DirectDrawingBase subclass (PlasmaBackdrop), stats
       TextBlock with live GPU FPS, click-anywhere pause with a pause overlay
-      (paused-frame + snapshot demo), window-tracking resolution with resize
-      handling. GPURENDER_USE_CPU=1 runs the same scene on CpuRendering.
+      (paused-frame + snapshot demo), and the default presentation behaviour —
+      the resolution is established once and later resizes letterbox, with every
+      overlay laid out from the Backbuffer size. GPURENDER_USE_CPU=1 runs the
+      same scene on CpuRendering.
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/MusicDemo
       The MUSIC SYSTEM reference: volume buses, fades and equal-power
       crossfades, ducking (fire-and-forget and the held-handle form),
@@ -2751,6 +3186,17 @@ suite, a gamepad suite and a host suite:
           rotation and collision-profile/type members through save and load
       EnginePauseTests.cs — park/resume semantics, no-burst time shifting,
           audio suspend rules, snapshot capture
+      EngineInitializationTests.cs, FixedStepAccumulatorTests.cs — the bounded
+          start-up wait, retry after a failed Initialize, StopAndWait, dispose
+          from inside a cycle, and the timer-driven fixed-step accumulator
+      SceneLayerWrappingTests.cs, LayerPeriodTests.cs, WrappedCameraTests.cs,
+          WrappedCollisionTests.cs, WrappedRenderingTests.cs,
+          WrappedSpriteTests.cs — layer wrapping end to end: period vectors per
+          projection, ResolveWrappedTile/WrapGrid, seam collisions, camera
+          follow across a seam, repeated drawing and fog/grid overlays
+      ViewportScalingTests.cs, BackbufferBaseTests.cs — the presentation
+          transform, establishing and pinning a logical resolution, letterbox
+          pointer mapping, and the post-tile overlay pass
       TimerTests.cs — length validation, schedule preservation, one-shot timers
       ViewTests.cs, ViewportTests.cs, TextBlockTests.cs — zoom direction,
           anchored zoom, fixed-duration zoom tweens, the render-pass snapshot
@@ -2789,9 +3235,18 @@ suite, a gamepad suite and a host suite:
           EngineLoggerTests.cs, PlatformAudioFactoryTests.cs (the .opus
           registration proof), DirectCompositeTests.cs, GpuBackbufferTests.cs,
           ImageFilterQualityTests.cs, SpacingTests.cs, VariableRateSampleProviderTests.cs,
-          AudioResourceDisposalTests.cs, AudioResourceManagerPcmTests.cs
+          AudioResourceTests.cs, AudioResourceDisposalTests.cs,
+          AudioResourceManagerPcmTests.cs, SoundChannelTests.cs
+      TilesheetDefinitionValidatorTests.cs, TilesheetTests.cs, AssetsFileTests.cs,
+          GameAssetProviderRegistryTests.cs, FontManagerTests.cs,
+          SvgResourceTests.cs, SvgResourceManagerTests.cs — authoring-time
+          validation, the asset-provider contract and the loading unlocks
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Host.Tests
       CodeBrixPlatformUiDispatcherTests.cs — the Host UI dispatcher
+      GameHostBaseTests.cs — the host shutdown order (cleanup hooks must not run
+          until the cycle has finished)
+      PointerCoordinateMapperTests.cs — pointer normalization across the
+          letterbox bars
 
 QUICK REFERENCE CARD
 ====================
@@ -2802,7 +3257,10 @@ LIFECYCLE (Engine.Instance)
                     IGamepadManager<IGamepadAdapter>? gamepadManager = null)
     void Start();  void Start(SynchronizationContext uiContext)
     void StartTimerDriven(SynchronizationContext uiContext);  void Tick()
-    void Stop();  void Pause();  void Resume();  void Dispose()
+        (Tick = fixed simulation steps + at most one render; see
+         Configuration.TimerDrivenSimulationRate / MaxTimerDrivenSimulationSteps)
+    void Stop();  void StopAndWait();  void Pause();  void Resume();  void Dispose()
+        (StopAndWait joins the cycle thread; it throws on the engine thread)
     bool IsRunning / IsPaused / IsInitialized / IsDisposed
     SKImage? LastFrameBeforePause;  byte[]? LastFrameBeforePauseAsRgba(out int w, out int h)
     IEngineDispatcher EngineDispatcher   -- Post(Action), PostAsync(Func<Task>), IsOnEngineThread
@@ -2815,6 +3273,7 @@ HOST (CodeBrix.Platform.GameEngine.Host.*)
         event FirstStartedEventHandler FirstStarted   (FirstStartedEventArgs.NewSize)
         RenderSurfaceHost<BackbufferBase> Host;  RenderSurfaceAdapterBase RenderSurfaceAdapter
         bool UseGpuRendering;  void SetRenderResolution(int width, int height)
+        bool TrackWindowSize      // false = establish once and letterbox
         PixelFramePresenter UsePixelFramePresenter();  void EnsureFocus()
         void SetPointerCursorHidden(bool hidden)
         Point? WindowToBuffer(Point canvasPoint);  Point? BufferToWindow(Point bufferPoint)
@@ -2898,11 +3357,14 @@ SCENE GRAPH
         CollisionGroups; ValueBag; Dispose()
     CoordinateSystemTypes: Orthogonal 0, IsometricRhombic 1, IsometricAxial 2,
         HexAxialFlatTop 3, HexAxialPointedTop 4, ObliqueRight 5, ObliqueLeft 6
-    SceneLayer: this[x, y] (SceneLayerTile?), SetTileSize(w, h), ZOrder, Parallax, Visible,
+    SceneLayer: this[x, y] (SceneLayerTile?, bounds-checked, never wraps),
+        SetTileSize(w, h), ZOrder, Parallax, Visible,
         WrapHorizontally/WrapVertically, OriginPx, ShowGridLines, ShowCollisionBoxes,
         DefaultTileCollisionProfile ("World"),
         GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile, CardinalDirections),
-        ColliderRegistry, RefreshQueue, ValueBag
+        SceneLayerTile? ResolveWrappedTile(int column, int row);
+        PointF WrapGrid(PointF); GetWrappedOffsets(RectangleF contentBounds,
+        RectangleF queryBounds), ColliderRegistry, RefreshQueue, ValueBag
     Tile (SceneLayerTile, Sprite): CurrentFrame, Visible, CollisionsEnabled, CollisionType,
         CollisionTypeByFrame, CollisionArea, AdjustCollisionArea (CollisionAdjust),
         AdjustCollisionAreaByFrame, CollisionProfileName, SetCollisionProfile(name),
@@ -2911,6 +3373,16 @@ SCENE GRAPH
         (throws InvalidOperationException if the scene is bound to another host);
         ViewManager; Backbuffer; Effects; RedrawDirtyRectangleOnly;
         event Action<SKCanvas> RenderBackbufferPostScene
+    RenderSurfaceHostBase (presentation): int LogicalWidth / LogicalHeight;
+        float PresentationScale; void RequestRenderResolution(int width, int height);
+        bool TrackAdapterSize; bool GlRenderToCanvas(SKCanvas, bool renderWhilePaused = false);
+        bool GlDrawCurrentFrameToCanvas(SKCanvas); SKImage? GlSnapshotCurrentFrame()
+    RenderSurfaceAdapterBase: PresentationTransform Presentation; float PresentationScale;
+        Point AdapterPxToScreenPx(PointF); void DrawImage(SKCanvas, SKImage, SKColor)
+    PresentationTransform (readonly record struct): float Scale; SKRect DestinationRect;
+        static Fit(int bufferW, int bufferH, int adapterW, int adapterH);
+        bool TryAdapterPxToScreenPx(PointF, out PointF); Rectangle ScreenRectToAdapterRect(Rectangle)
+    RenderScalingFilter: Linear, NearestNeighbor
     ViewManager: ConfigureSingleFullView(float zoom = 1f, int zOrder = 0);
         ConfigureVerticalSplit(float leftZoom = 1f, float rightZoom = 1f);
         AddView(Rectangle targetRectPx, float zoom = 1f, int zOrder = 0, RectangleF? worldBoundsPx = null);
@@ -2945,14 +3417,19 @@ TILESHEETS / SPRITES / ANIMATION
         FromJson(string); ToJson(TilesheetDefinition); FromTilesheet(Tilesheet, string? baseDirectory = null,
         bool makePathsRelative = false); Save(string filePath, Tilesheet, bool makePathsRelative = true)
         (the Tilesheet overload writes a sibling .png for a bitmap-only sheet
-         and re-points the sheet at it)
+         and re-points the sheet at it; Load/FromJson throw InvalidDataException
+         for a null entry in Regions)
+    TilesheetDefinitionValidator (static): IReadOnlyList<string> Validate(TilesheetDefinition,
+        int? imageWidth = null, int? imageHeight = null);
+        (long Columns, long Rows) GridSize(TilesheetRegionDefinition)
     SpriteManager.Instance: Sprite CreateSprite(SceneLayer sceneLayer, Frame frame, string? id = null,
         string? collisionProfileName = null); CloneSprite(Sprite[, SceneLayer]);
         Sprite? GetSpriteByID(string ID); GetSpritesAtViewPixel(...);
         GetSpritesInWorldRectRange(...); GetSpritesInViewRectRange(...);
         bool SizeNewSpritesToSceneLayer; string DefaultCollisionProfile ("Actor")
-    Sprite: SetPosition(Vector2 pos) (grid); Visible; RenderSize; Rotation (degrees, clockwise);
-        VisualBoundsWorld; GetVisualBoundsScreen(View); Movement; TileAnimator;
+    Sprite: SetPosition(Vector2 pos) (grid); Visible; RenderSize; Rotation (degrees, clockwise,
+        applied in Sprite.Draw); VisualBoundsWorld; GetVisualBoundsScreen(View);
+        event Action<Sprite>? VisualBoundsChanged; Movement; TileAnimator;
         ResizeTo / ScaleBy / PulseTo / PulseBy / StopPulse / CancelResize; StartJiggle / JiggleOnce / StopJiggle
     FrameSequence: AddFrame(sheet, x, y); SequenceCycleType (CycleType Simple/Repeating/PingPong)
     Cycle(FrameSequence seq, double throttleSeconds, string key); NextCycle
@@ -2976,6 +3453,10 @@ MOVEMENT / COLLISION
         int GetMask(IEnumerable<string> names); WorldStatic/Actors/Projectiles/Triggers
     ColliderRegistry.QueryAabb(in Aabb area, int layerMask, int collidesWithMask,
                                List<ICollider> results, ICollider? ignore = null)
+        (unique CANONICAL colliders)
+    ColliderRegistry.QueryInstances(in Aabb area, int layerMask, int collidesWithMask,
+                               List<ColliderInstance> results, ICollider? ignore = null)
+    ColliderInstance(ICollider Collider, Aabb BoundsWorldPx)
     Aabb(float minX, float minY, float maxX, float maxY): Intersects(in Aabb), Center, ToRectangle()
 
 EFFECTS / LIGHTING / COMPONENTS
@@ -3004,6 +3485,9 @@ AUDIO / MUSIC
     AudioResourceManager.Instance: LoadFromFile / LoadFromStream / LoadFromPcm(key, data, rate,
         bits, channels) / LoadFromEngineAssetsFile(pack); bool TryPlaySfx(string key, float volume,
         float pan, int priority); SfxPool; PreloadShortSoundEffectMaxSeconds
+    AudioResource: Play(fromStart) / Pause / Resume / Stop / Seek; IsLooping; Volume; Pan;
+        PlaybackSpeed (1.0 default, clamped MinimumPlaybackSpeed 0.25 - MaximumPlaybackSpeed 4.0;
+        pitch follows speed); Duration; CurrentTime; Clone()
     AudioSystem.Initialize(int sampleRate, int channels); AudioSystem.Shutdown()
     SoundChannel: SetClip(key); Play(volume, pan, pitch); Volume/Pan/Pitch; State
     StreamingAudioSource: FillAudioBuffer(Span<float>) callback or ISampleProvider; Start/Stop; Volume
@@ -3031,10 +3515,17 @@ SAVE / LOAD / ASSETS / CONFIG
     EngineState: SaveToFile(path, compress); static LoadFromFile(path, compressed[, parts]);
         static MergeFromFile(path, overwriteExisting, parts); SerializerOptions; ValueBag
     AssetsFile.LoadOrCreate(path); Get(AssetTypes, name); this[AssetTypes, name]; Add(AssetTypes, path); Save()
-    EngineConfiguration: TargetFPS, VSync, MsaaSampleCount, TimeBetween*Events,
-        TimeBetweenGamepadStateUpdates, LoggingMode, LoggingQueueCapacity,
-        FlushAsyncLogsOnShutdown, PauseSuspendsAudio, PauseShortSoundEffectSeconds,
-        StateFiles, ConfigurationSections
+        static void Validate(string path, string? password = null, bool testData = true)
+    Engine.Managers.AssetProviders (GameAssetProviderRegistry): Register(IGameAssetProvider);
+        Unregister(id, dispose = true); Providers; TryFind(key, out provider);
+        TryDescribe(key, out descriptor); Describe(GameAssetQuery? query = null);
+        LoadTilesheet(key, TilesheetMaterializeOptions?); LoadAudio(key, volume, pan);
+        LoadFont(key); ImportTiledMap(key, Scene, TiledMapImportOptions?); Clear()
+    EngineConfiguration: TargetFPS, RenderScale, RenderScalingFilter, VSync, MsaaSampleCount,
+        TimeBetween*Events, TimeBetweenGamepadStateUpdates, StartInitializationWaitTimeout,
+        TimerDrivenSimulationRate, MaxTimerDrivenSimulationSteps, LoggingMode,
+        LoggingQueueCapacity, FlushAsyncLogsOnShutdown, PauseSuspendsAudio,
+        PauseShortSoundEffectSeconds, StateFiles, ConfigurationSections
     EngineConfigurationFile: static CreateNew/Load(string? configFileName = null,
         bool? autoSave = null); FileName; FilePath; AutoSave; EngineConfig; Save();
         Save(string jsonPath); Dispose()  -- JSON root key "EngineConfig";

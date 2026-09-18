@@ -29,7 +29,8 @@ public static class TilesheetDefinitionSerializer
     /// <returns>The deserialized tilesheet definition.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="filePath"/> is null or whitespace.</exception>
     /// <exception cref="FileNotFoundException">Thrown when the file does not exist.</exception>
-    /// <exception cref="InvalidDataException">Thrown when the file cannot be deserialized.</exception>
+    /// <exception cref="InvalidDataException">Thrown when the file cannot be deserialized, or when its
+    /// <see cref="TilesheetDefinition.Regions"/> array contains a null entry.</exception>
     public static TilesheetDefinition Load(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -107,7 +108,8 @@ public static class TilesheetDefinitionSerializer
     /// <param name="json">The JSON content.</param>
     /// <returns>The deserialized tilesheet definition.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="json"/> is null or whitespace.</exception>
-    /// <exception cref="InvalidDataException">Thrown when the JSON cannot be deserialized.</exception>
+    /// <exception cref="InvalidDataException">Thrown when the JSON cannot be deserialized, or when its
+    /// <see cref="TilesheetDefinition.Regions"/> array contains a null entry.</exception>
     public static TilesheetDefinition FromJson(string json)
     {
         return FromJson(json, sourceDescription: null);
@@ -260,7 +262,12 @@ public static class TilesheetDefinitionSerializer
             definition.Regions ??= new List<TilesheetRegionDefinition>();
 
             foreach (var region in definition.Regions)
+            {
+                if (region is null)
+                    throw new InvalidDataException("GTS Regions cannot contain null entries.");
+
                 region.Frames ??= new List<TilesheetFrameDefinition>();
+            }
 
             return definition;
         }

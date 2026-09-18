@@ -23,7 +23,7 @@ public sealed class EffectsManager : IDisposable
     private readonly object _sync = new();
     private readonly List<DisplayEffect> _activeEffects = [];
     private readonly RenderSurfaceHostBase _host;
-    private long _lastTick = HighResTimer.GetCurrentTick();
+    private long? _lastTick;
     private bool _disposed;
 
     internal EffectsManager(RenderSurfaceHostBase host) =>
@@ -106,7 +106,15 @@ public sealed class EffectsManager : IDisposable
 
     internal void Update(long tick)
     {
-        float deltaSeconds = HighResTimer.GetDuration(_lastTick, tick);
+        //The first engine-driven update only warms the baseline: measuring from construction time would
+        //apply the whole host-creation-to-first-frame gap to any effect that started in it.
+        if (_lastTick is not { } lastTick)
+        {
+            _lastTick = tick;
+            return;
+        }
+
+        float deltaSeconds = HighResTimer.GetDuration(lastTick, tick);
         _lastTick = tick;
         Advance(deltaSeconds);
     }
@@ -120,9 +128,14 @@ public sealed class EffectsManager : IDisposable
     /// <remarks>
     /// Without this shift the first foreground cycle after a resume would advance every running
     /// effect by the whole length of the pause, bursting fades, wipes and slides to completion.
+    /// A manager that has never been updated has no baseline to shift, and is left alone so its first
+    /// update after the resume still warms the baseline instead of advancing effects.
     /// </remarks>
-    internal void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick) =>
-        _lastTick = HighResTimer.ShiftBaselineForResume(_lastTick, pausedTicks, resumeTick);
+    internal void ShiftTimeBaselineForResume(long pausedTicks, long resumeTick)
+    {
+        if (_lastTick is { } lastTick)
+            _lastTick = HighResTimer.ShiftBaselineForResume(lastTick, pausedTicks, resumeTick);
+    }
 
     internal void Advance(float deltaSeconds)
     {

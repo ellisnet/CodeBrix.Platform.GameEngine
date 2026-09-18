@@ -47,7 +47,6 @@ public sealed class ParticleTestGame
     public void Start()
     {
         var renderSurface = _canvas.Host;
-        var adapter = renderSurface.RenderSurfaceAdapter;
 
         renderSurface.ViewManager.ConfigureSingleFullView();
 
@@ -64,15 +63,20 @@ public sealed class ParticleTestGame
         Engine.Instance.Start(SynchronizationContext.Current);
         Engine.Instance.Configuration.TargetFPS = 90;
 
-        _particleSurface = new ParticleSurface(renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(0, 0, adapter.Width, adapter.Height), null, 10000);
-        _particleSurface.CullingMarginX = 1300f;
-        _particleSurface.Emitters.Add(GetSparks(adapter.Width, adapter.Height));
-        _particleSurface.Emitters.Add(GetRain(adapter.Width));
-        _particleSurface.Emitters.Add(GetCampfireSparks(adapter.Width, adapter.Height));
-        _particleSurface.Emitters.Add(GetCampfire(adapter.Width, adapter.Height));
-        _particleSurface.Emitters.Add(GetCampfireEmbers(adapter.Width, adapter.Height));
+        // Everything is laid out in the pinned render space, NOT in the size of the window: the
+        // surface presents that 1280x720 image fitted and centred, whatever the window happens to be.
+        const int renderWidth = (int)RenderWidth;
+        const int renderHeight = (int)RenderHeight;
 
-        var glowBox = new DirectRectangle(Color.Blue, renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(20, adapter.Height * 7 / 10, adapter.Width - 40, 160), null)
+        _particleSurface = new ParticleSurface(renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(0, 0, renderWidth, renderHeight), null, 10000);
+        _particleSurface.CullingMarginX = 1300f;
+        _particleSurface.Emitters.Add(GetSparks(RenderWidth, RenderHeight));
+        _particleSurface.Emitters.Add(GetRain(RenderWidth));
+        _particleSurface.Emitters.Add(GetCampfireSparks(RenderWidth, RenderHeight));
+        _particleSurface.Emitters.Add(GetCampfire(RenderWidth, RenderHeight));
+        _particleSurface.Emitters.Add(GetCampfireEmbers(RenderWidth, RenderHeight));
+
+        var glowBox = new DirectRectangle(Color.Blue, renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(20, renderHeight * 7 / 10, renderWidth - 40, 160), null)
             .SetAlpha(128)
             .SetCornerRadius(6f)
             .SetBorderColor(Color.White)
@@ -85,7 +89,7 @@ public sealed class ParticleTestGame
 
         glowBox.ZOrder = 1;
 
-        _textBlock = new TextBlock(renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(20, adapter.Height * 7 / 10, adapter.Width - 40, 160), null)
+        _textBlock = new TextBlock(renderSurface, renderSurface.ViewManager.Views[0], new Rectangle(20, renderHeight * 7 / 10, renderWidth - 40, 160), null)
             .SetFont(SKTypeface.FromFamilyName("Papyrus"), 16f, minSize: 14f)
             .SetColors(Color.White, Color.Transparent)
             .SetAlignment(SKTextAlign.Center, VerticalAlign.Center)
@@ -122,22 +126,14 @@ public sealed class ParticleTestGame
     {
         var position = e.GetCurrentPoint(_canvas).Position;
 
-        // Map the click from canvas element coordinates to the pinned 1280x720 render space,
-        // across the same aspect-fit letterbox the canvas paints with.
-        var rasterScale = (float)(_canvas.XamlRoot?.RasterizationScale ?? 1.0);
-        float surfaceWidth = (float)_canvas.ActualWidth * rasterScale;
-        float surfaceHeight = (float)_canvas.ActualHeight * rasterScale;
-        if (surfaceWidth <= 0f || surfaceHeight <= 0f)
-            return;
+        // Map the click from canvas element coordinates into the pinned 1280x720 render space with
+        // the engine's own transform — the same one the frame is presented with, so the hit box can
+        // never drift away from what is on screen.
+        var campfireClick = _canvas.RenderSurfaceAdapter.AdapterPxToScreenPx(
+            new PointF((float)position.X, (float)position.Y));
 
-        float fitScale = Math.Min(surfaceWidth / RenderWidth, surfaceHeight / RenderHeight);
-        float offsetX = (surfaceWidth - RenderWidth * fitScale) * 0.5f;
-        float offsetY = (surfaceHeight - RenderHeight * fitScale) * 0.5f;
-        float bufferX = ((float)position.X * rasterScale - offsetX) / fitScale;
-        float bufferY = ((float)position.Y * rasterScale - offsetY) / fitScale;
-
-        bool onCampfire = Math.Abs(bufferX - RenderWidth / 2f) <= CampfireHalfWidth
-            && bufferY >= CampfireTop && bufferY <= RenderHeight + 5f;
+        bool onCampfire = Math.Abs(campfireClick.X - RenderWidth / 2f) <= CampfireHalfWidth
+            && campfireClick.Y >= CampfireTop && campfireClick.Y <= RenderHeight + 5f;
         if (!onCampfire)
             return;
 

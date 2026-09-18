@@ -54,6 +54,50 @@ public sealed class AssetsFile : IDisposable
     /// </summary>
     internal bool IsLoaded => _isLoaded;
 
+    /// <summary>
+    /// Strictly validates an existing assets bundle's entry keys and archive integrity.
+    /// </summary>
+    /// <param name="path">The path of an existing bundle to inspect.</param>
+    /// <param name="password">An optional password used to read protected entries. Can be null.</param>
+    /// <param name="testData">
+    /// <see langword="true"/> (the default) to decompress and verify every payload;
+    /// <see langword="false"/> to check the archive structure and the entry keys only.
+    /// </param>
+    /// <remarks>
+    /// Unlike run-time loading — which logs and skips an entry it does not recognise — this method
+    /// rejects unrecognised and duplicate entry keys. The bundle is opened read-only and is not
+    /// added to <see cref="AllAssetsFiles"/>.
+    /// </remarks>
+    /// <exception cref="InvalidDataException">
+    /// Thrown when an entry key cannot be parsed, names an unknown asset type or an empty asset name,
+    /// when two entries resolve to the same key, or when the archive integrity check fails.
+    /// </exception>
+    public static void Validate(string path, string? password = null, bool testData = true)
+    {
+        using var archive = new ZipFile(File.OpenRead(path));
+
+        archive.Password = password;
+
+        var keys = new HashSet<AssetsFileEntry>();
+
+        foreach (ZipEntry entry in archive)
+        {
+            if (!entry.IsFile)
+                continue;
+
+            var key = AssetsFileEntry.FromString(entry.Name);
+
+            if (key is null || !Enum.IsDefined(key.AssetType) || string.IsNullOrWhiteSpace(key.AssetName))
+                throw new InvalidDataException($"Invalid bundle entry key: {entry.Name}");
+
+            if (!keys.Add(key))
+                throw new InvalidDataException($"Duplicate bundle entry key: {entry.Name}");
+        }
+
+        if (!archive.TestArchive(testData))
+            throw new InvalidDataException("Bundle integrity check failed. Check the password and archive contents.");
+    }
+
     // No registration side effect here: deserializer-created instances are raw specs that
     // EngineState re-loads through LoadOrCreate (which registers). Registering here would
     // leak every raw deserialized spec into the global registry.
@@ -122,7 +166,7 @@ public sealed class AssetsFile : IDisposable
 
         try
         {
-            Engine.Logger.LogInformation("Loading assets file: {FilePath}", FilePath);
+            Engine.Logger.LogInformation("Loading assets file.");
 
             _zipFile?.Close();
             _zipFile = null;
@@ -380,8 +424,7 @@ public sealed class AssetsFile : IDisposable
         }
 
         Engine.Logger.LogInformation(
-            "Assets file saved: {FilePath} (Encrypted: {Encrypted})",
-            FilePath,
+            "Assets file saved (Encrypted: {Encrypted}).",
             UseEncryption);
 
         // Keep the in-memory copy as the source of truth.

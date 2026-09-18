@@ -35,6 +35,10 @@ public class EnginePauseTests
             Engine.Instance.Resume();
         if (Engine.Instance.IsRunning)
             Engine.Instance.Stop();
+
+        // A test that used timer-driven mode must not leave the shared simulation clock engaged
+        // for the rest of the assembly; Stop() restores wall-clock reads.
+        EngineSimulationClock.IsTimerDriven.Should().BeFalse();
     }
 
     [Fact]
@@ -220,6 +224,79 @@ public class EnginePauseTests
 
         // Cleanup: leave the singleton unpaused for other tests
         Engine.Instance.Resume();
+    }
+
+    [Fact]
+    public async Task StopAndWait_releases_a_paused_cycle_loop()
+    {
+        //Arrange
+        Engine.Instance.Start(new SynchronizationContext());
+        Engine.Instance.Pause();
+
+        try
+        {
+            //Act — StopAndWait joins the cycle task, so a loop parked by the pause must be
+            // released by the stop or this never returns
+            var stopTask = Task.Run(() => Engine.Instance.StopAndWait(), TestContext.Current.CancellationToken);
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            //Assert
+            Engine.Instance.IsRunning.Should().BeFalse();
+        }
+        finally
+        {
+            // Cleanup: leave the singleton unpaused and stopped for other tests
+            EnsureResumedAndStopped();
+        }
+    }
+
+    [Fact]
+    public void Timer_driven_ticks_run_no_simulation_steps_while_paused_and_resume_without_a_burst()
+    {
+        //Arrange
+        long updates = 0;
+        Action onUpdate = () => Interlocked.Increment(ref updates);
+        Engine.Instance.BeforeBackgroundTasksExecute += onUpdate;
+
+        // The configuration object is read AFTER the start call, because the first start
+        // initializes the engine and replaces it.
+        Engine.Instance.StartTimerDriven(new SynchronizationContext());
+        var configuration = Engine.Instance.Configuration;
+        double originalSampling = configuration.SamplingTimeForCPS;
+        configuration.SamplingTimeForCPS = 0;
+
+        try
+        {
+            //Act - a normal tick advances the simulation
+            Thread.Sleep(50);
+            Engine.Instance.Tick();
+            Interlocked.Read(ref updates).Should().BeGreaterThan(0);
+
+            Engine.Instance.Pause();
+            long atPause = Interlocked.Read(ref updates);
+
+            for (int i = 0; i < 5; i++)
+            {
+                Thread.Sleep(20);
+                Engine.Instance.Tick();
+            }
+
+            //Assert - ticks taken while paused run no simulation steps at all
+            Interlocked.Read(ref updates).Should().Be(atPause);
+
+            //Act - the first resumed tick must not replay the paused interval
+            Engine.Instance.Resume();
+            Engine.Instance.Tick();
+
+            //Assert
+            (Interlocked.Read(ref updates) - atPause).Should().BeLessThanOrEqualTo(1);
+        }
+        finally
+        {
+            Engine.Instance.BeforeBackgroundTasksExecute -= onUpdate;
+            configuration.SamplingTimeForCPS = originalSampling;
+            EnsureResumedAndStopped();
+        }
     }
 
     [Fact]

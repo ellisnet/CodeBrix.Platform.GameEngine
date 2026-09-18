@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Threading;
 using CodeBrix.Platform.GameEngine.Timers;
 using SilverAssertions;
 using Xunit;
@@ -220,6 +221,52 @@ public class TimerTests : IDisposable
 
         //Assert
         ticks.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public void Add_starts_a_PreCycle_timer_on_simulation_time_in_timer_driven_mode()
+    {
+        //Arrange - one 1/120 s simulation step per Tick(), so the simulation clock falls far
+        //behind wall time when a tick is late. The configuration object is read AFTER the start
+        //call, because the first start initializes the engine and replaces it.
+        int preCycleTicks = 0;
+        int postCycleTicks = 0;
+        Engine.Instance.StartTimerDriven(new SynchronizationContext());
+
+        var configuration = Engine.Instance.Configuration;
+        int originalRate = configuration.TimerDrivenSimulationRate;
+        int originalMaxSteps = configuration.MaxTimerDrivenSimulationSteps;
+        double originalSampling = configuration.SamplingTimeForCPS;
+        configuration.TimerDrivenSimulationRate = 120;
+        configuration.MaxTimerDrivenSimulationSteps = 1;
+        configuration.SamplingTimeForCPS = 0;
+
+        try
+        {
+            var preCycle = EngineTimer.Add("sim-pre", TimerType.PreCycle, TimerCycles.Repeating, 0.05);
+            preCycle.Tick += () => preCycleTicks++;
+
+            var postCycle = EngineTimer.Add("sim-post", TimerType.PostCycle, TimerCycles.Repeating, 0.05);
+            postCycle.Tick += () => postCycleTicks++;
+
+            //Act - 200 ms of wall time, but the step cap advances the simulation by ~8 ms
+            Thread.Sleep(200);
+            Engine.Instance.Tick();
+
+            //Assert - the pre-cycle timer is measured against simulation time and has not elapsed,
+            //while the post-cycle timer runs on the presentation (wall) clock and has
+            preCycleTicks.Should().Be(0);
+            postCycleTicks.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            if (Engine.Instance.IsRunning)
+                Engine.Instance.Stop();
+
+            configuration.TimerDrivenSimulationRate = originalRate;
+            configuration.MaxTimerDrivenSimulationSteps = originalMaxSteps;
+            configuration.SamplingTimeForCPS = originalSampling;
+        }
     }
 
     private static long GetLastEventTick(EngineTimer timer)

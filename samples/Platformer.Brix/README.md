@@ -33,6 +33,13 @@ game rules here are the upstream ones. What changed in the port:
 Collect all five sun relics, then reach the red flag. Falling into a pit or touching spikes
 returns the player to the start; collected relics stay collected until the level is restarted.
 
+Angry mushrooms patrol the level — one is there from the start and another appears every ten
+seconds, on solid ground near the player. They walk towards the player and fall into pits like
+anything else. Walking into a mushroom from the side, or hitting it from underneath, returns the
+player to the start; landing on its head while descending flattens it and bounces the player
+upward. A flattened mushroom holds its pose for a moment, fades out and is gone. Restarting the
+level clears every mushroom and resets the spawn timer.
+
 ## Running it
 
 ```
@@ -60,6 +67,13 @@ part of the repository's product solution.
   through `ColliderRegistry.QueryAabb` to decide when the player is grounded
 * horizontal camera follow with a dead zone and world-bound clamping
 * view-bound `DirectRectangle` and `TextBlock` HUD elements
+* a frame-to-frame stomp test (`src/libs/Platformer.Brix.Game/EnemyContact.cs`) that decides
+  stomp-versus-side-hit from the player's previous and current areas and its vertical velocity,
+  rather than from the overlap alone, plus an `Enemy` collision profile so mushrooms collide with
+  the world but not with each other
+* presentation filtering for pixel art: the render resolution is pinned to 960x576 and
+  `EngineConfiguration.RenderScalingFilter` is set to `NearestNeighbor`, so the letterboxed image
+  stays crisp in a larger window (that setting is separate from the tile filter quality)
 * keyboard input through the engine's keyboard poller — which only sees keys while the game
   surface holds keyboard focus, so `Views/MainPage.xaml.cs` focuses the canvas as soon as the
   engine starts

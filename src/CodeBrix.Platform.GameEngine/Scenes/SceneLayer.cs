@@ -203,7 +203,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     {
         _sceneLayerTileArray ??= new SceneLayerTile[0, 0];
 
-        ColliderRegistry = new ColliderRegistry();
+        ColliderRegistry = new ColliderRegistry { SceneLayer = this };
         CollisionResolver = new CollisionResolver(ColliderRegistry);
         // Unbound scenes retain dirty regions for a future dirty-region host. Once bound,
         // the scene policy disables queue writes for full-frame GL rendering.
@@ -538,7 +538,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     private bool _wrapHoriz = false;
 
     /// <summary>
-    /// Gets or sets a value indicating whether this layer wraps horizontally at the grid boundaries.
+    /// Gets or sets a value indicating whether this layer repeats along its column axis at the grid boundaries.
     /// </summary>
     /// <value><c>true</c> if horizontal wrapping is enabled; otherwise, <c>false</c>.</value>
     /// <remarks>
@@ -566,7 +566,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     private bool _wrapVerti = false;
 
     /// <summary>
-    /// Gets or sets a value indicating whether this layer wraps vertically at the grid boundaries.
+    /// Gets or sets a value indicating whether this layer repeats along its row axis at the grid boundaries.
     /// </summary>
     /// <value><c>true</c> if vertical wrapping is enabled; otherwise, <c>false</c>.</value>
     /// <remarks>
@@ -791,18 +791,79 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
     public SceneLayerTile? GetAdjacentTile(SceneLayerTile tile, CardinalDirections direction) => CoordinateSystem.GetAdjacentSceneLayerTile(tile, direction);
 
     /// <summary>
-    /// Wraps a grid coordinate around the layer's valid grid bounds using 
-    /// toroidal wrapping (0..max). Used by movement and map designs that 
-    /// loop at edges.
+    /// Resolves a virtual grid coordinate to canonical coordinates on enabled wrapping axes.
+    /// Disabled axes are unchanged. Negative values use floor modulo; fractions are preserved.
+    /// Invalid periodic geometry is rejected when wrapping is first used, after configuration.
     /// </summary>
+    /// <param name="grid">The virtual grid coordinate to resolve.</param>
+    /// <returns>The canonical grid coordinate on enabled axes.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="grid"/> contains a non-finite component while wrapping is enabled.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The layer's grid, tile size, or projection cannot produce a valid repetition lattice.
+    /// </exception>
     public PointF WrapGrid(PointF grid)
     {
-        // grid indices wrap based on tile array width/height
-        return CoordinateSystem.FindEquivalentSceneLayerCoordinates(
-            grid,
-            GridColumnCount - 1,
-            GridRowCount - 1);
+        if (!WrapHorizontally && !WrapVertically)
+            return grid;
+
+        _ = GetPeriod();
+
+        if (!float.IsFinite(grid.X) || !float.IsFinite(grid.Y))
+            throw new ArgumentOutOfRangeException(nameof(grid));
+
+        var wrapped = CoordinateSystem.FindEquivalentSceneLayerCoordinates(grid, GridColumnCount - 1, GridRowCount - 1);
+        return new PointF(WrapHorizontally ? wrapped.X : grid.X, WrapVertically ? wrapped.Y : grid.Y);
     }
+
+    /// <summary>
+    /// Resolves a virtual grid cell to its canonical tile. Only enabled axes wrap;
+    /// an out-of-range disabled axis returns null. The ordinary indexer never wraps.
+    /// </summary>
+    /// <param name="column">The virtual column index; may be negative or beyond the grid width.</param>
+    /// <param name="row">The virtual row index; may be negative or beyond the grid height.</param>
+    /// <returns>The canonical <see cref="SceneLayerTile"/>, or <c>null</c> when no cell resolves.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Wrapping is enabled but the layer's grid, tile size, or projection cannot produce a valid
+    /// repetition lattice.
+    /// </exception>
+    public SceneLayerTile? ResolveWrappedTile(int column, int row)
+    {
+        if (WrapHorizontally || WrapVertically)
+            _ = GetPeriod();
+
+        static int Mod(int value, int period) { int remainder = value % period; return remainder < 0 ? remainder + period : remainder; }
+
+        return this[WrapHorizontally ? Mod(column, GridColumnCount) : column,
+            WrapVertically ? Mod(row, GridRowCount) : row];
+    }
+
+    /// <summary>
+    /// Returns world-space translations of a canonical content rectangle that intersect
+    /// a query rectangle. Disabled axes do not repeat. Useful for world-space hit testing.
+    /// </summary>
+    /// <param name="contentBounds">The canonical world-space bounds of the content, in pixels.</param>
+    /// <param name="queryBounds">The world-space region being queried, in pixels.</param>
+    /// <returns>
+    /// The intersecting world-space translations, in pixels. Non-wrapped content yields only the
+    /// zero translation, and only when the two rectangles intersect.
+    /// </returns>
+    /// <remarks>Invalid repeat geometry or more than one million candidate instances throws
+    /// InvalidOperationException.</remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The layer cannot produce a valid repetition lattice, or the query would produce more than
+    /// one million candidate instances.
+    /// </exception>
+    public IEnumerable<PointF> GetWrappedOffsets(RectangleF contentBounds, RectangleF queryBounds)
+    {
+        if (WrapHorizontally || WrapVertically)
+            return GetPeriod().Offsets(contentBounds, queryBounds);
+
+        return contentBounds.IntersectsWith(queryBounds) ? new[] { PointF.Empty } : Array.Empty<PointF>();
+    }
+
+    internal LayerPeriod GetPeriod() => CoordinateSystem.GetWrapPeriod(this);
 
     /// <summary>
     /// Computes the world-space pixel bounding rectangle for this SceneLayer.
@@ -870,7 +931,7 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
 
         CoordinateSystemType = coordinateSystem;
 
-        ColliderRegistry = new ColliderRegistry();
+        ColliderRegistry = new ColliderRegistry { SceneLayer = this };
         CollisionResolver = new CollisionResolver(ColliderRegistry);
 
         // let each SceneLayerTile in array know its position in the array
@@ -923,6 +984,9 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
 
     internal virtual List<IDrawable> GetDrawablesInWorldRect(Rectangle worldRect, bool includeOverhang = true)
     {
+        if (WrapHorizontally || WrapVertically)
+            return GetWrappedDrawables(worldRect);
+
         // Make selection rect covering so we never miss the edge tile.
         // Drawing is still clipped later, so over-selecting is safe.
         var queryRect = worldRect;
@@ -999,6 +1063,50 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         // 4) Sort using Tile.CompareTo
         list.Sort(CompareDrawables); // ← this calls Tile.CompareTo internally
         return list;
+    }
+
+    private List<IDrawable> GetWrappedDrawables(Rectangle worldRect)
+    {
+        var period = GetPeriod();
+        var instances = new List<IDrawable>();
+        void Add(IDrawable drawable, RectangleF bounds)
+        {
+            if (!drawable.Visible) return;
+            foreach (var offset in period.Offsets(bounds, worldRect))
+            {
+                if (instances.Count >= 1_000_000)
+                    throw new InvalidOperationException("Too many visible wrapped instances.");
+                instances.Add(new WrappedDrawable(drawable, this, offset));
+            }
+        }
+        // Inspect actual artwork bounds, including overhang, rather than assuming
+        // a tile-sized margin can enclose all content.
+        foreach (var tile in _sceneLayerTileArray)
+            if (tile is not null) Add(tile, tile.DrawLocationWorld);
+        foreach (var sprite in SpriteManager.Instance.AllSprites)
+            if (ReferenceEquals(sprite.SceneLayer, this)) Add(sprite, sprite.VisualBoundsWorld);
+        foreach (var drawing in DirectDrawingManager.Instance.GetDrawingsForLayer(this))
+            if (drawing.Mode == DirectDrawingMode.SceneLayer) Add(drawing, drawing.WorldBounds);
+        instances.Sort((a, b) =>
+        {
+            var x = (WrappedDrawable)a;
+            var y = (WrappedDrawable)b;
+            int z = a.ZOrder.CompareTo(b.ZOrder);
+            if (z != 0) return z;
+            if (x.Owner is Tile ta && y.Owner is Tile tb)
+            {
+                if (ta.IsPositionFixed != tb.IsPositionFixed) return ta.IsPositionFixed ? -1 : 1;
+                float ay = (ta.IsPositionFixed ? ta.DrawLocationWorld.Top + ta.Overhang.Top : ta.DrawLocationWorld.Bottom - ta.Overhang.Bottom - 1) + x.Offset.Y;
+                float by = (tb.IsPositionFixed ? tb.DrawLocationWorld.Top + tb.Overhang.Top : tb.DrawLocationWorld.Bottom - tb.Overhang.Bottom - 1) + y.Offset.Y;
+                int depth = ay.CompareTo(by);
+                if (depth != 0) return depth;
+                int horizontal = (ta.DrawLocationWorld.Left + x.Offset.X).CompareTo(tb.DrawLocationWorld.Left + y.Offset.X);
+                if (horizontal != 0) return horizontal;
+            }
+            int identity = a.Id.CompareTo(b.Id);
+            return identity != 0 ? identity : (x.Offset.Y, x.Offset.X).CompareTo((y.Offset.Y, y.Offset.X));
+        });
+        return instances;
     }
 
     private static int CompareDrawables(IDrawable a, IDrawable b)

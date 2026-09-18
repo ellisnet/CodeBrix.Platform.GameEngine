@@ -18,6 +18,7 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Mouse;
 public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
 {
     private readonly UIElement _element;
+    private readonly PointerCoordinateMapper _coordinates;
     private readonly HashSet<MouseButton> _pressed = new();
     private Point _currentPosition;
     private KeyboardModifierState _modifiers;
@@ -25,8 +26,14 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
     private bool _isDisposed;
 
     /// <summary>
-    /// Gets the current position of the pointer cursor in client (element-local) coordinates.
+    /// Gets the current position of the pointer cursor in logical Backbuffer ScreenPx — the space
+    /// the engine's views, cameras and drawings work in — mapped from the element's own pixels
+    /// through the render surface adapter's presentation transform.
     /// </summary>
+    /// <remarks>
+    /// A pointer over the letterbox or pillarbox margins keeps its outside coordinates (negative, or
+    /// past the logical width or height) rather than being clamped to the edge of the image.
+    /// </remarks>
     public Point CurrentPosition => _currentPosition;
 
     /// <summary>
@@ -52,6 +59,7 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
     public CodeBrixMouseAdapter(UIElement element)
     {
         _element = element ?? throw new ArgumentNullException(nameof(element));
+        _coordinates = new PointerCoordinateMapper(element);
 
         _element.PointerPressed += OnPointerPressed;
         _element.PointerReleased += OnPointerReleased;
@@ -101,7 +109,7 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
 
     private void UpdatePosition(global::Windows.Foundation.Point position, VirtualKeyModifiers keyModifiers)
     {
-        _currentPosition = new Point((int)position.X, (int)position.Y);
+        _currentPosition = _coordinates.ToScreenPx(position);
 
         var modifiers = KeyboardModifierState.None;
         if ((keyModifiers & VirtualKeyModifiers.Shift) != 0) modifiers |= KeyboardModifierState.Shift;

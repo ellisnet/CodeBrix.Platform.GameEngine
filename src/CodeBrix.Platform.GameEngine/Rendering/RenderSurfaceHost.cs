@@ -35,6 +35,11 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     where TBackbuffer : BackbufferBase
 {
     private TBackbuffer _backbuffer;
+    private bool _resolutionEstablished;
+    private int _logicalWidth, _logicalHeight;
+    private int _presentationInvalidated = 1;
+    private float _deferredRenderScale = float.NaN;
+    private (int Width, int Height)? _deferredResolution;
     private Scene _scene = Scene.Empty;
 
     private readonly RenderSurfaceAdapterBase _renderSurfaceAdapter;
@@ -136,8 +141,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     {
         _renderSurfaceAdapter = renderSurfaceAdapter ?? throw new ArgumentNullException(nameof(renderSurfaceAdapter));
 
-        // Recreate backbuffer on adapter resize
-        RenderSurfaceAdapter.Resized += (args) => OnRenderSurfaceAdapterResized(args);
+        // Adapter layout changes presentation; only the first valid layout establishes the
+        // logical render resolution (and only while TrackAdapterSize is off).
+        RenderSurfaceAdapter.Resized += OnRenderSurfaceAdapterResized;
 
         var w = RenderSurfaceAdapter.Width;
         var h = RenderSurfaceAdapter.Height;
@@ -145,10 +151,21 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         if (w <= 0 || h <= 0)
             throw new InvalidOperationException("RenderSurfaceAdapter has non-positive dimensions.");
 
-        _backbuffer = backbufferFactory is not null ? backbufferFactory(w, h) : CreateBackbuffer(w, h);
+        _resolutionEstablished = RenderSurfaceAdapter.InitialSizeAvailable;
+
+        var scale = Engine.Instance.Configuration.RenderScale;
+
+        _logicalWidth = _resolutionEstablished ? PresentationTransform.ScaleDimension(w, scale) : 1;
+        _logicalHeight = _resolutionEstablished ? PresentationTransform.ScaleDimension(h, scale) : 1;
+
+        _backbuffer = backbufferFactory is not null
+            ? backbufferFactory(_logicalWidth, _logicalHeight)
+            : CreateBackbuffer(_logicalWidth, _logicalHeight);
+
+        RenderSurfaceAdapter.SetBackbufferSize(_logicalWidth, _logicalHeight);
         Backbuffer.BeginFrame();
 
-        Backbuffer.SizeChanged += (w, h) => Scene.FullRefreshNeeded = true;
+        Backbuffer.SizeChanged += OnBackbufferSizeChanged;
     }
 
     private static TBackbuffer CreateBackbuffer(int width, int height)
@@ -187,6 +204,20 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// </remarks>
     public override BackbufferBase Backbuffer => _backbuffer;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// This is the resolution the surface has been told to render at, which is published as soon as
+    /// it is requested — before the rendering thread reallocates the backbuffer for it.
+    /// </remarks>
+    public override int LogicalWidth => _logicalWidth;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// This is the resolution the surface has been told to render at, which is published as soon as
+    /// it is requested — before the rendering thread reallocates the backbuffer for it.
+    /// </remarks>
+    public override int LogicalHeight => _logicalHeight;
+
     /// <summary>
     /// Gets the scene currently bound to this render surface host.
     /// </summary>
@@ -208,7 +239,8 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// </value>
     /// <remarks>
     /// The adapter handles platform-specific presentation details and provides size/resize notifications.
-    /// The backbuffer dimensions are synchronized with the adapter's size.
+    /// The backbuffer keeps its logical dimensions across adapter resizes; the adapter fits the
+    /// complete image into its own size and centres it.
     /// </remarks>
     public override RenderSurfaceAdapterBase RenderSurfaceAdapter => _renderSurfaceAdapter;
 
@@ -322,6 +354,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
     /// </summary>
     internal override void RenderToBackbuffer(long tick)
     {
+        // Applies any pending logical-resolution request on the thread that renders this surface.
+        Backbuffer.BeginFrame();
+
         RenderBackbufferBegin?.Invoke();
 
         // The bound scene can become null transiently on the engine thread — e.g. while a consumer
@@ -358,7 +393,8 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
         // A view-level effect (fade, wipe, slide, shake) recomposes the whole surface every frame,
         // so the dirty-rectangle optimization is suspended for as long as one is running. Effects
         // that target only a scene layer keep dirty rects.
-        bool fullViewComposition = ViewManager.Views.Any(view => view.HasPresentationEffect);
+        bool fullViewComposition = ViewManager.Views.Any(view => view.HasPresentationEffect)
+            || Scene.VisibleSceneLayers.Any(layer => layer.WrapHorizontally || layer.WrapVertically);
 
         // 0) If there are no visible SceneLayers, just clear and publish the full frame.
         if (Scene.CountOfVisibleLayers == 0)
@@ -862,7 +898,9 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         Backbuffer.EndFrame();
 
-        if (RedrawDirtyRectangleOnly)
+        // A presentation change (adapter resize, filter change, new logical resolution) has to
+        // repaint the whole surface once, margins included, before dirty rectangles are enough again.
+        if (RedrawDirtyRectangleOnly && Interlocked.Exchange(ref _presentationInvalidated, 0) == 0)
             PresentBackbufferRect();
         else
             PresentBackbufferAll();
@@ -915,6 +953,11 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
             // did, despite the summary above always having said "releases the backbuffer" - left
             // a BitmapBackbuffer's SKBitmap and SKSurface to be reclaimed by finalizers instead
             // of deterministically, leaking two native Skia objects per host disposal.
+            RenderSurfaceAdapter.Resized -= OnRenderSurfaceAdapterResized;
+
+            if (_backbuffer is not null)
+                _backbuffer.SizeChanged -= OnBackbufferSizeChanged;
+
             _backbuffer?.Dispose();
             _backbuffer = null;
         }
@@ -943,27 +986,135 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
     private void OnRenderSurfaceAdapterResized(RenderSurfaceAdapterResizedEventArgs args)
     {
-        if (Scene != null)
-            Scene.FullRefreshNeeded = true;                 // full redraw next frame
+        // The image is unchanged; only the rectangle it is presented into moved or resized.
+        Interlocked.Exchange(ref _presentationInvalidated, 1);
 
-        _backbuffer?.RequestResize(args.NewWidth, args.NewHeight);      // UI thread → request only
+        bool sizeAvailable = args.NewWidth > 0 && args.NewHeight > 0;
 
-        float scaleX = (float)args.NewWidth / args.OldWidth;
-        float scaleY = (float)args.NewHeight / args.OldHeight;
+        if (float.IsFinite(_deferredRenderScale) && sizeAvailable)
+            RequestRenderScale(_deferredRenderScale);
+
+        // Port-only: an explicit resolution request made while the surface had no usable size.
+        if (_deferredResolution is { } pending && sizeAvailable)
+            RequestRenderResolution(pending.Width, pending.Height);
+
+        if (!_resolutionEstablished && sizeAvailable)
+        {
+            _resolutionEstablished = true;
+            RequestRenderScale(Engine.Instance.Configuration.RenderScale);
+        }
+        else if (TrackAdapterSize && sizeAvailable)
+        {
+            // Port-only opt-in: this surface's resolution follows its window.
+            RequestRenderScale(Engine.Instance.Configuration.RenderScale);
+        }
+    }
+
+    /// <inheritdoc />
+    internal override void InvalidatePresentation() => Interlocked.Exchange(ref _presentationInvalidated, 1);
+
+    /// <inheritdoc />
+    internal override void RequestRenderScale(float scale)
+    {
+        if (!_resolutionEstablished || _disposed)
+            return;
+
+        var adapter = RenderSurfaceAdapter;
+
+        // Zero-size requests are deferred until a valid presentation size exists.
+        if (adapter.Width <= 0 || adapter.Height <= 0)
+        {
+            _deferredRenderScale = scale;
+            return;
+        }
+
+        _deferredRenderScale = float.NaN;
+        _deferredResolution = null;
+
+        int width = PresentationTransform.ScaleDimension(adapter.Width, scale);
+        int height = PresentationTransform.ScaleDimension(adapter.Height, scale);
+
+        Backbuffer.RequestResize(width, height);
+        PublishLogicalSize(width, height);
+    }
+
+    /// <inheritdoc />
+    public override void RequestRenderResolution(int width, int height)
+    {
+        base.RequestRenderResolution(width, height);
+
+        if (_disposed)
+            return;
+
+        // An explicit resolution IS an established resolution: a later adapter resize must not
+        // re-derive one from RenderScale (unless TrackAdapterSize asks for exactly that).
+        _resolutionEstablished = true;
+
+        var adapter = RenderSurfaceAdapter;
+
+        // Wait for a surface that can actually present something: a host constructed before its
+        // first layout pass carries a placeholder size, and a minimized one reports zero.
+        if (!adapter.InitialSizeAvailable || adapter.Width <= 0 || adapter.Height <= 0)
+        {
+            // The size is already known even though there is nothing to present it on yet, so it is
+            // published now: game code laying out in the pinned resolution must see it immediately.
+            _deferredResolution = (width, height);
+            PublishLogicalSize(width, height);
+            return;
+        }
+
+        _deferredResolution = null;
+        _deferredRenderScale = float.NaN;
+
+        Backbuffer.RequestResize(width, height);
+        PublishLogicalSize(width, height);
+    }
+
+    private void OnBackbufferSizeChanged(int width, int height) => PublishLogicalSize(width, height);
+
+    /// <summary>
+    /// Makes a logical resolution the one this surface renders in: the adapter fits that size, the
+    /// views are scaled into it, and the next frame is a full redraw.
+    /// </summary>
+    /// <remarks>
+    /// This runs as soon as the resolution is REQUESTED, not when the rendering thread reallocates
+    /// the backbuffer for it, because views — and every view-mode drawing that clips itself to a
+    /// view when it is created — must already see the resolution the game is laying out in. The
+    /// backbuffer's own size-changed notification then finds nothing left to do.
+    /// </remarks>
+    /// <param name="width">The logical width in pixels.</param>
+    /// <param name="height">The logical height in pixels.</param>
+    private void PublishLogicalSize(int width, int height)
+    {
+        if (width == _logicalWidth && height == _logicalHeight)
+            return;
+
+        float scaleX = (float)width / _logicalWidth;
+        float scaleY = (float)height / _logicalHeight;
+
+        _logicalWidth = width;
+        _logicalHeight = height;
+
+        RenderSurfaceAdapter.SetBackbufferSize(width, height);
 
         // resize each View proportionally
         foreach (var view in ViewManager.Views)
         {
             var old = view.Viewport.TargetRectPx;
 
-            int newLeft = (int)Math.Round(old.Left * scaleX);
-            int newTop = (int)Math.Round(old.Top * scaleY);
-            int newWidth = (int)Math.Round(old.Width * scaleX);
-            int newHeight = (int)Math.Round(old.Height * scaleY);
-
-            view.Viewport.TargetRectPx = new Rectangle(
-                newLeft, newTop, newWidth, newHeight);
+            view.Viewport.TargetRectPx = Rectangle.FromLTRB(
+                (int)Math.Round(old.Left * scaleX),
+                (int)Math.Round(old.Top * scaleY),
+                (int)Math.Round(old.Right * scaleX),
+                (int)Math.Round(old.Bottom * scaleY));
         }
+
+        // The bound scene can be transiently null on the engine thread (see RenderToBackbuffer),
+        // and a pending resolution change is applied before that guard runs.
+        if (Scene is not null)
+            Scene.FullRefreshNeeded = true;                 // full redraw next frame
+
+        Interlocked.Exchange(ref _presentationInvalidated, 1);
     }
 
     private void PresentBackbufferAll()
@@ -973,7 +1124,7 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         var img = Backbuffer.Snapshot();
         var src = new SKRectI(0, 0, img.Width, img.Height);
-        var dst = SKRect.Create(0, 0, RenderSurfaceAdapter!.Width, RenderSurfaceAdapter.Height);
+        var dst = RenderSurfaceAdapter.Presentation.DestinationRect;
 
         // Post to UI thread
         Engine.Instance.UiDispatcher!.Post(() => RenderSurfaceAdapter.Present(img, src, dst));
@@ -995,9 +1146,12 @@ public sealed class RenderSurfaceHost<TBackbuffer> : RenderSurfaceHostBase
 
         var img = Backbuffer.Snapshot();
 
-        // Post to UI thread
+        // Post to UI thread; the dirty rectangle is logical, so it is mapped into adapter space
+        // with the same fit the complete image is presented with.
         Engine.Instance.UiDispatcher!.Post(() =>
-            RenderSurfaceAdapter!.Present(img, clamped.ToSKRectI(), clamped.ToSKRect()));
+            RenderSurfaceAdapter!.Present(img, clamped.ToSKRectI(),
+                PresentationTransform.Fit(img.Width, img.Height, RenderSurfaceAdapter.Width, RenderSurfaceAdapter.Height)
+                    .ScreenRectToAdapterRect(clamped).ToSKRect()));
     }
 
     private void InvokePostSceneCanvasHooks()

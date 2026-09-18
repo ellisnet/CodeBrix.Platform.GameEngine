@@ -1,6 +1,5 @@
 using System.Drawing;
 using CodeBrix.Platform.GameEngine.Drawing;
-using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine;
@@ -49,6 +48,10 @@ public class GpuBackbuffer : BackbufferBase
     private SKBitmap? _cpuBitmap;   // temporary CPU surface used before GRContext is ready
     private SKSurface? _surface;
     private bool _disposed;
+    private GRContext? _context;
+
+    private sealed record Resolution(int Width, int Height);
+    private Resolution? _requestedResolution;
 
     private int _targetFps = 60;
     private int _msaaSampleCount = 1;
@@ -113,8 +116,8 @@ public class GpuBackbuffer : BackbufferBase
     /// </para>
     /// <para>
     /// Changing this property on an already-initialized backbuffer takes effect the next time
-    /// <see cref="Initialize"/> is called (e.g. on the next window resize), because the GPU
-    /// render-target surface must be recreated with the new sample count.
+    /// <see cref="Initialize"/> is called (e.g. on an explicit render-resolution change), because
+    /// the GPU render-target surface must be recreated with the new sample count.
     /// </para>
     /// <para>
     /// If the requested sample count is not supported by the hardware or driver,
@@ -160,9 +163,9 @@ public class GpuBackbuffer : BackbufferBase
     /// Creates (or recreates) the GPU render-target surface for this backbuffer.
     /// </summary>
     /// <remarks>
-    /// Called from the GL thread via the adapter's <c>GrContextFirstAvailable</c> and
-    /// <c>ResizeRequested</c> events.  Replaces the temporary CPU raster surface with a
-    /// hardware-accelerated off-screen render target backed by <paramref name="grContext"/>.
+    /// Called from the owning GL thread for initial setup, or for an explicit logical resolution
+    /// change.  Replaces the temporary CPU raster surface with a hardware-accelerated off-screen
+    /// render target backed by <paramref name="grContext"/>.
     /// </remarks>
     /// <param name="grContext">The active Skia GPU context.  Must not be <see langword="null"/>.</param>
     /// <param name="width">The new surface width in pixels.</param>
@@ -175,6 +178,7 @@ public class GpuBackbuffer : BackbufferBase
 
         DisposeSurface();
         CreateGpuSurface(grContext, width, height);
+        _context = grContext;
         UpdateSize(width, height);
 
         // Set canvas into a known state for the first frame on the new surface.
@@ -204,10 +208,53 @@ public class GpuBackbuffer : BackbufferBase
     }
 
     /// <summary>
-    /// No-op for <see cref="GpuBackbuffer"/>: resize is driven by <see cref="Initialize"/> which is
-    /// called from the GL thread via the adapter's <c>ResizeRequested</c> event.
+    /// Queues an explicit logical resolution change, applied by the next
+    /// <see cref="EnsureInitialized"/> call on the owning GL thread — or, while this backbuffer is
+    /// still on its temporary CPU raster surface, by the next <see cref="BeginFrame"/>.
     /// </summary>
-    protected internal override void RequestResize(int width, int height) { }
+    /// <param name="width">The new logical width in pixels.</param>
+    /// <param name="height">The new logical height in pixels.</param>
+    /// <remarks>
+    /// Multiple requests are coalesced; only the most recent one is applied. Adapter resizing must
+    /// never call this: a window resize changes presentation only.
+    /// </remarks>
+    protected internal override void RequestResize(int width, int height)
+        => Interlocked.Exchange(ref _requestedResolution, new(width, height));
+
+    /// <summary>
+    /// Initializes this backbuffer on the owning GL thread, or applies an explicit logical
+    /// resolution request that is waiting for it.
+    /// </summary>
+    /// <remarks>
+    /// Adapter dimensions are deliberately absent from this call: a window resize never reallocates
+    /// the GPU surface. Call it from the active GPU paint callback, with <paramref name="context"/>
+    /// current. Once a context exists this call, not <see cref="BeginFrame"/>, is what applies a
+    /// pending resolution request — the surface it recreates must be created on the GL thread.
+    /// </remarks>
+    /// <param name="context">The active Skia GPU context.</param>
+    /// <returns>
+    /// <see langword="true"/> when a new surface was created and needs a complete first frame;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
+    public bool EnsureInitialized(GRContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_disposed)
+            return false;
+
+        var request = Interlocked.Exchange(ref _requestedResolution, null);
+        int width = request?.Width ?? Width;
+        int height = request?.Height ?? Height;
+
+        if (ReferenceEquals(_context, context) && width == Width && height == Height)
+            return false;
+
+        Initialize(context, width, height);
+
+        return true;
+    }
 
     /// <summary>
     /// Gets the SkiaSharp canvas for drawing operations.
@@ -216,16 +263,47 @@ public class GpuBackbuffer : BackbufferBase
         ?? throw new InvalidOperationException($"{nameof(GpuBackbuffer)} surface is not initialized.");
 
     /// <summary>
-    /// Prepares the backbuffer canvas for a new rendering frame.
+    /// Prepares the backbuffer canvas for a new rendering frame, applying a pending logical
+    /// resolution request first when this backbuffer is still on its temporary CPU raster surface.
     /// </summary>
     protected internal override void BeginFrame()
     {
-        if (_disposed || _surface is null) return;
+        if (_disposed) return;
+
+        ApplyPendingResolutionOnCpuSurface();
+
+        if (_surface is null) return;
         var c = _surface.Canvas;
         c.RestoreToCount(1);
         c.Save();
         c.ResetMatrix();
         c.ClipRect(new SKRect(0, 0, Width, Height));
+    }
+
+    /// <summary>
+    /// Applies a queued logical resolution change to the temporary CPU raster surface.
+    /// </summary>
+    /// <remarks>
+    /// A GPU tier running on a head that never supplies a <see cref="GRContext"/> — and a surface
+    /// whose GPU surface was released — would otherwise keep a queued request forever, because
+    /// <see cref="EnsureInitialized"/> is the only thing that applies it and nothing is going to
+    /// call it. Once a real GPU surface exists this method does nothing: that surface may only be
+    /// recreated on the GL thread, which is what <see cref="EnsureInitialized"/> is for.
+    /// </remarks>
+    private void ApplyPendingResolutionOnCpuSurface()
+    {
+        if (_cpuBitmap is null)
+            return;
+
+        var request = Interlocked.Exchange(ref _requestedResolution, null);
+
+        if (request is null || request.Width <= 0 || request.Height <= 0 ||
+            (request.Width == Width && request.Height == Height))
+            return;
+
+        DisposeSurface();
+        CreateCpuSurface(request.Width, request.Height);
+        UpdateSize(request.Width, request.Height);      // tell base about the new logical size
     }
 
     /// <summary>
@@ -242,32 +320,15 @@ public class GpuBackbuffer : BackbufferBase
     /// </summary>
     /// <param name="tile">The tile to render.</param>
     /// <param name="destRectScreen">The destination rectangle in screen coordinates.</param>
+    /// <remarks>
+    /// Drawable types apply their own visual transforms (such as sprite rotation) before calling this method.
+    /// </remarks>
     protected internal override void DrawTileFrame(Tile tile, RectangleF destRectScreen)
     {
         var image = tile.CurrentFrame.SkImage;
         if (image is null || _surface is null) return;
 
         var canvas = _surface.Canvas;
-
-        if (tile is Sprite { Rotation: not 0f } sprite)
-        {
-            float centerX = destRectScreen.Left + (destRectScreen.Width * 0.5f);
-            float centerY = destRectScreen.Top + (destRectScreen.Height * 0.5f);
-
-            canvas.Save();
-
-            try
-            {
-                canvas.RotateDegrees(sprite.Rotation, centerX, centerY);
-                canvas.DrawImage(image, destRectScreen.ToSKRect(), SKSamplingOptions.Default);
-            }
-            finally
-            {
-                canvas.Restore();
-            }
-
-            return;
-        }
 
         canvas.DrawImage(image, destRectScreen.ToSKRect(), SKSamplingOptions.Default);
     }
@@ -338,6 +399,11 @@ public class GpuBackbuffer : BackbufferBase
         _surface = null;
         _cpuBitmap?.Dispose();
         _cpuBitmap = null;
+
+        // Forget the context the released surface belonged to, so ReleaseGpuSurface (canvas
+        // unloaded) is followed by a real re-initialization when the SAME context comes back:
+        // EnsureInitialized skips identical context-and-size pairs.
+        _context = null;
     }
 
     /// <summary>

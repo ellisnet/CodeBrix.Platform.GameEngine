@@ -58,16 +58,16 @@ public sealed class GpuRenderGame
         Engine.Instance.Start(SynchronizationContext.Current);
         Engine.Instance.Configuration.TargetFPS = 60;
 
-        var adapter = _renderSurface.RenderSurfaceAdapter;
         var view = _renderSurface.ViewManager.Views[0];
 
         // The shader scene, at the bottom of the direct-drawing Z-order; the engine renders the
-        // stats text (and the pause overlay) above it.
-        _backdrop = new PlasmaBackdrop(_renderSurface, view, new Rectangle(0, 0, adapter.Width, adapter.Height));
+        // stats text (and the pause overlay) above it. Bounds come from the BACKBUFFER: that is the
+        // logical image the scene is drawn into, and the one every ScreenPx coordinate refers to.
+        _backdrop = new PlasmaBackdrop(_renderSurface, view, GameArea());
         _backdrop.ZOrder = 0;
 
         _statsText = new TextBlock(_renderSurface, view,
-                new Rectangle(16, 12, Math.Max(200, adapter.Width - 32), 170), null)
+                new Rectangle(16, 12, Math.Max(200, _renderSurface.Backbuffer.Width - 32), 170), null)
             .SetFont(SKTypeface.FromFamilyName("Open Sans"), 15f, minSize: 12f)
             .SetColors(Color.White, Color.Transparent)
             .SetAlignment(SKTextAlign.Left, VerticalAlign.Top)
@@ -77,8 +77,11 @@ public sealed class GpuRenderGame
             .SetShadow(2, 2, 220, 2.0f);
         _statsText.ZOrder = 10;
 
-        // The render resolution tracks the window in this sample, so follow adapter resizes.
-        adapter.Resized += OnAdapterResized;
+        // A window resize is presentation only here: the shader scene keeps the resolution it was
+        // established with and is fitted into the window, centred, with black margins. Re-anchoring
+        // on resize therefore only matters if the resolution itself changes — set
+        // GameSurfaceCanvas.TrackWindowSize to make it follow the window instead.
+        _renderSurface.RenderSurfaceAdapter.Resized += OnAdapterResized;
 
         // Clicking anywhere toggles the global engine pause. This hooks the canvas's UI-level
         // pointer event on purpose: engine input pollers stop while paused, but UI-level input
@@ -103,10 +106,14 @@ public sealed class GpuRenderGame
     private void OnAdapterResized(RenderSurfaceAdapterResizedEventArgs args)
     {
         if (_backdrop is not null)
-            _backdrop.ScreenBounds = new Rectangle(0, 0, args.NewWidth, args.NewHeight);
+            _backdrop.ScreenBounds = GameArea();
         if (_statsText is not null)
-            _statsText.ScreenBounds = new Rectangle(16, 12, Math.Max(200, args.NewWidth - 32), 170);
+            _statsText.ScreenBounds = new Rectangle(16, 12, Math.Max(200, _renderSurface.Backbuffer.Width - 32), 170);
     }
+
+    // The logical image the scene is rendered into, which a window resize does not change.
+    private Rectangle GameArea()
+        => new Rectangle(0, 0, _renderSurface.Backbuffer.Width, _renderSurface.Backbuffer.Height);
 
     // UI thread (the engine posts CPS samples there).
     private void OnCpsCalculated(CyclesPerSecondCalculatedEventArgs cps)
@@ -134,8 +141,7 @@ public sealed class GpuRenderGame
     // adapter (GpuRendering-OpenGL) one final frame after this handler returns, which makes the overlay visible.
     private void OnEnginePaused()
     {
-        var adapter = _renderSurface.RenderSurfaceAdapter;
-        var bounds = new Rectangle(0, 0, adapter.Width, adapter.Height);
+        var bounds = GameArea();
         var view = _renderSurface.ViewManager.Views[0];
 
         _pausedDimmer = new DirectRectangle(Color.Black, _renderSurface, view, bounds, null)

@@ -135,10 +135,9 @@ public class CoordinateTestGame : IDisposable
 
     private void InitDirectDrawings()
     {
-        int surfaceWidth = RenderSurface.Host.RenderSurfaceAdapter.Width;
-
-        var bounds1 = new Rectangle(surfaceWidth - 250, 0, 250, 150);
-        var bounds2 = new Rectangle(surfaceWidth - 250, 200, 250, 150);
+        // Fixed positions, so the readouts stay put whatever the surface is presented at.
+        var bounds1 = new Rectangle(10, 10, 250, 150);
+        var bounds2 = new Rectangle(10, 200, 250, 150);
 
         _directRectangle = new DirectRectangle(Color.Wheat,
                                                RenderSurface.Host,
@@ -176,11 +175,13 @@ public class CoordinateTestGame : IDisposable
 
     private void InitializeParticles()
     {
+        // The logical image the scene is drawn into: a window resize fits that image into the
+        // window and does not change it.
         var bounds = new Rectangle(
             0,
             0,
-            RenderSurface.Host.RenderSurfaceAdapter.Width,
-            RenderSurface.Host.RenderSurfaceAdapter.Height);
+            RenderSurface.Host.Backbuffer.Width,
+            RenderSurface.Host.Backbuffer.Height);
 
         _particleSurface = new ParticleSurface(RenderSurface.Host,
                                                RenderSurface.Host.ViewManager.Views[0],
@@ -217,8 +218,10 @@ public class CoordinateTestGame : IDisposable
         var sceneLayer1 = scene.AddLayer(60, 5, 64, 64, 10, 1f, CoordinateSystemTypes.Orthogonal);
         var sceneLayer2 = scene.AddLayer(60, 5, 32, 32, 5, 0.5f, CoordinateSystemTypes.Orthogonal);
 
+        sceneLayer1.WrapHorizontally = true;
         sceneLayer1.ShowGridLines = true;
         sceneLayer1.ShowCollisionBoxes = false;
+
         sceneLayer2.ShowGridLines = true;
 
         var sourceTilesheet = TilesheetRegistry.Instance.GetAll()["tiles"];

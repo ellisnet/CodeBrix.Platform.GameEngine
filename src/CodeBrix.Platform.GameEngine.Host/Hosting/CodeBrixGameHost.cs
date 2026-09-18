@@ -90,8 +90,9 @@ public abstract class CodeBrixGameHost : GameHostBase
 
         RenderSurface.Host.Bind(scene, false);
 
-        // Notify the game whenever the render surface (and its backbuffer) is resized, so
-        // size-anchored content — HUD/score overlays and the like — can be repositioned.
+        // Notify the game whenever the render surface is resized. The backbuffer keeps its
+        // established resolution across a resize, so this is a presentation change; see
+        // OnRenderSurfaceResized for what a game should re-anchor from.
         RenderSurface.RenderSurfaceAdapter.Resized += OnRenderSurfaceAdapterResized;
 
         // OnSceneBound() is raised by GameHostBase.InitializeGameContent() immediately after this
@@ -139,12 +140,22 @@ public abstract class CodeBrixGameHost : GameHostBase
     }
 
     /// <summary>
-    /// Called on the UI thread whenever the render surface — and therefore the backbuffer — changes
-    /// size. Override to reposition size-anchored content (for example HUD or score overlays that are
-    /// pinned to a window edge or corner). The base implementation does nothing.
+    /// Called on the UI thread whenever the render surface changes size. Override to reposition
+    /// size-anchored content (for example HUD or score overlays that are pinned to a window edge or
+    /// corner). The base implementation does nothing.
     /// </summary>
-    /// <param name="width">The new render surface width, in pixels.</param>
-    /// <param name="height">The new render surface height, in pixels.</param>
+    /// <remarks>
+    /// The reported size is the surface's own, in the pixels it presents into — <em>not</em> the
+    /// logical Backbuffer ScreenPx that drawings, views and pointer input use. A resize changes
+    /// presentation only: the established render resolution, and therefore everything anchored to
+    /// it, is unaffected. Anchor game content from <c>RenderSurface.Host.Backbuffer.Width</c> and
+    /// <c>Height</c>, which change only on an explicit render-resolution change (
+    /// <see cref="Rendering.GameSurfaceCanvas.SetRenderResolution"/>,
+    /// <see cref="CodeBrix.Platform.GameEngine.Configuration.EngineConfiguration.RenderScale"/> or
+    /// <see cref="Rendering.GameSurfaceCanvas.TrackWindowSize"/>).
+    /// </remarks>
+    /// <param name="width">The new render surface width, in the surface's own pixels.</param>
+    /// <param name="height">The new render surface height, in the surface's own pixels.</param>
     protected virtual void OnRenderSurfaceResized(int width, int height)
     {
     }

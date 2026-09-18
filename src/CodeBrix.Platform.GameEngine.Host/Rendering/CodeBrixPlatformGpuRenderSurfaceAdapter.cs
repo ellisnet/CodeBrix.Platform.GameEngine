@@ -38,26 +38,20 @@ namespace CodeBrix.Platform.GameEngine.Host.Rendering;
 /// <para>
 /// <see cref="GpuBackbuffer.VSync"/> has no effect on this adapter: the off-screen context has
 /// no swap chain, and presentation is composited by the head. Frame pacing comes from the
-/// engine's TargetFPS throttle. <see cref="GpuBackbuffer.MsaaSampleCount"/> is honoured — a
-/// change re-initialises the GPU surface on the next frame.
+/// engine's TargetFPS throttle. <see cref="GpuBackbuffer.MsaaSampleCount"/> is honoured the next
+/// time the GPU render target is allocated — that is, on an explicit render-resolution change,
+/// not on a window resize, which changes presentation only.
 /// </para>
 /// </remarks>
 public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapterBase, IDisposable
 {
     private readonly GameSurfaceCanvas _canvas;
-    private readonly bool _fixedResolution;
 
     private RenderSurfaceHostBase? _host;
     private SkiaGpuContext? _context;
     private GRContext? _grContext; // cached from _context.GrContext; owned/disposed by _context
     private bool _gpuInitAttempted;
     private bool _gpuAvailable;
-
-    // Size and MSAA the GpuBackbuffer surface was last initialized with.
-    private int _surfaceWidth;
-    private int _surfaceHeight;
-    private int _surfaceMsaa;
-    private bool _surfaceInitialized;
 
     // Double-buffered CPU readback targets: the GPU frame reads back into one bitmap while the
     // canvas may still be painting the wrapper image over the other. All access is UI-thread.
@@ -80,26 +74,26 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
     /// <summary>
     /// Initializes a new instance of the <see cref="CodeBrixPlatformGpuRenderSurfaceAdapter"/> class.
     /// </summary>
+    /// <remarks>
+    /// The adapter always tracks the canvas size: that size is the presentation destination, not the
+    /// render resolution. The render resolution is the host's, from
+    /// <see cref="CodeBrix.Platform.GameEngine.Configuration.EngineConfiguration.RenderScale"/> or
+    /// <see cref="GameSurfaceCanvas.SetRenderResolution"/>, and only a change to it reallocates the
+    /// GPU render target.
+    /// </remarks>
     /// <param name="canvas">The <see cref="GameSurfaceCanvas"/> this adapter presents to.</param>
-    /// <param name="fixedWidth">
-    /// A fixed render width in pixels, or 0 (the default) to track the canvas width and follow window resizes.
-    /// </param>
-    /// <param name="fixedHeight">
-    /// A fixed render height in pixels, or 0 (the default) to track the canvas height and follow window resizes.
-    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="canvas"/> is null.</exception>
-    public CodeBrixPlatformGpuRenderSurfaceAdapter(GameSurfaceCanvas canvas, int fixedWidth = 0, int fixedHeight = 0)
+    public CodeBrixPlatformGpuRenderSurfaceAdapter(GameSurfaceCanvas canvas)
         : base(
-            fixedWidth > 0 ? fixedWidth : Math.Max(1, (int)canvas.ActualWidth),
-            fixedHeight > 0 ? fixedHeight : Math.Max(1, (int)canvas.ActualHeight))
+            Math.Max(1, (int)canvas.ActualWidth),
+            Math.Max(1, (int)canvas.ActualHeight),
+            HasLayoutSize(canvas))
     {
         _canvas = canvas ?? throw new ArgumentNullException(nameof(canvas));
-        _fixedResolution = fixedWidth > 0 && fixedHeight > 0;
 
-        // Only follow the control's size when the render resolution is not pinned; a pinned
-        // resolution is letterboxed to fit by the canvas each paint.
-        if (!_fixedResolution)
-            _canvas.SizeChanged += OnSizeChanged;
+        // A resize changes only where and how large the frame is presented, so the adapter follows
+        // the control whatever the render resolution is.
+        _canvas.SizeChanged += OnSizeChanged;
 
         // Stop driving frames (and tear the GPU context down while its window is still alive)
         // whenever the canvas leaves the visual tree, and resume when it returns; see
@@ -107,6 +101,11 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         _canvas.Unloaded += OnCanvasUnloaded;
         _canvas.Loaded += OnCanvasLoaded;
     }
+
+    // A canvas created but not laid out yet reports a zero size: the adapter then starts on a
+    // placeholder, and the first real layout establishes the logical render resolution once.
+    private static bool HasLayoutSize(GameSurfaceCanvas canvas)
+        => canvas is not null && canvas.ActualWidth >= 1 && canvas.ActualHeight >= 1;
 
     /// <summary>
     /// Whether the off-screen GPU context and its <see cref="GRContext"/> were created
@@ -212,7 +211,10 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
             {
                 using (_context!.BeginFrame())
                 {
-                    EnsureBackbufferSurface(gpuBackbuffer);
+                    // Allocates the GPU render target on the first frame, and afterwards only when
+                    // the context changed or an explicit render-resolution request is waiting; a
+                    // window resize never reaches this.
+                    gpuBackbuffer.EnsureInitialized(_grContext!);
 
                     using var gpuImage = _host.GlRenderAndSnapshot(renderWhilePaused);
                     if (gpuImage is null)
@@ -306,23 +308,10 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         return _gpuAvailable;
     }
 
-    // UI thread, context current. (Re)creates the GPU surface when the destination size or the
-    // MSAA sample count changed since the last initialization.
-    private void EnsureBackbufferSurface(GpuBackbuffer gpuBackbuffer)
-    {
-        var msaa = gpuBackbuffer.MsaaSampleCount;
-        if (_surfaceInitialized && _surfaceWidth == Width && _surfaceHeight == Height && _surfaceMsaa == msaa)
-            return;
-
-        gpuBackbuffer.Initialize(_grContext!, Width, Height);
-        _surfaceWidth = Width;
-        _surfaceHeight = Height;
-        _surfaceMsaa = msaa;
-        _surfaceInitialized = true;
-    }
-
     // UI thread (context current when the image is GPU-backed). Reads the frame back into the
-    // write-side bitmap, wraps it zero-copy, and presents it.
+    // write-side bitmap, wraps it zero-copy, and presents it. The image is the LOGICAL backbuffer
+    // snapshot, so the readback bitmaps are the logical size too and a window resize neither
+    // reallocates them nor changes how many pixels are copied.
     private void ReadbackAndPresent(SKImage image)
     {
         var w = image.Width;
@@ -352,13 +341,15 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
         _writeToA = !_writeToA;
 
         var wrapper = SKImage.FromPixels(info, target.GetPixels(), target.RowBytes);
-        Present(wrapper, new SKRectI(0, 0, w, h), SKRect.Create(0, 0, Width, Height));
+        Present(wrapper, new SKRectI(0, 0, w, h), Presentation.DestinationRect);
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// Called by this adapter's own GL frame on the UI thread; the engine loop never presents
-    /// GL-thread-rendered surfaces itself.
+    /// GL-thread-rendered surfaces itself. The canvas repaints its whole surface on every paint, so
+    /// it is handed the complete frame and draws it through the shared presentation transform
+    /// rather than blitting <paramref name="bufferRect"/> into <paramref name="destRect"/>.
     /// </remarks>
     public override void Present(SKImage bufferImage, SKRectI bufferRect, SKRect destRect)
     {
@@ -378,9 +369,9 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
         var dispatcherQueue = _canvas.DispatcherQueue;
         if (dispatcherQueue is null || dispatcherQueue.HasThreadAccess)
-            _canvas.SetImage(bufferImage, bufferRect);
+            _canvas.SetImage(bufferImage);
         else
-            dispatcherQueue.TryEnqueue(() => _canvas.SetImage(bufferImage, bufferRect));
+            dispatcherQueue.TryEnqueue(() => _canvas.SetImage(bufferImage));
     }
 
     /// <inheritdoc />
@@ -453,7 +444,6 @@ public sealed class CodeBrixPlatformGpuRenderSurfaceAdapter : RenderSurfaceAdapt
 
         _gpuInitAttempted = false;
         _gpuAvailable = false;
-        _surfaceInitialized = false;
     }
 
     /// <summary>

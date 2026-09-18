@@ -19,8 +19,8 @@ namespace CodeBrix.Platform.GameEngine.Input.Touch; //was previously: Gondwana.I
 /// <c>Id = 0</c>.
 /// </param>
 /// <param name="Position">
-/// The position of the touch contact in client (control-local) coordinates at the moment
-/// the event was recorded.
+/// The position of the touch contact in logical Backbuffer ScreenPx at the moment the event was
+/// recorded — the adapter normalizes its own pixels into that space before the touch is routed.
 /// </param>
 /// <param name="Phase">
 /// The current lifecycle phase of this touch contact, indicating whether the contact just

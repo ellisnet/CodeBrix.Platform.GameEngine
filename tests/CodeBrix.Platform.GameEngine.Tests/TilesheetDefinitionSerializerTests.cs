@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Text.Json.Nodes;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets.GTS;
 using SilverAssertions;
@@ -14,7 +15,8 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// one with <see cref="Tilesheet.PersistImageToFile"/>, saving such a sheet as a .gts file does
 /// that promotion automatically using a sibling PNG, an already file-backed sheet is left alone,
 /// and a masked sheet persists its untransformed source bitmap so the stored mask is applied
-/// exactly once when the definition is loaded again.
+/// exactly once when the definition is loaded again. Also covers the guard that rejects a
+/// hand-authored definition whose regions array carries a null entry.
 /// </summary>
 public class TilesheetDefinitionSerializerTests : IDisposable
 {
@@ -133,6 +135,37 @@ public class TilesheetDefinitionSerializerTests : IDisposable
         var definition = TilesheetDefinitionSerializer.Load(gtsPath);
         definition.Image.FilePath.Should().Be(
             Path.GetRelativePath(Path.GetDirectoryName(gtsPath)!, sourceImagePath).Replace('\\', '/'));
+    }
+
+    [Fact]
+    public void FromJson_rejects_a_regions_array_that_contains_a_null_entry()
+    {
+        //Arrange - build valid GTS JSON with the real serializer, then inject a null region the
+        //way hand-authored JSON can. Loading used to dereference it and throw NullReferenceException.
+        var definition = new TilesheetDefinition
+        {
+            Name = "Null Region",
+            Image = new TilesheetImageDefinition { FilePath = "sheet.png" },
+            Regions =
+            [
+                new TilesheetRegionDefinition
+                {
+                    Name = TilesheetRegion.DefaultRegionName,
+                    Area = new Rectangle(0, 0, 16, 16),
+                    TileSize = new Size(16, 16)
+                }
+            ]
+        };
+
+        var jsonObject = JsonNode.Parse(TilesheetDefinitionSerializer.ToJson(definition))!.AsObject();
+        jsonObject[nameof(TilesheetDefinition.Regions)]!.AsArray().Add((JsonNode?)null);
+
+        //Act
+        var act = () => TilesheetDefinitionSerializer.FromJson(jsonObject.ToJsonString());
+
+        //Assert
+        act.Should().Throw<InvalidDataException>()
+            .WithMessage("GTS Regions cannot contain null entries.");
     }
 
     [Fact]

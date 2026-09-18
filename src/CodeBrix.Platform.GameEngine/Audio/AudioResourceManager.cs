@@ -161,20 +161,31 @@ public sealed class AudioResourceManager : IDisposable
         }
 
         var format = new WaveFormat(sampleRate, bitsPerSample, channels);
-        var reader = new RawSourceWaveStream(new MemoryStream(data, writable: false), format);
-        var sound = new AudioResource(
-            key,
-            reader,
-            volume,
-            pan,
-            filePathOrExt: null,
-            rawBytes: data,
-            tempFilePath: null,
-            rawPcmFormat: format);
+        var source = new MemoryStream(data, writable: false);
+        var reader = new RawSourceWaveStream(source, format);
+        AudioResource? sound = null;
 
-        _soundResources[key] = (sound, null);
-        RegisterLoadedSound(key, sound);
-        return sound;
+        try
+        {
+            sound = new AudioResource(
+                key,
+                reader,
+                volume,
+                pan,
+                filePathOrExt: null,
+                rawBytes: data,
+                tempFilePath: null,
+                rawPcmFormat: format);
+
+            _soundResources[key] = (sound, null);
+            RegisterLoadedSound(key, sound);
+            return sound;
+        }
+        catch
+        {
+            DisposeFailedLoad(key, sound, reader, source, tempFilePath: null);
+            throw;
+        }
     }
 
     /// <summary>
@@ -202,7 +213,7 @@ public sealed class AudioResourceManager : IDisposable
                 continue;
             }
 
-            var stream = resourceFile.Get(entry.AssetType, entry.AssetName);
+            using var stream = resourceFile.Get(entry.AssetType, entry.AssetName);
             if (stream == null)
             {
                 Engine.Logger.LogWarning("Failed to retrieve stream for audio resource: {Key}", entry.AssetName);
@@ -231,7 +242,8 @@ public sealed class AudioResourceManager : IDisposable
     /// Creates a copy of an existing audio resource with a new key and optionally different settings.
     /// </summary>
     /// <remarks>Cloning requires the original resource to have its raw byte data available. If the new key
-    /// already exists or the original resource cannot be found, the method returns <see langword="null"/>.</remarks>
+    /// already exists or the original resource cannot be found, the method returns <see langword="null"/>.
+    /// The clone starts at the original's <see cref="AudioResource.PlaybackSpeed"/>.</remarks>
     /// <param name="key">The key of the existing audio resource to clone.</param>
     /// <param name="newKey">The key for the cloned resource. If <see langword="null"/>, a unique key will be generated automatically.</param>
     /// <param name="volume">The volume level for the cloned resource. If <see langword="null"/>, uses the original resource's volume.</param>
@@ -266,6 +278,8 @@ public sealed class AudioResourceManager : IDisposable
                 rawBytes: original.soundResource.OriginalBytes,
                 cachedData: cachedData);
 
+            clone.PlaybackSpeed = original.soundResource.PlaybackSpeed;
+
             _soundResources[newKey] = (clone, null);
             RegisterLoadedSound(newKey, clone);
             return clone;
@@ -283,13 +297,16 @@ public sealed class AudioResourceManager : IDisposable
             return null;
         }
 
-        return LoadFromStream(
+        var reloadedClone = LoadFromStream(
             newKey,
             new MemoryStream(original.soundResource.OriginalBytes),
             original.soundResource.SourceExtension,
             volume ?? original.soundResource.Volume,
             pan ?? original.soundResource.Pan
         );
+
+        reloadedClone.PlaybackSpeed = original.soundResource.PlaybackSpeed;
+        return reloadedClone;
     }
 
     private AudioResource LoadFromBytes(string key, byte[] bytes, string fileHint, float volume, float pan)
@@ -320,46 +337,105 @@ public sealed class AudioResourceManager : IDisposable
             streamForReader = new MemoryStream(bytes);
         }
 
-        var reader = readerFactory(streamForReader);
+        // Everything from here on owns something that has to be released when the load fails:
+        // the reader (and the stream behind it), the decoded PCM cache, the temporary file this
+        // call wrote, and - once it exists - the resource itself. A failure part way through used
+        // to strand all of them.
+        WaveStream? reader = null;
+        AudioResource? sound = null;
 
-        // Preload short effects: decode ONCE to PCM in memory so plays, clones, and
-        // SfxVoicePool voices never decode (or touch a file) on the audio thread. Long
-        // material and file-bound readers keep the streaming path.
-        CachedSound? cachedData = null;
-        if (!requiresFile && PreloadShortSoundEffectMaxSeconds > 0)
+        try
         {
-            TimeSpan estimatedTotal;
-            try
+            reader = readerFactory(streamForReader);
+
+            // Preload short effects: decode ONCE to PCM in memory so plays, clones, and
+            // SfxVoicePool voices never decode (or touch a file) on the audio thread. Long
+            // material and file-bound readers keep the streaming path.
+            CachedSound? cachedData = null;
+            if (!requiresFile && PreloadShortSoundEffectMaxSeconds > 0)
             {
-                estimatedTotal = reader.TotalTime;
-            }
-            catch (Exception)
-            {
-                estimatedTotal = TimeSpan.MaxValue; // duration unknown -> stream it
+                TimeSpan estimatedTotal;
+                try
+                {
+                    estimatedTotal = reader.TotalTime;
+                }
+                catch (Exception)
+                {
+                    estimatedTotal = TimeSpan.MaxValue; // duration unknown -> stream it
+                }
+
+                if (estimatedTotal.TotalSeconds <= PreloadShortSoundEffectMaxSeconds)
+                {
+                    cachedData = new CachedSound(reader);
+                    reader.Dispose();
+                    reader = new CachedSoundWaveStream(cachedData);
+                }
             }
 
-            if (estimatedTotal.TotalSeconds <= PreloadShortSoundEffectMaxSeconds)
+            sound = new AudioResource(
+                key,
+                reader,
+                volume,
+                pan,
+                fileHint,
+                bytes,
+                tempFilePath,
+                cachedData: cachedData
+            );
+
+            _soundResources[key] = (sound, requiresFile ? tempFilePath : null);
+            RegisterLoadedSound(key, sound);
+            return sound;
+        }
+        catch
+        {
+            DisposeFailedLoad(key, sound, reader, streamForReader, tempFilePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Releases everything a failed load created, in the order that leaves nothing behind: the
+    /// half-registered key, the resource (which owns the device, the reader and the temporary
+    /// file once it exists), otherwise the reader and the stream under it, and finally the
+    /// temporary file this load wrote. Cleanup failures are logged and swallowed so the caller
+    /// still sees the ORIGINAL load exception.
+    /// </summary>
+    private void DisposeFailedLoad(
+        string key,
+        AudioResource? resource,
+        WaveStream? reader,
+        Stream? streamForReader,
+        string? tempFilePath)
+    {
+        try
+        {
+            if (resource is not null)
             {
-                cachedData = new CachedSound(reader);
-                reader.Dispose();
-                reader = new CachedSoundWaveStream(cachedData);
+                // The resource may already have been published under its key, and its own
+                // disposal releases the reader and the temporary file.
+                if (_soundResources.TryGetValue(key, out var registered)
+                    && ReferenceEquals(registered.soundResource, resource))
+                {
+                    _soundResources.TryRemove(key, out _);
+                }
+
+                resource.Dispose();
+                return;
+            }
+
+            reader?.Dispose();
+            streamForReader?.Dispose(); // no-op when the reader already owned and closed it
+
+            if (tempFilePath is not null && File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
             }
         }
-
-        var sound = new AudioResource(
-            key,
-            reader,
-            volume,
-            pan,
-            fileHint,
-            bytes,
-            tempFilePath,
-            cachedData: cachedData
-        );
-
-        _soundResources[key] = (sound, requiresFile ? tempFilePath : null);
-        RegisterLoadedSound(key, sound);
-        return sound;
+        catch (Exception ex)
+        {
+            Engine.Logger.LogError(ex, "Failed to release the partially loaded audio resource '{Key}'.", key);
+        }
     }
 
     private void RegisterLoadedSound(string key, AudioResource sound)

@@ -25,6 +25,9 @@ public sealed class Camera
     private PointF _positionPx = new(0, 0);
     private Func<PointF>? _followWorldPx;
     private bool _hardFollow;
+    private SceneLayer? _followLayer;
+    private int _followAxis; // 0 = both, 1 = screen X, 2 = screen Y
+    private SceneLayer? TopologyLayer => _followLayer ?? _scene.SceneLayers.FirstOrDefault(layer => layer.Visible);
 
     // Explicit pan-to-target (camera upper-left) state.
     // This is used by PanTo and is independent of the "follow" target.
@@ -54,7 +57,9 @@ public sealed class Camera
     /// <summary>
     /// World-space rectangle (in pixels) that the camera is allowed to move within.
     /// Clamping logic uses this to prevent the view from scrolling past the edges
-    /// of the world or map.
+    /// of the world or map. Wrapped axes are unconstrained in the selected layer's
+    /// period-vector basis. Following uses the target layer; otherwise the first
+    /// visible layer in scene insertion order supplies topology.
     /// </summary>
     public RectangleF WorldBoundsPx { get; set; } = RectangleF.Empty;
 
@@ -181,6 +186,8 @@ public sealed class Camera
     public void PanTo(PointF worldTopLeftPx, float speed)
     {
         // Cancel any center-based follow when we take direct manual control.
+        _followAxis = 0;
+        _followLayer = null;
         _followWorldPx = null;
         _hardFollow = false;
 
@@ -256,6 +263,8 @@ public sealed class Camera
         float k = -(float)Math.Log(0.01f) / durationSeconds;
 
         // Cancel following and start a timed pan using your existing machinery.
+        _followAxis = 0;
+        _followLayer = null;
         _followWorldPx = null;
         _hardFollow = false;
 
@@ -356,6 +365,8 @@ public sealed class Camera
     /// </param>
     public void Follow(Func<PointF> getWorldPixel, bool hardFollow = false)
     {
+        _followAxis = 0;
+        _followLayer = null;
         _followWorldPx = getWorldPixel ?? throw new ArgumentNullException(nameof(getWorldPixel));
         _hardFollow = hardFollow;
     }
@@ -398,6 +409,7 @@ public sealed class Camera
             return worldCenter; // treated as point-of-interest (center)
         },
         hard);
+        _followLayer = target.SceneLayer;
     }
 
     /// <summary>
@@ -436,6 +448,8 @@ public sealed class Camera
                 currentCamY + vis.Height * 0.5f);
         },
         hard);
+        _followLayer = target.SceneLayer;
+        _followAxis = 1;
     }
 
     /// <summary>
@@ -474,6 +488,8 @@ public sealed class Camera
                 worldCenterY);
         },
         hard);
+        _followLayer = target.SceneLayer;
+        _followAxis = 2;
     }
 
     /// <summary>
@@ -482,6 +498,8 @@ public sealed class Camera
     /// </summary>
     public void ClearFollow()
     {
+        _followAxis = 0;
+        _followLayer = null;
         _followWorldPx = null;
         _panTargetUpperLeftPx = null;
         _hardFollow = false;
@@ -528,7 +546,28 @@ public sealed class Camera
         if (_followWorldPx is null)
             return;
 
-        var desiredUL = DesiredUpperLeftToContainTarget(_followWorldPx());
+        var target = _followWorldPx();
+        if (TopologyLayer is { } layer && (layer.WrapHorizontally || layer.WrapVertically))
+        {
+            var visible = GetVisibleWorldSizePx();
+            var center = new PointF(PositionPx.X + visible.Width / 2, PositionPx.Y + visible.Height / 2);
+            var period = layer.GetPeriod();
+            if (_followAxis == 1)
+            {
+                target = NearestWrappedByAxis(period, target, center, followX: true);
+                target.Y = center.Y;
+            }
+            else if (_followAxis == 2)
+            {
+                target = NearestWrappedByAxis(period, target, center, followX: false);
+                target.X = center.X;
+            }
+            else
+            {
+                target = period.Nearest(target, center);
+            }
+        }
+        var desiredUL = DesiredUpperLeftToContainTarget(target);
         if (_hardFollow || FollowLerpPerSecond <= 0f)
         {
             PositionPx = ClampToWorldBounds(desiredUL);
@@ -578,12 +617,64 @@ public sealed class Camera
         return new PointF(newX, newY);
     }
 
+    private static PointF NearestWrappedByAxis(LayerPeriod period, PointF point, PointF reference, bool followX)
+    {
+        var delta = new PointF(reference.X - point.X, reference.Y - point.Y);
+        var coefficients = period.Coefficients(delta);
+        int baseColumn = (int)Math.Round(coefficients.X);
+        int baseRow = (int)Math.Round(coefficients.Y);
+
+        int minColumn = period.WrapColumns ? baseColumn - 4 : 0;
+        int maxColumn = period.WrapColumns ? baseColumn + 4 : 0;
+        int minRow = period.WrapRows ? baseRow - 4 : 0;
+        int maxRow = period.WrapRows ? baseRow + 4 : 0;
+
+        var best = period.Nearest(point, reference);
+        float bestAxisDistance = followX ? Math.Abs(best.X - reference.X) : Math.Abs(best.Y - reference.Y);
+        float bestDistanceSquared = (best.X - reference.X) * (best.X - reference.X) + (best.Y - reference.Y) * (best.Y - reference.Y);
+
+        for (int c = minColumn; c <= maxColumn; c++)
+        for (int r = minRow; r <= maxRow; r++)
+        {
+            var offset = period.Offset(c, r);
+            var candidate = new PointF(point.X + offset.X, point.Y + offset.Y);
+            float axisDistance = followX ? Math.Abs(candidate.X - reference.X) : Math.Abs(candidate.Y - reference.Y);
+            float distanceSquared = (candidate.X - reference.X) * (candidate.X - reference.X) +
+                                    (candidate.Y - reference.Y) * (candidate.Y - reference.Y);
+            if (axisDistance < bestAxisDistance ||
+                (axisDistance == bestAxisDistance && distanceSquared < bestDistanceSquared))
+            {
+                best = candidate;
+                bestAxisDistance = axisDistance;
+                bestDistanceSquared = distanceSquared;
+            }
+        }
+
+        return best;
+    }
+
     private PointF ClampToWorldBounds(PointF ul)
     {
         if (WorldBoundsPx == RectangleF.Empty)
             return ul;
 
         var vis = GetVisibleWorldSizePx();
+        if (TopologyLayer is { } layer && (layer.WrapHorizontally || layer.WrapVertically))
+        {
+            var period = layer.GetPeriod();
+            var position = period.Coefficients(ul);
+            PointF[] Corners(RectangleF rect) => new[] {
+                period.Coefficients(new(rect.Left, rect.Top)), period.Coefficients(new(rect.Right, rect.Top)),
+                period.Coefficients(new(rect.Left, rect.Bottom)), period.Coefficients(new(rect.Right, rect.Bottom)) };
+            var bounds = Corners(WorldBoundsPx);
+            var viewport = Corners(new(0, 0, vis.Width, vis.Height));
+            float lowX = bounds.Min(p => p.X) - viewport.Min(p => p.X);
+            float lowY = bounds.Min(p => p.Y) - viewport.Min(p => p.Y);
+            float highX = Math.Max(lowX, bounds.Max(p => p.X) - viewport.Max(p => p.X));
+            float highY = Math.Max(lowY, bounds.Max(p => p.Y) - viewport.Max(p => p.Y));
+            return period.Offset(layer.WrapHorizontally ? position.X : Math.Clamp(position.X, lowX, highX),
+                layer.WrapVertically ? position.Y : Math.Clamp(position.Y, lowY, highY));
+        }
         float minX = WorldBoundsPx.Left;
         float minY = WorldBoundsPx.Top;
         float maxX = WorldBoundsPx.Right - vis.Width;

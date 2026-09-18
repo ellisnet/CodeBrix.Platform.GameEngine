@@ -45,6 +45,87 @@ public abstract class RenderSurfaceHostBase : IDisposable
     public abstract BackbufferBase Backbuffer { get; }
 
     /// <summary>
+    /// Gets the scale at which this surface's logical <see cref="Backbuffer"/> image is currently
+    /// fitted into its render surface adapter.
+    /// </summary>
+    /// <value>
+    /// The presentation scale, or <c>0</c> when there is no adapter or nothing can be presented
+    /// yet. Read-only: the logical resolution follows
+    /// <see cref="Configuration.EngineConfiguration.RenderScale"/> and
+    /// <see cref="RequestRenderResolution"/>, never the size of the surface.
+    /// </value>
+    public float PresentationScale => RenderSurfaceAdapter?.PresentationScale ?? 0f;
+
+    /// <summary>
+    /// Gets the width, in logical Backbuffer ScreenPx, that this surface renders at — including a
+    /// resolution change that has been requested but not yet applied by the rendering thread.
+    /// </summary>
+    /// <value>
+    /// The established logical width. This is what views are sized from, so game code can lay out
+    /// in the new resolution in the same breath as requesting it.
+    /// </value>
+    public virtual int LogicalWidth => Backbuffer.Width;
+
+    /// <summary>
+    /// Gets the height, in logical Backbuffer ScreenPx, that this surface renders at — including a
+    /// resolution change that has been requested but not yet applied by the rendering thread.
+    /// </summary>
+    /// <value>The established logical height; the counterpart of <see cref="LogicalWidth"/>.</value>
+    public virtual int LogicalHeight => Backbuffer.Height;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this surface's logical render resolution follows the
+    /// size of its render surface adapter.
+    /// </summary>
+    /// <value>
+    /// <see langword="false"/> by default: the resolution is established once and every later
+    /// adapter resize changes presentation only (the image is fitted and centred). When
+    /// <see langword="true"/>, every adapter resize re-establishes the resolution from the new
+    /// adapter size and <see cref="Configuration.EngineConfiguration.RenderScale"/> — which
+    /// reallocates the backbuffer, rescales views, and forces a full redraw on each resize.
+    /// </value>
+    /// <remarks>
+    /// This opt-in is specific to this engine port; upstream always keeps the established
+    /// resolution. Use it for a surface that is meant to expose more of the world as its window
+    /// grows. It supersedes an explicit <see cref="RequestRenderResolution"/> on the next resize,
+    /// so use one approach or the other for a given surface.
+    /// </remarks>
+    public bool TrackAdapterSize { get; set; }
+
+    /// <summary>
+    /// Establishes an explicit logical render resolution for this surface, independent of
+    /// <see cref="Configuration.EngineConfiguration.RenderScale"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The request is applied on the thread that owns this surface's rendering, and the adapter
+    /// then fits and centres that image at whatever size the surface happens to be. A request made
+    /// while the adapter has no usable size (a minimized or not-yet-laid-out window) is deferred
+    /// until it has one.
+    /// </para>
+    /// <para>
+    /// This is specific to this engine port — it is how a host pins a surface to a fixed
+    /// resolution, for example 1280x720 regardless of window size.
+    /// <see cref="Configuration.EngineConfiguration.RenderScale"/> is the upstream way, and a later
+    /// change to it supersedes the pinned resolution.
+    /// </para>
+    /// </remarks>
+    /// <param name="width">The logical Backbuffer width in pixels; at least <c>1</c>.</param>
+    /// <param name="height">The logical Backbuffer height in pixels; at least <c>1</c>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="width"/> or <paramref name="height"/> is less than <c>1</c>.
+    /// </exception>
+    public virtual void RequestRenderResolution(int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+    }
+
+    internal virtual void RequestRenderScale(float scale) { }
+
+    internal virtual void InvalidatePresentation() { }
+
+    /// <summary>
     /// Gets the source <see cref="Scenes.Scene"/> used for rendering operations.
     /// </summary>
     public abstract Scene Scene { get; }
@@ -163,6 +244,180 @@ public abstract class RenderSurfaceHostBase : IDisposable
         Backbuffer.BeginFrame();
 
         return img;
+    }
+
+    /// <summary>
+    /// Renders the current scene frame and draws the GPU backbuffer surface directly to another
+    /// GPU canvas without creating an intermediate <see cref="SKImage"/> snapshot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Call only from the active GPU paint callback while both surfaces share the current
+    /// <c>GRContext</c>. The surface is drawn through the adapter's aspect-preserving presentation
+    /// transform, so a surface larger or smaller than the logical backbuffer is fitted and centred.
+    /// Linear scaling uses a scoped GPU texture snapshot — a texture view, not a readback — because
+    /// Skia's direct surface drawing does not expose sampling options.
+    /// </para>
+    /// <para>
+    /// While the engine is globally paused (<see cref="Engine.Pause"/>) no new scene frame is
+    /// rendered: the surface that was last rendered is drawn instead, so a presentation loop that
+    /// keeps running during a pause cannot advance the scene. Pass <paramref name="renderWhilePaused"/>
+    /// to override that, matching <see cref="GlRenderAndSnapshot"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="destinationCanvas">The active platform GPU canvas.</param>
+    /// <param name="renderWhilePaused">
+    /// <see langword="true"/> to render a new frame even while the engine is globally paused — used
+    /// by the adapter's paused-overlay path to produce the one post-<see cref="Engine.Paused"/>
+    /// frame that makes pause-screen scene changes visible. The default (<see langword="false"/>)
+    /// re-presents the current surface while paused.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when a GPU surface was drawn to <paramref name="destinationCanvas"/>;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destinationCanvas"/> is <see langword="null"/>.
+    /// </exception>
+    public bool GlRenderToCanvas(SKCanvas destinationCanvas, bool renderWhilePaused = false)
+    {
+        ArgumentNullException.ThrowIfNull(destinationCanvas);
+
+        if (!Backbuffer.IsGlThreadRendered)
+            return false;
+
+        // The global engine pause halts GL-thread rendering too: no new frame is produced, so the
+        // presenter re-draws the surface it last rendered. The single exception is the
+        // adapter-driven paused-overlay frame (renderWhilePaused).
+        if (Engine.Instance.IsPaused && !renderWhilePaused)
+            return GlDrawCurrentFrameToCanvas(destinationCanvas);
+
+        var tick = CodeBrix.Platform.GameEngine.Timers.HighResTimer.GetCurrentTick();
+
+        RenderToBackbuffer(tick);
+        Backbuffer.EndFrame();
+
+        try
+        {
+            var surface = Backbuffer.Canvas.Surface;
+
+            if (surface is null)
+                return false;
+
+            DrawCurrentSurface(destinationCanvas);
+            return true;
+        }
+        finally
+        {
+            Backbuffer.BeginFrame();
+        }
+    }
+
+    /// <summary>
+    /// Draws the existing GPU backbuffer surface directly to another GPU canvas without rendering
+    /// a new scene frame.
+    /// </summary>
+    /// <remarks>
+    /// Call only from the active GPU paint callback while both surfaces share the current
+    /// <c>GRContext</c>. This is intended for presentation loops that run more frequently than the
+    /// engine's configured foreground/render cadence. The surface is drawn through the adapter's
+    /// aspect-preserving presentation transform; linear scaling uses a scoped GPU texture snapshot
+    /// without transferring any pixels to the CPU.
+    /// </remarks>
+    /// <param name="destinationCanvas">The active platform GPU canvas.</param>
+    /// <returns>
+    /// <see langword="true"/> when the current GPU surface was drawn; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destinationCanvas"/> is <see langword="null"/>.
+    /// </exception>
+    public bool GlDrawCurrentFrameToCanvas(SKCanvas destinationCanvas)
+    {
+        ArgumentNullException.ThrowIfNull(destinationCanvas);
+
+        if (!Backbuffer.IsGlThreadRendered)
+            return false;
+
+        var surface = Backbuffer.Canvas.Surface;
+
+        if (surface is null)
+            return false;
+
+        DrawCurrentSurface(destinationCanvas);
+        return true;
+    }
+
+    /// <summary>
+    /// Draws the backbuffer's current surface onto <paramref name="canvas"/> through the adapter's
+    /// presentation transform, clearing the margins first.
+    /// </summary>
+    /// <param name="canvas">The destination GPU canvas.</param>
+    private void DrawCurrentSurface(SKCanvas canvas)
+    {
+        var presentation = RenderSurfaceAdapter?.Presentation ?? default;
+
+        canvas.Clear(Backbuffer.ClearColor);
+
+        if (presentation.Scale <= 0)
+            return;
+
+        canvas.Save();
+
+        try
+        {
+            canvas.Translate(presentation.DestinationRect.Left, presentation.DestinationRect.Top);
+            canvas.Scale(presentation.Scale);
+
+            bool needsLinearSampling =
+                Engine.Instance.Configuration.RenderScalingFilter == RenderScalingFilter.Linear &&
+                (presentation.Scale != 1f ||
+                 presentation.DestinationRect.Left != MathF.Floor(presentation.DestinationRect.Left) ||
+                 presentation.DestinationRect.Top != MathF.Floor(presentation.DestinationRect.Top));
+
+            if (needsLinearSampling)
+            {
+                // Skia's DrawSurface does not expose sampling and ignores paint filtering.
+                // A scoped snapshot is a GPU texture view, not a readback or an intermediate copy.
+                using var image = Backbuffer.Snapshot();
+                canvas.DrawImage(image, 0, 0, RenderSurfaceAdapterBase.PresentationSampling);
+            }
+            else
+            {
+                canvas.DrawSurface(Backbuffer.Canvas.Surface, 0, 0);
+            }
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
+
+    /// <summary>
+    /// Returns a snapshot of the current GPU backbuffer without rendering a new scene frame.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is intended for GPU presentation loops that run more frequently than the engine's
+    /// configured foreground/render cadence. It allows the platform surface to re-blit the most
+    /// recently rendered backbuffer while preserving
+    /// <see cref="Configuration.EngineConfiguration.TargetFPS"/>.
+    /// </para>
+    /// <para>
+    /// Call only from the active GPU paint callback while the backbuffer's <c>GRContext</c> is
+    /// current. The returned <see cref="SKImage"/> must be disposed before that callback returns.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// A GPU-backed snapshot of the current backbuffer, or <see langword="null"/> when the surface
+    /// does not use GL-thread rendering.
+    /// </returns>
+    public SKImage? GlSnapshotCurrentFrame()
+    {
+        if (!Backbuffer.IsGlThreadRendered)
+            return null;
+
+        return Backbuffer.Snapshot();
     }
 
     /// <summary>

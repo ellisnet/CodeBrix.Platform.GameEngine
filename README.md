@@ -52,6 +52,8 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 ## CodeBrix.Platform.GameEngine supports:
 
 * Tile maps, tilesheets, and layered scenes with camera/view systems — seven tile geometries (orthogonal, two isometric, two hex, oblique-right and oblique-left)
+* Wrapping (periodic) scene layers: an endlessly repeating world with no seam, across rendering, collision queries, camera follow and world-space drawings, on every tile geometry
+* A logical render resolution that is independent of the window: pick an exact size or a scale factor, and the finished image is fitted, centred and letterboxed — with linear or nearest-neighbour presentation filtering, and pointer input normalized into the same coordinate space
 * Sprites, composite sprites, sprite rotation, and frame-based animation cycles
 * Direct drawing primitives (images, rectangles with pattern and image fills, SVG, text, particles, image-instance layers)
 * Radial lights and darkness/fog overlays that lights carve holes in
@@ -59,7 +61,7 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 * Ready-made components: a self-disposing splash overlay and a sprite-tracking health bar
 * Physics: movement, easing, scripted motion, and collision detection — with named collision profiles, per-tile and per-animation-frame collision shapes and types, all authorable in a `.gts` tilesheet definition
 * Input: keyboard, mouse, gamepad, and touch (with tap, swipe and pinch gestures)
-* Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
+* Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, per-clip playback speed, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
 * MIDI music rendered live through a sampled instrument — SoundFont, SFZ and Decent Sampler instruments — with per-channel layering, a tempo control that does not change pitch, and MPE
 * A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems (including the stems of a Suno download, loaded straight from the zip or folder), and transitions quantised to the next beat or bar — exactly, through the tempo map, even where the music changes tempo
 * Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
@@ -71,9 +73,9 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 Nine complete games and demos live under `samples/`, each with Linux X11, Windows Win32-Skia and macOS heads and its own `.slnx`:
 
 * `Spot.Brix` — the recommended hosting shape end to end: splash overlay, a XAML New Game dialog driving the engine, option persistence and save-on-game-over
-* `Platformer.Brix` — a side-view platform game: tile colliders, collision profiles, `CollisionAdjust` insets, gravity and jumping, camera follow, and a pinned 960x576 letterboxed render resolution
+* `Platformer.Brix` — a side-view platform game: tile colliders, collision profiles, `CollisionAdjust` insets, gravity and jumping, camera follow, stompable enemies, and a pinned 960x576 letterboxed render resolution kept crisp with nearest-neighbour presentation filtering
 * `SpaceDuel.Brix` — a GPU-tier space duel: rotated sprites, a wrap-around world, parallax star layers, particle explosions, health bars and a splash
-* `Slider`, `CoordinateTest`, `ParticleTest`, `SoftRender`, `GpuRender`, `MusicDemo` — focused references for the engine-direct hosting path, coordinate systems, particles, the software-rendered (Mode B) path, GPU rendering and the music system
+* `Slider`, `CoordinateTest`, `ParticleTest`, `SoftRender`, `GpuRender`, `MusicDemo` — focused references for the engine-direct hosting path, coordinate systems and layer wrapping, particles, the software-rendered (Mode B) path, GPU rendering and the music system
 
 See `EXTRAS-README.txt` for what each one demonstrates.
 
