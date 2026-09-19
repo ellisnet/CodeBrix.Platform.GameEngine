@@ -105,20 +105,15 @@
     Those two edits are the whole hand-over; nothing else in this project depends on the switch.
   -->
   <PropertyGroup>
-    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">true</UseLocalEngineProject>
+    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">false</UseLocalEngineProject>
     <GeneratePackageOnBuild Condition="'$(UseLocalEngineProject)' == 'true'">false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' != 'true'">
-    <!-- MUST BE RAISED before this package is published: 1.0.254.277 is the version the SDL2
-         package pins and it does NOT contain the asset-provider contract this library compiles
-         against. Set it to the engine version that carries Assets.Providers and Assets.Models. -->
-    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.254.277" />
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.262.982" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' == 'true'">
-    <!-- The engine CORE only. The Host project is a platform-hosting layer this library never
-         touches. -->
     <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
   </ItemGroup>
 

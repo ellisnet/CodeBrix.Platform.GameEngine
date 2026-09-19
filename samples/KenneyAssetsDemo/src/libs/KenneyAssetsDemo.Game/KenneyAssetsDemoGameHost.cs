@@ -20,6 +20,7 @@ using CodeBrix.Platform.GameEngine.KenneyAssets;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
+using CodeBrix.Platform.GameEngine.Rendering.Text;
 using CodeBrix.Platform.GameEngine.Rendering.Views;
 using CodeBrix.Platform.GameEngine.Scenes;
 using SkiaSharp;
@@ -444,7 +445,7 @@ public sealed class KenneyAssetsDemoGameHost : CodeBrixGameHost
         SKTypeface typeface = Engine.Managers.AssetProviders.LoadFont(key);
 
         DemoLog.Write(
-            $"font loaded: {key} - family '{typeface.FamilyName}', {typeface.GlyphCount} glyph(s).");
+            $"font loaded: {key} - family '{FontManager.Instance.GetFamilyName(key)}', {typeface.GlyphCount} glyph(s).");
 
         return typeface;
     }

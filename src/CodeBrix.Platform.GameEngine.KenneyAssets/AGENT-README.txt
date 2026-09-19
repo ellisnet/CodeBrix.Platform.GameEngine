@@ -569,6 +569,17 @@ asset's key, and returned so it can be handed straight to a text element.
     SKTypeface font = providers.LoadFont("kenney:simulated-bundle/Fonts/Kenney Space");
     hud.SetFont(font, 28f);
 
+  * IDENTIFY A FONT BY ITS KEY OR BY FontManager.GetFamilyName(key) — NEVER BY
+    SKTypeface.FamilyName. FamilyName is whatever the platform's native font
+    back end reports, and it differs for the same file: Kenney Future Narrow
+    is "Kenney Future Narrow" on Linux but "Kenney Future" on Windows
+    (DirectWrite moves the width word "Narrow" out of the family name). The
+    font manager reads the family name from the font file itself, so it is the
+    same everywhere:
+        providers.LoadFont(key);
+        string family = FontManager.Instance.GetFamilyName(key);
+            // "Kenney Future Narrow" on Windows, Linux and macOS
+        FontManager.Instance.TryGetByFamilyName("Kenney Future Narrow", out var face);
   * KENNEY'S INPUT-PROMPT FONTS ARE ICON FONTS. A font such as Kenney Input
     Touch carries keyboard, mouse, gamepad and touch glyphs and NO BASIC LATIN
     at all: every letter maps to glyph 0. It loads fine and is the right way to
@@ -1152,6 +1163,9 @@ COMMON PITFALLS TO AVOID
   * NEVER DRAW TEXT WITH A KENNEY INPUT-PROMPT FONT. Those faces are icon fonts
     with no basic Latin at all, so the text comes out blank with no error
     anywhere. Use Kenney Space or Kenney Future Narrow for words.
+  * NEVER BRANCH ON SKTypeface.FamilyName. It is platform-specific (Windows
+    reports Kenney Future Narrow as "Kenney Future"); code that works on one
+    OS breaks on another. Use the key or FontManager.GetFamilyName(key).
   * A PACK SLUG COMES FROM THE LICENCE TITLE, NOT THE FILE NAME. The bundle
     kenney_puzzle-pack-1.zip registers as puzzle-pack, because its licence says
     "Puzzle Pack (1.1)". Read the slug from Packs or from a descriptor rather

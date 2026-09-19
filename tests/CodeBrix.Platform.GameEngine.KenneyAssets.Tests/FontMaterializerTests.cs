@@ -60,8 +60,12 @@ public class FontMaterializerTests : IDisposable
         //Act
         SKTypeface typeface = _materializer.Materialize(entry, key);
 
-        //Assert - registered under the key the engine looks a font up by, and carrying real font data
-        typeface.FamilyName.Should().Be(expectedFamilyName);
+        //Assert - registered under the key the engine looks a font up by, and carrying real font data.
+        //  The family name is the font manager's platform-neutral one: SKTypeface.FamilyName is what the
+        //  native font back end reports, and DirectWrite (Windows) reports "Kenney Future Narrow" as
+        //  "Kenney Future"
+        FontManager.Instance.GetFamilyName(key).Should().Be(expectedFamilyName);
+        FontManager.Instance.GetKeysByFamilyName(expectedFamilyName).Should().Contain(key);
         typeface.GlyphCount.Should().BeGreaterThan(0);
         FontManager.Instance.Contains(key).Should().BeTrue();
         FontManager.Instance.Get(key).Should().BeSameAs(typeface);

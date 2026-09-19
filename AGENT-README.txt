@@ -2684,6 +2684,22 @@ cache for TextBlock fonts:
     SKTypeface Get(string key);  bool TryGet(string key, out SKTypeface? typeface)
     SKTypeface GetOrDefault(string key);  bool Contains(key);  bool Remove(key)
     void Clear();  IReadOnlyCollection<string> Keys
+    string GetFamilyName(string key)
+    bool TryGetFamilyName(string key, out string? familyName)
+    IReadOnlyList<string> GetKeysByFamilyName(string familyName)
+    bool TryGetByFamilyName(string familyName, out SKTypeface? typeface)
+FONT NAMES ARE PLATFORM-SPECIFIC IN SKIA — USE GetFamilyName. SKTypeface.FamilyName
+is whatever the OS font back end reports, and it differs for the SAME font
+file: DirectWrite (Windows) moves style words out of the name, so a font whose
+file declares "Kenney Future Narrow" reads "Kenney Future" on Windows and
+"Kenney Future Narrow" on Linux. FontManager reads each registered font's family
+name from the file's own OpenType name table — the typographic family (name ID
+16) when present, else the family (name ID 1) — so GetFamilyName(key) is the
+same on Windows, Linux and macOS. Identify fonts by key or by that name; never
+branch on SKTypeface.FamilyName. Family-name matching ignores case; when
+several keys share a family (two weights of one typographic family, say),
+TryGetByFamilyName returns the first key in GetKeysByFamilyName order, so use
+keys to pick a specific face.
 
 SVG: SvgResourceManager.Instance (namespace ...Drawing) is the keyed store for
 vector art that DirectSvg draws:

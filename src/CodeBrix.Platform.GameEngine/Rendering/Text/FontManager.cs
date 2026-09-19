@@ -13,11 +13,18 @@ namespace CodeBrix.Platform.GameEngine.Rendering.Text; //was previously: Gondwan
 /// Centralized manager for loading, retrieving, and unloading shared fonts.
 /// Fonts are stored by string key and reused across the application.
 /// </summary>
+/// <remarks>
+/// Every registered font also carries a platform-neutral family name, read from the font file itself
+/// (<see cref="GetFamilyName(string)"/>). Use that name, or the key, to identify a font in game code -
+/// never <see cref="SKTypeface.FamilyName"/>, which is whatever the platform's native font back end
+/// reports and differs between Windows, Linux and macOS for the same font file.
+/// </remarks>
 public sealed class FontManager : IDisposable
 {
     private static readonly Lazy<FontManager> _instance = new(() => new FontManager());
 
     private readonly Dictionary<string, SKTypeface> _fonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _familyNames = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     /// <summary>
@@ -218,6 +225,92 @@ public sealed class FontManager : IDisposable
     }
 
     /// <summary>
+    /// Gets the platform-neutral family name of the font registered under a key.
+    /// </summary>
+    /// <param name="key">Logical name of the font.</param>
+    /// <returns>
+    /// The family name read from the font file: its typographic family name (OpenType name ID 16) when it
+    /// declares one, otherwise its family name (name ID 1). The same font file gives the same name on
+    /// every platform, unlike <see cref="SKTypeface.FamilyName"/>.
+    /// </returns>
+    /// <exception cref="ArgumentException">Thrown when the key is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when the key does not exist.</exception>
+    public string GetFamilyName(string key)
+    {
+        ThrowIfDisposed();
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Font key cannot be null or whitespace.", nameof(key));
+
+        if (!_familyNames.TryGetValue(key, out var familyName))
+            throw new KeyNotFoundException($"No font is registered under key '{key}'.");
+
+        return familyName;
+    }
+
+    /// <summary>
+    /// Tries to get the platform-neutral family name of the font registered under a key.
+    /// </summary>
+    /// <param name="key">Logical name of the font.</param>
+    /// <param name="familyName">The family name, as <see cref="GetFamilyName(string)"/> returns it.</param>
+    /// <returns>True if a font is registered under the key; otherwise false.</returns>
+    public bool TryGetFamilyName(string key, out string? familyName)
+    {
+        ThrowIfDisposed();
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            familyName = null;
+            return false;
+        }
+
+        return _familyNames.TryGetValue(key, out familyName);
+    }
+
+    /// <summary>
+    /// Gets the keys of every registered font with the given platform-neutral family name.
+    /// </summary>
+    /// <param name="familyName">The family name to match, ignoring case.</param>
+    /// <returns>The matching keys in ordinal, case-insensitive order; empty when none match.</returns>
+    public IReadOnlyList<string> GetKeysByFamilyName(string familyName)
+    {
+        ThrowIfDisposed();
+
+        if (string.IsNullOrWhiteSpace(familyName))
+            return [];
+
+        return _familyNames
+            .Where(pair => string.Equals(pair.Value, familyName, StringComparison.OrdinalIgnoreCase))
+            .Select(pair => pair.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Tries to get a registered font by its platform-neutral family name.
+    /// </summary>
+    /// <param name="familyName">The family name to match, ignoring case.</param>
+    /// <param name="typeface">
+    /// The matching font. When several keys hold fonts of the family - two weights of one typographic
+    /// family, say - it is the font under the first of <see cref="GetKeysByFamilyName(string)"/>; use
+    /// the keys to pick a specific face.
+    /// </param>
+    /// <returns>True if a registered font has the family name; otherwise false.</returns>
+    public bool TryGetByFamilyName(string familyName, out SKTypeface? typeface)
+    {
+        var keys = GetKeysByFamilyName(familyName);
+
+        if (keys.Count == 0)
+        {
+            typeface = null;
+            return false;
+        }
+
+        typeface = _fonts[keys[0]];
+        return true;
+    }
+
+    /// <summary>
     /// Returns true if a font exists for the given key.
     /// </summary>
     public bool Contains(string key)
@@ -246,6 +339,7 @@ public sealed class FontManager : IDisposable
             return false;
 
         _fonts.Remove(key);
+        _familyNames.Remove(key);
         existing.Dispose();
         return true;
     }
@@ -261,6 +355,7 @@ public sealed class FontManager : IDisposable
             font.Dispose();
 
         _fonts.Clear();
+        _familyNames.Clear();
     }
 
     /// <summary>
@@ -277,6 +372,8 @@ public sealed class FontManager : IDisposable
 
     private void ReplaceInternal(string key, SKTypeface newTypeface)
     {
+        _familyNames[key] = FontFamilyNameReader.GetFamilyName(newTypeface);
+
         if (_fonts.TryGetValue(key, out var existing))
         {
             existing.Dispose();

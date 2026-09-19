@@ -151,6 +151,101 @@ public class FontManagerTests : IDisposable
         nullStream.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void LoadFromBytes_records_the_family_name_from_the_font_data()
+    {
+        //Arrange
+        var fontBytes = TryGetFontBytes();
+
+        if (fontBytes is null)
+        {
+            Assert.Skip("No font data is available on this machine to exercise the happy path.");
+            return;
+        }
+
+        string key = TrackKey("font_family_recorded");
+
+        //Act
+        var typeface = _fontManager.LoadFromBytes(key, fontBytes);
+
+        //Assert - read from the font's own name table, so it matches a direct read of that table
+        string familyName = _fontManager.GetFamilyName(key);
+        familyName.Should().Be(FontFamilyNameReader.GetFamilyName(typeface));
+        familyName.Should().NotBeNullOrWhiteSpace();
+        _fontManager.TryGetFamilyName(key, out var tried).Should().BeTrue();
+        tried.Should().Be(familyName);
+    }
+
+    [Fact]
+    public void Family_name_lookups_find_the_font_by_its_family_name()
+    {
+        //Arrange
+        var fontBytes = TryGetFontBytes();
+
+        if (fontBytes is null)
+        {
+            Assert.Skip("No font data is available on this machine to exercise the happy path.");
+            return;
+        }
+
+        string firstKey = TrackKey("font_family_lookup_b");
+        string secondKey = TrackKey("font_family_lookup_a");
+        _fontManager.LoadFromBytes(firstKey, fontBytes);
+        _fontManager.LoadFromBytes(secondKey, fontBytes);
+        string familyName = _fontManager.GetFamilyName(firstKey);
+
+        //Act
+        var keys = _fontManager.GetKeysByFamilyName(familyName.ToUpperInvariant());
+        bool found = _fontManager.TryGetByFamilyName(familyName, out var typeface);
+
+        //Assert - both keys match, ignoring case, in key order, and the first key in order wins
+        keys.Should().ContainInOrder(secondKey, firstKey);
+        found.Should().BeTrue();
+        typeface.Should().BeSameAs(_fontManager.Get(keys[0]));
+    }
+
+    [Fact]
+    public void Remove_forgets_the_family_name()
+    {
+        //Arrange
+        var fontBytes = TryGetFontBytes();
+
+        if (fontBytes is null)
+        {
+            Assert.Skip("No font data is available on this machine to exercise the happy path.");
+            return;
+        }
+
+        string key = TrackKey("font_family_removed");
+        _fontManager.LoadFromBytes(key, fontBytes);
+        string loadedFamilyName = _fontManager.GetFamilyName(key);
+
+        //Act
+        _fontManager.Remove(key);
+
+        //Assert
+        _fontManager.TryGetFamilyName(key, out var familyName).Should().BeFalse();
+        familyName.Should().BeNull();
+        _fontManager.GetKeysByFamilyName(loadedFamilyName).Should().NotContain(key);
+        Action get = () => _fontManager.GetFamilyName(key);
+        get.Should().Throw<KeyNotFoundException>();
+    }
+
+    [Fact]
+    public void Family_name_lookups_reject_blank_input()
+    {
+        //Act
+        Action getBlank = () => _fontManager.GetFamilyName("  ");
+
+        //Assert
+        getBlank.Should().Throw<ArgumentException>();
+        _fontManager.TryGetFamilyName("  ", out _).Should().BeFalse();
+        _fontManager.GetKeysByFamilyName("  ").Should().BeEmpty();
+        _fontManager.TryGetByFamilyName("  ", out var typeface).Should().BeFalse();
+        typeface.Should().BeNull();
+        _fontManager.TryGetByFamilyName("No Such Family 7f3c", out _).Should().BeFalse();
+    }
+
     private string TrackKey(string key)
     {
         _keys.Add(key);
