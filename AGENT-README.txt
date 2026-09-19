@@ -37,6 +37,14 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   IGamepadAdapter seam and the GamepadEventPoller, and the Sdl2 package fills
   the seam.
 
+  CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever — Kenney asset
+  bundle support (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt. This engine
+  package defines the asset-PROVIDER seam (IGameAssetProvider, the capability
+  interfaces and Engine.Managers.AssetProviders — see ASSET PROVIDERS) and that
+  package fills it for Kenney's CC0 bundles: images, sprite atlases, audio,
+  fonts, SVG, Tiled maps and glTF models, read straight out of the .zip.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):
@@ -653,6 +661,15 @@ you need, in the order it fires:
 
 Each hook in that sequence fires EXACTLY ONCE per host, OnSceneBound included:
 build the game object graph there without a re-entry guard.
+
+PITFALL — Engine.Configuration belongs in OnEngineInitialized, NOT EARLIER.
+Engine.Initialize REPLACES Engine.Configuration with the configuration it loads,
+and every hook above InitializeEngine runs before it. A value assigned to
+Engine.Configuration in OnSceneBound, CreateSprites or any other earlier hook
+(RenderScalingFilter, TargetFPS, RenderScale, ...) is silently thrown away and
+the engine runs with the loaded/default value. OnEngineInitialized is the first
+hook that runs after the replacement; settings on the backbuffer, the views and
+the scene are unaffected and stay where they are.
 
 Members you get: Engine (=> Engine.Instance), Scene, RenderSurface (the
 GameSurfaceCanvas), OnRenderSurfaceResized(int width, int height),
@@ -2407,9 +2424,9 @@ in the engine.
   * A provider implements IGameAssetProvider (ProviderId, SupportedKinds,
     Describe(query?), TryDescribe(key, out descriptor), OpenRaw(descriptor))
     plus whichever capability interfaces it can serve: ITilesheetAssetSource,
-    IAudioAssetSource, IFontAssetSource, ITiledMapAssetSource. SupportedKinds
-    must list the kinds it can materialize — the registry gates on it as well as
-    on the capability interface.
+    IAudioAssetSource, IFontAssetSource, ITiledMapAssetSource,
+    IModelAssetSource. SupportedKinds must list the kinds it can materialize —
+    the registry gates on it as well as on the capability interface.
   * KEYS ARE NAMESPACED: "<providerId>:<provider-relative identifier>", matched
     case-insensitively; a ProviderId may not contain a colon. The key is also
     the registry key of the materialized object.
@@ -2418,13 +2435,57 @@ in the engine.
     Key, Kind, Name, Pack, Path, SizeBytes and a free-form Properties map;
     GameAssetQuery filters a Describe() call.
   * The registry dispatches LoadTilesheet(key, TilesheetMaterializeOptions?),
-    LoadAudio(key, volume, pan), LoadFont(key) and ImportTiledMap(key, scene,
-    TiledMapImportOptions?) to the owning provider, and returns the engine's own
-    types (Tilesheet, AudioResource, SKTypeface, TiledMapImport with
-    TiledObjectGroup / TiledObject / TiledTileInfo). An asset whose kind the
+    LoadAudio(key, volume, pan), LoadFont(key), ImportTiledMap(key, scene,
+    TiledMapImportOptions?), LoadModel(key, ModelMaterializeOptions?) and
+    LoadModelAnimation(key, animationName, framesPerSecond) to the owning
+    provider, and returns the engine's own types (Tilesheet, AudioResource,
+    SKTypeface, TiledMapImport with TiledObjectGroup / TiledObject /
+    TiledTileInfo, GameModel, GameModelAnimationClip). An asset whose kind the
     engine cannot represent, or whose provider does not implement the matching
     capability, raises UnsupportedGameAssetException ("This type of asset is not
     supported at this time."); a key no provider owns raises KeyNotFoundException.
+  * TILE MAPS: TiledMapImport carries the Scene, the Layers in the map's own
+    order, the Tilesheets (one per tile set the map REFERENCES, so the list does
+    not vary with a layer filter), MapSizePx, TileSize, Warnings, and the
+    ObjectGroups — object layers arrive as DATA and nothing is spawned from
+    them. A TiledObjectGroup carries Name, Objects, Offset (pixels, NOT folded
+    into an object's Bounds), Visible, Opacity, DocumentIndex (its position
+    among ALL the map's layers) and Properties; a TiledObject carries Id, Name,
+    Type, Bounds (the UNROTATED rectangle as the map wrote it), Rotation
+    (degrees clockwise), Visible, Properties, and Tile — a TiledTileInfo naming
+    the tile set, the global and local tile id, the tile and tile-set properties
+    and the flip flags — for a TILE OBJECT, null for a shape, point or text one.
+  * 3D MODELS, TWO ROUTES. The engine draws no 3D, so a provider offers a model
+    either way, or both:
+      - MODEL DATA through IModelAssetSource / LoadModel: the format-neutral
+        GameModel family in CodeBrix.Platform.GameEngine.Assets.Models
+        (GameModel, GameModelMesh, GameModelMaterial, GameModelAlphaMode,
+        GameModelAnimationClip, GameModelAnimationFrame, GameModelFrameMesh),
+        built on System.Numerics alone — flat float arrays, uint indices, texture
+        bytes as RGBA8888, bounds and a pivot, AnimationNames always filled and
+        Animations holding whatever ModelMaterializeOptions asked to bake
+        (nothing, by default). It is PURE DATA: no disposal, no GPU handles, and
+        the registry registers none of it — LoadModel hands the model to the
+        caller. THREE GUARANTEES a renderer may rely on: a clip frame's meshes
+        align one-for-one with the model's meshes and carry the same vertex
+        counts (GameModelAnimationClip.IsCompatibleWith(model) checks it); the
+        payloads are GPU-upload friendly; and a clip carries Duration and
+        FrameRate, so the CALLER owns timing (GetFrameIndex(seconds, loop)).
+        LoadModelAnimation bakes one more clip later, aligned with the same
+        model, and validates the returned clip's internal consistency.
+      - PRE-RENDERED SPRITES through LoadTilesheet, whose kind gate admits
+        Model3D: TilesheetMaterializeOptions.ModelRender (a ModelRenderOptions
+        record: FrameSize, Directions, StartYawDegrees, PitchDegrees, Projection
+        with FieldOfViewDegrees, AnimationNames, IncludeRestPose,
+        AnimationFramesPerSecond, Supersample, LightDirection, AmbientLight,
+        FitPadding) asks a provider to render the views once, at load time. THE
+        LAYOUT CONTRACT, documented in full on that record: one uniform-grid
+        region per rendered animation NAMED AFTER THE ANIMATION, plus a region
+        named ModelRenderOptions.RestPoseRegionName ("rest"); COLUMNS are
+        frames, ROWS are camera directions, row d at yaw StartYawDegrees +
+        d * 360 / Directions; every cell is FrameSize; one common fit scale is
+        shared by the whole sheet. So a frame is sheet["walk", frame,
+        direction] and ordinary FrameSequence / Cycle animation drives it.
   * LIFETIME: Register is idempotent by ProviderId — registering a different
     instance under an identifier that is already taken REPLACES the old provider
     and disposes it. Unregister(id, dispose = true) and Clear() dispose too, and
@@ -2438,6 +2499,15 @@ in the engine.
     with SvgResource.Load(Stream) now public, and Tilesheet.GetRegion(name)
     backed by a case-insensitive name index (constant time on a sheet carrying
     hundreds of single-tile regions; the public API is unchanged).
+  * THE FIRST PROVIDER is the separate
+    CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever package: Kenney
+    asset bundles (.zip files and extracted folders) read where they lie, with
+    images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models all
+    materialized through the calls above. One call registers it —
+    engine.UseKenneyAssets(paths) — and
+    src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt documents its
+    key scheme, its per-kind rules and its limits. Read it as the worked example
+    of this contract before writing a provider of your own.
 
 CONFIGURATION: EngineConfiguration / EngineConfigurationFile
 --------------------------------------------------------------------------------
@@ -3061,6 +3131,11 @@ WHAT THIS PACKAGE DOES NOT DO
     CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever package.
   * No 3D rendering. GpuRendering rasterises the same 2D/2.5D scene on the
     GPU and reads it back; it is not a 3D pipeline.
+    A 3D MODEL ASSET STILL HAS TWO ROUTES, both through an asset provider
+    (see ASSET PROVIDERS): LoadModel / LoadModelAnimation hand the model to the
+    game as data for a renderer of its own, and LoadTilesheet with
+    TilesheetMaterializeOptions.ModelRender asks the provider to pre-render the
+    model into ordinary sprite frames the 2D engine draws.
   * Mode B (presenter mode) is CPU-only — no GPU presentation path.
   * The engine singleton is not restartable after Engine.Dispose(): one game
     host per process lifetime. Stop() (not Dispose) is the restartable halt.
@@ -3088,7 +3163,7 @@ WORKING EXAMPLES ON GITHUB
 ==========================
 Repository root: https://github.com/ellisnet/CodeBrix.Platform.GameEngine
 
-SAMPLES — nine complete games/demos, each with LinuxX11, Win32Skia and MacOS
+SAMPLES — ten complete games/demos, each with LinuxX11, Win32Skia and MacOS
 heads plus a shared .UI project and a .Game library; each is the reference
 consumer for the subsystems it exercises. None of them is in the repository
 .slnx: each sample carries its OWN .slnx and is built and run on its own.
@@ -3172,6 +3247,17 @@ consumer for the subsystems it exercises. None of them is in the repository
       MusicAssetFactory.cs: layers, two tracks, a stinger, an SFZ and a Decent
       Sampler instrument, two MIDI files and a whole stems export), so the
       sample runs anywhere.
+  https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/samples/KenneyAssetsDemo
+      The ASSET PROVIDER reference, on the separate
+      CodeBrix.Platform.GameEngine.KenneyAssets package: real CC0 Kenney bundles
+      shipped beside the executable and registered with one UseKenneyAssets
+      call, a Tiled map imported into scene layers, a pre-rendered 3D character
+      (a glTF model turned into eight directions of sprite frames by the
+      provider) driven by the keyboard and animated through Cycle /
+      FrameSequence, atlas sprites as collectibles, a pick-up sound, HUD text in
+      a Kenney text font and one rasterised SVG icon — every asset it shows read
+      straight out of a bundle. It logs one line per loading step, which is the
+      shape a game's own asset loading wants.
 
 TESTS — headless unit tests that double as usage references, in an engine core
 suite, a gamepad suite and a host suite:
@@ -3520,7 +3606,13 @@ SAVE / LOAD / ASSETS / CONFIG
         Unregister(id, dispose = true); Providers; TryFind(key, out provider);
         TryDescribe(key, out descriptor); Describe(GameAssetQuery? query = null);
         LoadTilesheet(key, TilesheetMaterializeOptions?); LoadAudio(key, volume, pan);
-        LoadFont(key); ImportTiledMap(key, Scene, TiledMapImportOptions?); Clear()
+        LoadFont(key); ImportTiledMap(key, Scene, TiledMapImportOptions?);
+        LoadModel(key, ModelMaterializeOptions?);
+        LoadModelAnimation(key, animationName, framesPerSecond = 24); Clear()
+        (capabilities: ITilesheetAssetSource, IAudioAssetSource, IFontAssetSource,
+         ITiledMapAssetSource, IModelAssetSource; model data = the GameModel family
+         in Assets.Models; model sprites = TilesheetMaterializeOptions.ModelRender,
+         region per animation, sheet["walk", frame, direction])
     EngineConfiguration: TargetFPS, RenderScale, RenderScalingFilter, VSync, MsaaSampleCount,
         TimeBetween*Events, TimeBetweenGamepadStateUpdates, StartInitializationWaitTimeout,
         TimerDrivenSimulationRate, MaxTimerDrivenSimulationSteps, LoggingMode,

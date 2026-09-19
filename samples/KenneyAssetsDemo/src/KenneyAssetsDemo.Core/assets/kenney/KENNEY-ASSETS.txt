@@ -1,0 +1,26 @@
+KENNEY ASSET BUNDLES - WHAT THEY ARE AND WHERE THEY CAME FROM
+=============================================================
+
+The two .zip files beside this note were created and distributed by Kenney (www.kenney.nl) and are
+released under the Creative Commons Zero (CC0 1.0 Universal) public domain dedication:
+
+    http://creativecommons.org/publicdomain/zero/1.0/
+
+CC0 content may be used in personal, educational and commercial projects and needs no attribution.
+Kenney is credited here anyway, because crediting the source of an asset is the house style of this
+repository. Each bundle also carries Kenney's own License.txt inside it, and the demo reads that
+file: the licence title is what names the pack and what the pack slug in every asset key is made
+from.
+
+The bundles are shipped UNOPENED, exactly as they are downloaded, because reading a downloaded
+bundle as it stands is the point of CodeBrix.Platform.GameEngine.KenneyAssets.
+
+simulated_bundle.zip
+    A small mixed bundle assembled from Kenney content: a Tiled map with four layers and two tile
+    sets of different tile sizes, three animated glTF characters with external textures, three
+    fonts, two SVG documents, loose tile images and a handful of sounds. Pack slug:
+    simulated-bundle.
+
+kenney_puzzle-pack-1.zip
+    A 2D art pack: two sprite sheets with their TextureAtlas documents, the same art as loose
+    images in two sizes, and a vector document. Pack slug: puzzle-pack.

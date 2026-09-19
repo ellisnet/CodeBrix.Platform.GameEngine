@@ -10,11 +10,18 @@ repository that adds game controller (gamepad) support. It incorporates managed
 SDL2 binding source from Veldrid (notice 2) and redistributes the SDL2 native
 libraries themselves (notice 3).
 
+CodeBrix.Platform.GameEngine.KenneyAssets is another separate, optional package
+in this repository; it adds support for reading Kenney asset bundles. It
+INCORPORATES NO THIRD-PARTY SOURCE and redistributes no asset: it is a reader,
+and the bundles it reads are supplied by the game using it. Notice 4 records the
+Kenney content that is committed to this REPOSITORY as test and sample material.
+
 NuGet package dependencies (SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression,
-CodeBrix.Audio, CodeBrix.Json.Extensions, System.Text.Json, and the
-Microsoft.Extensions.* packages) are NOT listed here: they are referenced as
-packages and ship with their own LICENSE and third-party notices; their source
-is not incorporated into these assemblies.
+CodeBrix.Audio, CodeBrix.Json.Extensions, CodeBrix.Graphics3D.Gltf2 — the glTF
+reader the KenneyAssets package depends on, and its only direct third-party
+dependency — System.Text.Json, and the Microsoft.Extensions.* packages) are NOT
+listed here: they are referenced as packages and ship with their own LICENSE and
+third-party notices; their source is not incorporated into these assemblies.
 
 ================================================================================
 
@@ -217,6 +224,36 @@ is not incorporated into these assemblies.
       misrepresented as being the original software.
    3. This notice may not be removed or altered from any source distribution.
    -------------------------------------------------------------------------
+
+================================================================================
+
+4. Kenney game assets (test fixtures and sample content)
+   -------------------------------------------------------------------------
+   Creator:    Kenney
+   Source:     https://kenney.nl
+   License:    CC0 1.0 Universal (Creative Commons Zero, public domain
+               dedication) — http://creativecommons.org/publicdomain/zero/1.0/
+
+   Applies to: this REPOSITORY only, NOT to any NuGet package.
+
+   The asset bundles committed under
+   tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/fixtures/ and the
+   bundles shipped with samples/KenneyAssetsDemo were created and distributed by
+   Kenney and are released under CC0. Each bundle also carries Kenney's own
+   License.txt inside it, which the tests and the sample read as ordinary
+   content.
+
+   CC0 content may be used in personal, educational and commercial projects and
+   REQUIRES NO ATTRIBUTION. Kenney is credited here anyway, because crediting
+   the source of an asset is the house style of this repository. The fixtures'
+   own FIXTURES-LICENSE.txt repeats the credit beside the files and records what
+   each bundle exercises.
+
+   The fixtures exist so that the tests can read REAL bundles rather than
+   synthetic approximations of them, and the sample exists to show the package
+   working on real content. Neither set is packed into a NuGet package: the
+   CodeBrix.Platform.GameEngine.KenneyAssets package carries no assets at all,
+   and a game supplies the bundles it wants to read.
 
 ================================================================================
 

@@ -6,9 +6,11 @@ namespace CodeBrix.Platform.GameEngine.Assets.Providers; //CodeBrix (not from Go
 /// The kind decides which capability interface can materialize the asset: <see cref="Image"/>,
 /// <see cref="SpriteAtlas"/> and <see cref="Vector"/> are handled by
 /// <see cref="ITilesheetAssetSource"/>, <see cref="Audio"/> by <see cref="IAudioAssetSource"/>,
-/// <see cref="Font"/> by <see cref="IFontAssetSource"/> and <see cref="TiledMap"/> by
-/// <see cref="ITiledMapAssetSource"/>. The remaining values describe content a provider can list
-/// but not turn into an engine object; asking for them throws
+/// <see cref="Font"/> by <see cref="IFontAssetSource"/>, <see cref="TiledMap"/> by
+/// <see cref="ITiledMapAssetSource"/>, and <see cref="Model3D"/> by
+/// <see cref="IModelAssetSource"/> as model data or, where the provider offers it, by
+/// <see cref="ITilesheetAssetSource"/> as pre-rendered sprites. The remaining values describe
+/// content a provider can list but not turn into an engine object; asking for them throws
 /// <see cref="UnsupportedGameAssetException"/>.
 /// </remarks>
 public enum GameAssetKind
@@ -49,8 +51,11 @@ public enum GameAssetKind
     TiledMap = 6,
 
     /// <summary>
-    /// A three-dimensional model or its material. Listed for discovery only; the engine cannot
-    /// materialize it.
+    /// A three-dimensional model or its material. It is materialized as engine-native model data
+    /// by <see cref="IModelAssetSource"/> and, where the provider supports it, as pre-rendered
+    /// sprite frames by <see cref="ITilesheetAssetSource"/>. The engine itself does not draw 3D:
+    /// the model data is for a game's own renderer, and the sprite frames are what the engine's
+    /// two-dimensional drawing uses.
     /// </summary>
     Model3D = 7,
 

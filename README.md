@@ -2,13 +2,14 @@
 
 A fully managed, cross-platform 2D and 2.5D game engine for .NET. CodeBrix.Platform.GameEngine provides tile maps, sprites, layered scenes, camera/view systems, animation, physics and collision, input handling, audio, and SkiaSharp-based rendering — designed for tile-based worlds and a practical engine architecture.
 
-This repository ships **two** core libraries, plus one optional add-on:
+This repository ships **two** core libraries, plus two optional add-ons:
 
 * **`CodeBrix.Platform.GameEngine`** — the platform-agnostic engine core. It has no UI-framework dependency and is headless-testable; its rendering seam is SkiaSharp `SKImage` plus a render-surface-adapter abstraction.
 * **`CodeBrix.Platform.GameEngine.Host`** — the host layer that runs the engine on **CodeBrix.Platform**, across all six heads (Windows Win32-Skia, Windows WPF-Skia, Linux X11, Linux Wayland, Linux Frame Buffer, macOS). It provides the CPU and GPU render-surface adapters, pointer/keyboard input adapters, and a UI dispatcher.
 * **`CodeBrix.Platform.GameEngine.Sdl2`** — *optional* game controller (gamepad) support; see below.
+* **`CodeBrix.Platform.GameEngine.KenneyAssets`** — *optional* Kenney asset bundle support; see below.
 
-CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and two NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, and the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads.
+CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and three NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads, and the optional `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` for Kenney asset bundles.
 
 CodeBrix.Platform.GameEngine supports applications and assemblies that target Microsoft .NET version 10.0 and later.
 Microsoft .NET version 10.0 is a Long-Term Supported (LTS) version of .NET, and was released on Nov 11, 2025; and will be actively supported by Microsoft until Nov 14, 2028.
@@ -24,6 +25,10 @@ dotnet add package CodeBrix.Platform.GameEngine.MitLicenseForever
 dotnet add package CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
 ```
 
+```
+dotnet add package CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever
+```
+
 Note that the NuGet package IDs and the namespaces are different - there is no package named plain `CodeBrix.Platform.GameEngine`:
 
 * NuGet package ID: `CodeBrix.Platform.GameEngine.MitLicenseForever`
@@ -31,8 +36,10 @@ Note that the NuGet package IDs and the namespaces are different - there is no p
   * One reference gives you both assemblies; there is no separate `.Host` package.
 * NuGet package ID: `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever`
   * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.Sdl2` - i.e. `using CodeBrix.Platform.GameEngine.Sdl2;`
+* NuGet package ID: `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever`
+  * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.KenneyAssets` - i.e. `using CodeBrix.Platform.GameEngine.KenneyAssets;`
 
-**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one.
+**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one. Add `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` only when your game loads Kenney asset bundles, for the same reason.
 
 XML documentation (IntelliSense) ships alongside the assemblies.
 
@@ -70,11 +77,12 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 
 ## Samples
 
-Nine complete games and demos live under `samples/`, each with Linux X11, Windows Win32-Skia and macOS heads and its own `.slnx`:
+Ten complete games and demos live under `samples/`, each with Linux X11, Windows Win32-Skia and macOS heads and its own `.slnx`:
 
 * `Spot.Brix` — the recommended hosting shape end to end: splash overlay, a XAML New Game dialog driving the engine, option persistence and save-on-game-over
 * `Platformer.Brix` — a side-view platform game: tile colliders, collision profiles, `CollisionAdjust` insets, gravity and jumping, camera follow, stompable enemies, and a pinned 960x576 letterboxed render resolution kept crisp with nearest-neighbour presentation filtering
 * `SpaceDuel.Brix` — a GPU-tier space duel: rotated sprites, a wrap-around world, parallax star layers, particle explosions, health bars and a splash
+* `KenneyAssetsDemo` — the Kenney asset reference: bundles registered with one call, a Tiled map imported into scene layers, a pre-rendered 3D character walking in eight directions, atlas sprites, a sound, HUD text in a Kenney font and a rasterised SVG icon
 * `Slider`, `CoordinateTest`, `ParticleTest`, `SoftRender`, `GpuRender`, `MusicDemo` — focused references for the engine-direct hosting path, coordinate systems and layer wrapping, particles, the software-rendered (Mode B) path, GPU rendering and the music system
 
 See `EXTRAS-README.txt` for what each one demonstrates.
@@ -119,11 +127,33 @@ It works on all six heads — including Frame Buffer — because SDL2 is initial
 
 The package carries the SDL2 native binaries for Windows and macOS. On Linux it uses the system SDL2, which is its one prerequisite: `sudo apt install libsdl2-2.0-0`.
 
+## Kenney asset bundles (optional)
+
+Support for the asset bundles published by [Kenney](https://kenney.nl) ships as a **separate** NuGet package, so that games which do not load them inherit neither the bundle reader nor its glTF dependency:
+
+```
+dotnet add package CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever
+```
+
+One call registers the bundles a game ships - as downloaded `.zip` files, as folders extracted from them, or as a folder holding many of those - and every asset in them then has a key the engine resolves:
+
+```csharp
+using CodeBrix.Platform.GameEngine.KenneyAssets;
+
+Engine.Instance.UseKenneyAssets("assets/kenney_puzzle-pack.zip");
+
+var sheet = Engine.Instance.Managers.AssetProviders.LoadTilesheet(
+    "kenney:puzzle-pack/Spritesheet/spritesheet_default");
+var ball = sheet["ballBlue", 0, 0];
+```
+
+Nothing is unpacked, renamed or repacked: the bundles are read where they lie. Images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models all become ordinary engine objects - tilesheets, audio resources, typefaces, scene layers, and models either as data or as pre-rendered sprite frames a 2D game can draw. It is the first implementation of the engine's asset-provider contract, so it is also the worked example for a provider of your own. Kenney's content is CC0 and is not part of the package.
+
 ## Documentation
 
 The NuGet package includes `AGENT-README.txt`, a complete API reference and usage guide written for AI coding agents - point your agent at that file when it is writing code against this library.
 
-The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads.
+The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads. The Kenney asset package carries its own `AGENT-README.txt` too, covering asset keys, the per-kind rules and the limits of its Tiled and model support.
 
 Additional sample code and usage examples are available in the `CodeBrix.Platform.GameEngine.Tests` project:
 https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests

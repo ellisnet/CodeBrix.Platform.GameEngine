@@ -1,0 +1,140 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>CodeBrix.Platform.GameEngine.KenneyAssets</AssemblyName>
+    <RootNamespace>CodeBrix.Platform.GameEngine.KenneyAssets</RootNamespace>
+    <!-- NRT enabled to match every other project in this repo (the engine core, the host and the
+         SDL2 package). See AGENT-README.txt. -->
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Package / assembly version: date-stamped and auto-incrementing.
+
+    Format:  1.<x>.<y>.<z>   (every field is derived from UTC "now")
+
+      1  (major)     Always 1 for this library.
+      x  (minor)     Whole years since $(_VersionBaseYear).
+                     With base 2026: 2026=0, 2027=1, 2028=2, ...
+      y  (build)     Day of year, 1-based inclusive, UTC.
+                     Jan 1 = 1, Feb 1 = 32, Dec 31 = 365 (366 in a leap year).
+      z  (revision)  Minute of day, UTC, range 0 to 1439.
+                     00:00 = 0, 23:59 = 1439.
+
+    The version is always strictly increasing over time:
+      * within a day, z grows;
+      * at a day boundary, y increments and outranks z resetting to 0;
+      * at a (UTC) year boundary, x increments and outranks y and z resetting.
+
+    Notes / caveats:
+      * All fields read from System.DateTime.UtcNow, so a local dev build and a
+        UTC CI build agree on the value. Math.Floor on the minutes keeps z in
+        0..1439 (plain rounding could land on 1440 late in the day).
+      * Because the value depends on the clock, every build produces a NEW
+        version. With GeneratePackageOnBuild=true that means a fresh .nupkg on
+        each build, and two builds in the SAME UTC minute produce the SAME
+        version (so do not publish two packages from within one minute).
+      * This is date-stamp versioning, not SemVer: minor encodes the year and
+        major is pinned to 1, so major/minor do not signal API compatibility.
+      * To re-baseline the minor number, change _VersionBaseYear below.
+  -->
+  <PropertyGroup>
+    <_VersionBaseYear>2026</_VersionBaseYear>
+    <_VersionYears>$([MSBuild]::Subtract($([System.DateTime]::UtcNow.Year), $(_VersionBaseYear)))</_VersionYears>
+    <_VersionDayOfYear>$([System.DateTime]::UtcNow.DayOfYear)</_VersionDayOfYear>
+    <_VersionMinuteOfDay>$([System.Convert]::ToInt32($([System.Math]::Floor($([System.DateTime]::UtcNow.TimeOfDay.TotalMinutes)))))</_VersionMinuteOfDay>
+    <BuildVersion>1.$(_VersionYears).$(_VersionDayOfYear).$(_VersionMinuteOfDay)</BuildVersion>
+    <Version>$(BuildVersion)</Version>
+    <AssemblyVersion>$(BuildVersion)</AssemblyVersion>
+    <FileVersion>$(BuildVersion)</FileVersion>
+  </PropertyGroup>
+
+  <!--
+    This is a SEPARATE published package from CodeBrix.Platform.GameEngine.MitLicenseForever.
+    Keeping it separate means a game that never touches a Kenney asset bundle does not inherit the
+    glTF reader or the bundle-reading code by adding the engine.
+  -->
+  <PropertyGroup>
+    <PackageId>CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever</PackageId>
+    <Product>CodeBrix.Platform.GameEngine.KenneyAssets</Product>
+    <Title>CodeBrix.Platform.GameEngine.KenneyAssets</Title>
+    <Authors>Jeremy Ellis</Authors>
+    <Description>Kenney asset bundle support for CodeBrix.Platform.GameEngine: catalogs the assets in Kenney .zip bundles and extracted bundle folders, and materializes images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models into engine objects.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>icon-codebrix-128.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2026 Jeremy Ellis and contributors</Copyright>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <IsPackable>true</IsPackable>
+    <PackageTags>game-engine;gamedev;assets;kenney;sprites;tiled;gltf;CodeBrix</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\icon-codebrix-128.png" Pack="true" PackagePath="" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Include="AGENT-README.txt" Pack="true" PackagePath="" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <!--
+    The engine core is normally consumed as a PUBLISHED package rather than a ProjectReference. The
+    engine project in this repo is IsPackable=false - its dll is embedded into the Host project's
+    package - so a ProjectReference would compile locally but produce a package with an unsatisfied
+    runtime dependency: NuGet emits no dependency for a non-packable ProjectReference, and the
+    engine dll would not be inside this package either.
+
+    Take care that no local folder is configured as a NuGet source holding a freshly-built engine
+    package. Every engine build restamps its version, so a local source could shadow nuget.org and
+    this package would be built against an engine version that was never published.
+
+    WHY UseLocalEngineProject DEFAULTS TO TRUE HERE (it defaults to false in the SDL2 package):
+    the newest PUBLISHED engine package predates the asset-provider contract entirely - it has no
+    Assets.Providers namespace at all - so a PackageReference build of this project cannot compile.
+    The contract and this first implementation of it are deliberately being developed together
+    against the working tree, so that a real provider exercises the contract before it is frozen.
+    Local mode can never be packed (the guard below) and forces GeneratePackageOnBuild off.
+
+    HAND-OVER, once the engine carrying Assets.Providers and Assets.Models is published: flip the
+    default below to false and set the PackageReference version to the published engine version.
+    Those two edits are the whole hand-over; nothing else in this project depends on the switch.
+  -->
+  <PropertyGroup>
+    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">true</UseLocalEngineProject>
+    <GeneratePackageOnBuild Condition="'$(UseLocalEngineProject)' == 'true'">false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseLocalEngineProject)' != 'true'">
+    <!-- MUST BE RAISED before this package is published: 1.0.254.277 is the version the SDL2
+         package pins and it does NOT contain the asset-provider contract this library compiles
+         against. Set it to the engine version that carries Assets.Providers and Assets.Models. -->
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.254.277" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalEngineProject)' == 'true'">
+    <!-- The engine CORE only. The Host project is a platform-hosting layer this library never
+         touches. -->
+    <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+  </ItemGroup>
+
+  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="Pack"
+          Condition="'$(UseLocalEngineProject)' == 'true'">
+    <Error Text="UseLocalEngineProject=true is for local development only. The resulting package would have no engine dependency and no engine dll. Publish the engine first, then flip the UseLocalEngineProject default in this project to false and pin the published engine version." />
+  </Target>
+
+  <!--
+    The only direct third-party dependency. glTF reading is transformation logic and belongs in a
+    provider, not in the engine core, so the reader package is referenced here and nowhere else.
+    Everything else this library needs - SkiaSharp, CodeBrix.Compression (zip reading),
+    CodeBrix.SkiaSvg and CodeBrix.Audio - arrives transitively through the engine.
+  -->
+  <ItemGroup>
+    <PackageReference Include="CodeBrix.Graphics3D.Gltf2.MitLicenseForever" Version="1.0.261.293" />
+  </ItemGroup>
+
+</Project>

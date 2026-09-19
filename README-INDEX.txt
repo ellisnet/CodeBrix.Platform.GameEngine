@@ -18,6 +18,12 @@ AGENT-README FILES (consumer documentation, one per NuGet package)
       CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever — optional SDL2 game
       controller (gamepad) support for that engine. License: MIT AND Zlib.
 
+  src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt
+      CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever — optional
+      Kenney asset bundle support for that engine: it catalogs what a bundle
+      holds and materializes images, sprite atlases, audio, fonts, SVG, Tiled
+      maps and glTF models into engine objects. License: MIT.
+
 MAINTAINER AND EXTRAS
 ---------------------
   MAINTAINER-README.txt
@@ -28,6 +34,9 @@ MAINTAINER AND EXTRAS
 
 NESTED READMEs (samples and tools)
 ----------------------------------
+  samples/KenneyAssetsDemo/README.md
+      The Kenney asset sample: what it demonstrates, its controls, and where its
+      asset bundles came from.
   samples/Platformer.Brix/README.md
       The side-view platform sample: its level rules and how it is built.
   samples/SpaceDuel.Brix/README.md

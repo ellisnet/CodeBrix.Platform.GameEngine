@@ -13,8 +13,9 @@ namespace CodeBrix.Platform.GameEngine.Assets.Providers; //CodeBrix (not from Go
 /// This is the minimal contract: a provider catalogs what it holds and can hand out raw bytes.
 /// Turning an asset into an engine object is opt-in through the capability interfaces
 /// <see cref="ITilesheetAssetSource"/>, <see cref="IAudioAssetSource"/>,
-/// <see cref="IFontAssetSource"/> and <see cref="ITiledMapAssetSource"/>; a provider implements
-/// only those it supports and reports the matching kinds in <see cref="SupportedKinds"/>.
+/// <see cref="IFontAssetSource"/>, <see cref="ITiledMapAssetSource"/> and
+/// <see cref="IModelAssetSource"/>; a provider implements only those it supports and reports the
+/// matching kinds in <see cref="SupportedKinds"/>.
 /// </para>
 /// <para>
 /// Providers are registered with <see cref="GameAssetProviderRegistry"/> (reachable as
@@ -38,7 +39,7 @@ public interface IGameAssetProvider : IDisposable
 
     /// <summary>
     /// Gets the asset kinds this provider can materialize. Kinds it merely lists (for example
-    /// <see cref="GameAssetKind.Model3D"/>) are not included.
+    /// <see cref="GameAssetKind.Document"/>) are not included.
     /// </summary>
     IReadOnlySet<GameAssetKind> SupportedKinds { get; }
 

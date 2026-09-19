@@ -82,6 +82,9 @@ public sealed class SvgResource : IDisposable
     /// <remarks>
     /// The cache is keyed by output size. Repeated requests for the same size return the same bitmap instance.
     /// Cached bitmaps remain valid until this <see cref="SvgResource"/> is disposed.
+    /// The document is rasterized from its own top-left corner, so one whose content an exporter left
+    /// away from (0, 0) fills the requested size rather than coming out clipped, or empty when that
+    /// content sits at negative coordinates.
     /// </remarks>
     public SKBitmap Rasterize(int width, int height)
     {
@@ -108,7 +111,14 @@ public sealed class SvgResource : IDisposable
                 src = new SKRect(0, 0, Math.Max(1f, IntrinsicSize.Width), Math.Max(1f, IntrinsicSize.Height));
             }
 
+            // An SVG document is not always anchored at the origin: content an exporter left away from
+            // (0, 0) gives the picture a cull rectangle that starts somewhere else. Scaling first and
+            // then translating in that scaled space puts the cull rectangle's top-left corner on the
+            // bitmap's top-left corner; without the translate such a document rasterizes clipped, or
+            // empty when its content sits at negative coordinates. An origin-anchored document
+            // translates by nothing and is unaffected.
             canvas.Scale(width / src.Width, height / src.Height);
+            canvas.Translate(-src.Left, -src.Top);
             canvas.DrawPicture(_picture);
             canvas.Flush();
 

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
+using CodeBrix.Platform.GameEngine.Assets.Models;
 using CodeBrix.Platform.GameEngine.Audio;
 using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using CodeBrix.Platform.GameEngine.Scenes;
@@ -207,11 +209,18 @@ public sealed class GameAssetProviderRegistry
     }
 
     /// <summary>
-    /// Materializes an image, sprite atlas or vector asset as a tilesheet.
+    /// Materializes an image, sprite atlas, vector or three-dimensional model asset as a
+    /// tilesheet.
     /// </summary>
     /// <param name="key">The namespaced asset key.</param>
-    /// <param name="options">Grid, collision and rasterization options, or <see langword="null"/> for the provider's defaults.</param>
+    /// <param name="options">Grid, collision, rasterization and model-rendering options, or <see langword="null"/> for the provider's defaults.</param>
     /// <returns>The registered tilesheet.</returns>
+    /// <remarks>
+    /// A <see cref="GameAssetKind.Model3D"/> asset arrives as pre-rendered sprite frames, laid out
+    /// as <see cref="ModelRenderOptions"/> describes; only a provider that offers that route lists
+    /// the kind in <see cref="IGameAssetProvider.SupportedKinds"/> and implements
+    /// <see cref="ITilesheetAssetSource"/>.
+    /// </remarks>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no registered provider holds the key.</exception>
     /// <exception cref="UnsupportedGameAssetException">
@@ -223,7 +232,8 @@ public sealed class GameAssetProviderRegistry
 
         bool tilesheetKind = descriptor.Kind is GameAssetKind.Image
             or GameAssetKind.SpriteAtlas
-            or GameAssetKind.Vector;
+            or GameAssetKind.Vector
+            or GameAssetKind.Model3D;
 
         if (provider is not ITilesheetAssetSource source || !tilesheetKind || !Supports(provider, descriptor.Kind))
             throw new UnsupportedGameAssetException(descriptor.Kind, descriptor.Key);
@@ -275,6 +285,77 @@ public sealed class GameAssetProviderRegistry
             throw new UnsupportedGameAssetException(descriptor.Kind, descriptor.Key);
 
         return source.MaterializeFont(descriptor);
+    }
+
+    /// <summary>
+    /// Materializes a three-dimensional model asset as engine-native
+    /// <see cref="GameModel"/> data.
+    /// </summary>
+    /// <param name="key">The namespaced asset key.</param>
+    /// <param name="options">Animation-baking options, or <see langword="null"/> for the provider's defaults, which bake nothing.</param>
+    /// <returns>The model data.</returns>
+    /// <remarks>
+    /// The engine does not draw 3D: the model is data for the game's own renderer. A provider that
+    /// can also pre-render the same asset into sprite frames offers it through
+    /// <see cref="LoadTilesheet"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when no registered provider holds the key.</exception>
+    /// <exception cref="UnsupportedGameAssetException">
+    /// Thrown when the asset is not a model, or its provider cannot materialize models.
+    /// </exception>
+    public GameModel LoadModel(string key, ModelMaterializeOptions? options = null)
+    {
+        var (provider, descriptor) = Resolve(key);
+
+        if (provider is not IModelAssetSource source
+            || descriptor.Kind != GameAssetKind.Model3D
+            || !Supports(provider, descriptor.Kind))
+            throw new UnsupportedGameAssetException(descriptor.Kind, descriptor.Key);
+
+        return source.MaterializeModel(descriptor, options);
+    }
+
+    /// <summary>
+    /// Bakes one animation of a three-dimensional model asset into vertex frames, on demand.
+    /// </summary>
+    /// <param name="key">The namespaced asset key.</param>
+    /// <param name="animationName">The animation to bake, as named in <see cref="GameModel.AnimationNames"/>.</param>
+    /// <param name="framesPerSecond">The rate to bake at, in frames per second.</param>
+    /// <returns>The baked clip.</returns>
+    /// <remarks>
+    /// The registry does not hold the model the clip belongs to, so it can only check that the clip
+    /// is internally consistent: it has at least one frame, every frame carries the same number of
+    /// meshes, and mesh <c>i</c> has the same vertex count in every frame. Checking the clip against
+    /// a particular model is <see cref="GameModelAnimationClip.IsCompatibleWith"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="key"/> or <paramref name="animationName"/> is null or whitespace,
+    /// or when the asset has no animation with that name.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="framesPerSecond"/> is less than one.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when no registered provider holds the key.</exception>
+    /// <exception cref="UnsupportedGameAssetException">
+    /// Thrown when the asset is not a model, or its provider cannot materialize models.
+    /// </exception>
+    /// <exception cref="InvalidDataException">Thrown when the provider returns a clip whose frames do not line up with each other.</exception>
+    public GameModelAnimationClip LoadModelAnimation(string key, string animationName, int framesPerSecond = 24)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(animationName);
+        ArgumentOutOfRangeException.ThrowIfLessThan(framesPerSecond, 1);
+
+        var (provider, descriptor) = Resolve(key);
+
+        if (provider is not IModelAssetSource source
+            || descriptor.Kind != GameAssetKind.Model3D
+            || !Supports(provider, descriptor.Kind))
+            throw new UnsupportedGameAssetException(descriptor.Kind, descriptor.Key);
+
+        var clip = source.MaterializeModelAnimation(descriptor, animationName, framesPerSecond);
+
+        ValidateModelAnimation(clip, provider.ProviderId, descriptor.Key);
+
+        return clip;
     }
 
     /// <summary>
@@ -344,6 +425,56 @@ public sealed class GameAssetProviderRegistry
     private static bool Supports(IGameAssetProvider provider, GameAssetKind kind)
     {
         return provider.SupportedKinds is { } supportedKinds && supportedKinds.Contains(kind);
+    }
+
+    private static void ValidateModelAnimation(GameModelAnimationClip clip, string providerId, string key)
+    {
+        if (clip is null || clip.Frames is null || clip.Frames.Count == 0)
+            throw InconsistentAnimation(providerId, key, "it carries no frames");
+
+        var firstFrame = clip.Frames[0];
+        int meshCount = firstFrame.Meshes.Count;
+
+        if (meshCount == 0)
+            throw InconsistentAnimation(providerId, key, "its frames carry no meshes");
+
+        for (int frameIndex = 0; frameIndex < clip.Frames.Count; frameIndex++)
+        {
+            var meshes = clip.Frames[frameIndex].Meshes;
+
+            if (meshes.Count != meshCount)
+                throw InconsistentAnimation(
+                    providerId,
+                    key,
+                    $"frame {frameIndex} carries {meshes.Count} meshes where the first frame carries {meshCount}");
+
+            for (int meshIndex = 0; meshIndex < meshCount; meshIndex++)
+            {
+                var mesh = meshes[meshIndex];
+                int expectedLength = firstFrame.Meshes[meshIndex].Positions.Length;
+
+                if (mesh.Positions.Length != expectedLength)
+                    throw InconsistentAnimation(
+                        providerId,
+                        key,
+                        $"mesh {meshIndex} of frame {frameIndex} has {mesh.Positions.Length / 3} vertices where the "
+                        + $"first frame has {expectedLength / 3}");
+
+                if (mesh.Normals.Length != mesh.Positions.Length)
+                    throw InconsistentAnimation(
+                        providerId,
+                        key,
+                        $"mesh {meshIndex} of frame {frameIndex} has {mesh.Normals.Length / 3} normals for "
+                        + $"{mesh.Positions.Length / 3} vertices");
+            }
+        }
+    }
+
+    private static InvalidDataException InconsistentAnimation(string providerId, string key, string reason)
+    {
+        return new InvalidDataException(
+            $"The asset provider '{providerId}' produced an animation clip for the key '{key}' that cannot be "
+            + $"played on the model, because {reason}.");
     }
 
     private static void SafeDispose(IGameAssetProvider provider)

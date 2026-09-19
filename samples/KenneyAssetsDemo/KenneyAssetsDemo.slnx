@@ -1,0 +1,11 @@
+<Solution>
+  <!-- KenneyAssetsDemo.slnx
+       A CodeBrix.Platform application with everything that builds with the plain
+       .NET SDK on Linux, macOS and Windows. -->
+  <Project Path="src/KenneyAssetsDemo.UI/KenneyAssetsDemo.UI.shproj" />
+  <Project Path="src/libs/KenneyAssetsDemo.Game/KenneyAssetsDemo.Game.csproj" />
+  <Project Path="src/KenneyAssetsDemo.Core/KenneyAssetsDemo.Core.csproj" />
+  <Project Path="src/KenneyAssetsDemo.LinuxX11/KenneyAssetsDemo.LinuxX11.csproj" />
+  <Project Path="src/KenneyAssetsDemo.MacOS/KenneyAssetsDemo.MacOS.csproj" />
+  <Project Path="src/KenneyAssetsDemo.Win32Skia/KenneyAssetsDemo.Win32Skia.csproj" />
+</Solution>

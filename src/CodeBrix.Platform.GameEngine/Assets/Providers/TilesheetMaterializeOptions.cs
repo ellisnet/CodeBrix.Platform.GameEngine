@@ -4,9 +4,9 @@ using CodeBrix.Platform.GameEngine.Physics.Collisions;
 
 namespace CodeBrix.Platform.GameEngine.Assets.Providers; //CodeBrix (not from Gondwana)
 /// <summary>
-/// Options that steer how an <see cref="ITilesheetAssetSource"/> turns an image, sprite atlas or
-/// vector asset into a tilesheet. Every member is optional; the defaults reproduce the provider's
-/// own behaviour.
+/// Options that steer how an <see cref="ITilesheetAssetSource"/> turns an image, sprite atlas,
+/// vector or three-dimensional model asset into a tilesheet. Every member is optional; the
+/// defaults reproduce the provider's own behaviour.
 /// </summary>
 public sealed record TilesheetMaterializeOptions
 {
@@ -57,6 +57,17 @@ public sealed record TilesheetMaterializeOptions
     /// size.
     /// </summary>
     public float? VectorScale { get; init; }
+
+    /// <summary>
+    /// Gets the camera, animation and shading settings a provider pre-renders a
+    /// <see cref="GameAssetKind.Model3D"/> asset into sprite frames with, or
+    /// <see langword="null"/> for the provider's defaults. Ignored for every other asset kind.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ModelRenderOptions"/> also describes the layout of the produced sheet: one
+    /// uniform-grid region per rendered animation, columns of frames by rows of camera directions.
+    /// </remarks>
+    public ModelRenderOptions? ModelRender { get; init; }
 
     /// <summary>
     /// Gets the registry key to register the tilesheet under, overriding the descriptor's key, or

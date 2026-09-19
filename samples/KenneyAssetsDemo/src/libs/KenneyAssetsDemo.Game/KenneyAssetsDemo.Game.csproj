@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Keep a distinct RootNamespace (not the app's "KenneyAssetsDemo") so a transitive
+         CodeBrix.Platform reference does not generate a duplicate GlobalStaticResources. -->
+    <RootNamespace>KenneyAssetsDemo.Game</RootNamespace>
+
+    <!-- The demo consumes the NRT-annotated asset-provider API; enable NRT here. -->
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- The game logic owns the CodeBrix.Platform.GameEngine references; the app's .Core
+       project depends on this library rather than referencing the engine directly.
+       CodeBrix.Platform.GameEngine.KenneyAssets is the package this sample exists to
+       demonstrate; it is referenced the same in-repo way as the engine itself. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine.Host\CodeBrix.Platform.GameEngine.Host.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CodeBrix.Platform.GameEngine.KenneyAssets\CodeBrix.Platform.GameEngine.KenneyAssets.csproj" />
+  </ItemGroup>
+</Project>

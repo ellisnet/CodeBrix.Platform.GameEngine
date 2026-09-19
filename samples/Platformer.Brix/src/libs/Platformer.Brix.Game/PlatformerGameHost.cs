@@ -178,9 +178,9 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
         if (backbuffer is BitmapBackbuffer bitmapBackbuffer)
             bitmapBackbuffer.FilterQuality = ImageFilterQuality.None;
 
-        // ...and never smooth the finished 960x576 frame either, when the surface presents it
-        // larger than that. Tile filtering and presentation filtering are separate settings.
-        Engine.Configuration.RenderScalingFilter = RenderScalingFilter.NearestNeighbor;
+        // (The finished 960x576 frame must not be smoothed either when the surface presents it
+        // larger than that - but that is a separate, presentation-side setting on
+        // Engine.Configuration, and it is made in OnEngineInitialized: see the note there.)
 
         var view = RenderSurface.Host.ViewManager.Views[0];
         view.Camera.WorldBoundsPx = Scene!.GetWorldBoundsPx();
@@ -286,6 +286,13 @@ public sealed class PlatformerGameHost : CodeBrixGameHost
     {
         _lastEnemyTick = HighResTimer.GetCurrentTick();
         Engine.Configuration.TargetFPS = 60;
+
+        // Pixel art: never smooth the finished 960x576 frame when the surface presents it larger
+        // than that. This belongs HERE and not in OnSceneBound: Engine.Initialize replaces
+        // Engine.Configuration with the configuration it loads, and OnSceneBound runs before it,
+        // so a value assigned there is silently thrown away and the frame is presented with the
+        // default linear filter.
+        Engine.Configuration.RenderScalingFilter = RenderScalingFilter.NearestNeighbor;
         Engine.BeforeBackgroundTasksExecute += BeforeBackgroundTasksExecute;
         Engine.AfterBackgroundTasksExecute += AfterBackgroundTasksExecute;
     }

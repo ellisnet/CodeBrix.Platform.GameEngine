@@ -21,8 +21,13 @@ public sealed record TiledMapImport
     public IReadOnlyList<SceneLayer> Layers { get; init; } = [];
 
     /// <summary>
-    /// Gets the tilesheets the import registered, one per tile set the map used.
+    /// Gets the tilesheets the import registered, one per tile set the map REFERENCES, in the order
+    /// the map references them.
     /// </summary>
+    /// <remarks>
+    /// A tile set the map references is prepared whether or not an imported layer draws a tile from
+    /// it, so this list does not change with <see cref="TiledMapImportOptions.LayerFilter"/>.
+    /// </remarks>
     public IReadOnlyList<Tilesheet> Tilesheets { get; init; } = [];
 
     /// <summary>

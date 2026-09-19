@@ -3,17 +3,17 @@ EXTRAS-README: CodeBrix.Platform.GameEngine
 Samples, tools and other content in this repository that is not part of a NuGet package
 ================================================================================
 
-Nothing described in this file ships in either NuGet package, and nothing here
-builds as part of the library build, the test run or the packaging build. None
-of it is in CodeBrix.Platform.GameEngine.slnx, deliberately: that solution holds
-only the product projects and their tests.
+Nothing described in this file ships in any of the NuGet packages, and nothing
+here builds as part of the library build, the test run or the packaging build.
+None of it is in CodeBrix.Platform.GameEngine.slnx, deliberately: that solution
+holds only the product projects and their tests.
 
-  samples/    nine complete games/demos — the living reference for the engine
+  samples/    ten complete games/demos — the living reference for the engine
   tools/      two hand-run developer utilities
 
 SAMPLES
 =======
-samples/ holds nine complete CodeBrix.Platform applications. Each has the same
+samples/ holds ten complete CodeBrix.Platform applications. Each has the same
 shape: a shared .UI shared-project (App.xaml, Views/MainPage.xaml), a .Core
 library holding the view models and the engine reference, a .Game library
 holding the game itself, and three executable heads — LinuxX11, Win32Skia and
@@ -75,6 +75,32 @@ Engine.InitializationComplete, and a view-space HUD fed by CPSCalculated
 path. All of its art — ships, effects and the title card — is generated in code,
 so the sample ships no image assets; samples/SpaceDuel.Brix/README.md explains
 how to drop in licensed ship art if you have some.
+
+samples/KenneyAssetsDemo
+------------------------
+Mode A via CodeBrixGameHost — the reference consumer for the Kenney asset
+package (src/CodeBrix.Platform.GameEngine.KenneyAssets). It ships real CC0 Kenney
+bundles beside the executable and registers them with a single UseKenneyAssets
+call, then builds everything it shows out of them: a Tiled map imported into
+scene layers (two tile sizes, a tileoffset and flipped tiles, so the import's
+overhang and flip-variant rules are all exercised), a PRE-RENDERED 3D character
+(a glTF model turned into sprite frames by the provider, eight directions with an
+idle and a walk animation) driven by the arrow keys or WASD, facing its direction
+of travel and animating through the engine's Cycle / FrameSequence, atlas sprites
+from a puzzle pack as collectible gems, a pick-up sound, heads-up display text in
+Kenney text fonts and one prompt glyph from a Kenney ICON font, one rasterised
+SVG badge, and an on-screen note listing the registered packs. Its own layer sits
+on top of the imported ones, which is all there is to mixing imported content
+with content a game builds itself. The game logic is deliberately tiny — there is
+no collision and nothing to win — because the loading code is the documentation.
+
+It is also the worked example of loading assets OBSERVABLY: every step writes one
+line to the console with a fixed prefix — packs registered, assets described per
+kind, the map's layers and tilesheets, the character sheet's regions and size,
+the sounds, fonts and vectors loaded with their keys — and a READY line at the
+end, which is what makes a provider problem legible without a screenshot.
+samples/KenneyAssetsDemo/README.md covers the controls, how to build and run each
+head, and where the bundles came from (Kenney, CC0).
 
 samples/Slider
 --------------
@@ -246,9 +272,11 @@ OTHER NON-PACKAGE CONTENT
                        ARE packed into the gamepad NuGet package, but they are
                        maintained by hand from the tools above. See
                        MAINTAINER-README.txt.
-  tests/               The three test projects. Not shipped in any package; see
-                       MAINTAINER-README.txt for how to run them and for the
-                       serial-execution and shared-audio-output rules.
+  tests/               The four test projects. Not shipped in any package; see
+                       MAINTAINER-README.txt for how to run them, for the
+                       serial-execution and shared-audio-output rules, and for
+                       the Kenney suite's asset fixtures and its opt-in corpus
+                       scan.
 
 ================================================================================
 END OF EXTRAS-README

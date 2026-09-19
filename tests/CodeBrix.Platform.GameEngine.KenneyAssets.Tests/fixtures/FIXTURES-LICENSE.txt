@@ -1,0 +1,43 @@
+TEST FIXTURES - LICENCE AND CREDIT
+==================================
+
+Every asset bundle in this folder was created and distributed by Kenney (www.kenney.nl) and is
+released under the Creative Commons Zero (CC0 1.0 Universal) public domain dedication:
+
+    http://creativecommons.org/publicdomain/zero/1.0/
+
+CC0 content may be used in personal, educational and commercial projects and requires no
+attribution. Kenney is credited here anyway, because crediting the source of an asset is the house
+style of this repository. Each bundle also carries Kenney's own License.txt inside it.
+
+These files exist only so the tests of CodeBrix.Platform.GameEngine.KenneyAssets can read real
+bundles rather than synthetic approximations of them. They are not part of any shipped package.
+
+What each file is
+-----------------
+
+kenney_puzzle-pack-1.zip
+    A 2D art pack. Two sprite sheets with correct TextureAtlas XML documents (86 frames each), and
+    87 identically named loose images in each of PNG/Default and PNG/Double. Exercises atlas
+    parsing, the "same file name in sibling folders" case, and the extracted-folder archive, which
+    the tests unzip from this bundle.
+
+kenney_sci-fi-sounds.zip
+    An audio pack: 73 .ogg files, plus a stray Audio/desktop.ini that must be classified rather than
+    treated as an error.
+
+kenney_blocky-characters_20.zip
+    A 3D model pack: the same 18 models in .fbx, .glb and .obj form, with per-model textures and
+    pre-rendered previews. Exercises the rule that only glTF models are materializable while the
+    other formats stay listed, and the key collision between a model and its .mtl material.
+
+kenney_brick-kit.zip
+    A larger 3D model pack: 296 models in three formats, and three different Textures/colormap.png
+    files in sibling folders, which is why dependency resolution must not guess by bare file name.
+
+simulated_bundle.zip
+    A small mixed bundle assembled from Kenney content, holding a little of everything: audio,
+    fonts, loose images, SVG vectors, three glTF models with external textures, and a Tiled map
+    (26x15 at 18px, four CSV layers, flip bits) whose two tile sets use different tile sizes, carry
+    a tileoffset, and reference their images through ../Tilemap/. It also holds a .blend and a .swf,
+    which must be listed and not mistaken for assets the engine can use.

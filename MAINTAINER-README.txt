@@ -4,13 +4,14 @@ Notes for people and agents MAINTAINING this repository — not for package cons
 ================================================================================
 
 If you are CONSUMING one of the NuGet packages, this is the wrong file. Read
-AGENT-README.txt (repository root) for the game engine, or
-src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt for gamepads. See
-README-INDEX.txt for the map.
+AGENT-README.txt (repository root) for the game engine,
+src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt for gamepads, or
+src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt for Kenney asset
+bundles. See README-INDEX.txt for the map.
 
 PURPOSE AND SCOPE
 =================
-This repository produces TWO published NuGet packages from THREE projects.
+This repository produces THREE published NuGet packages from FOUR projects.
 
   CodeBrix.Platform.GameEngine.MitLicenseForever          License: MIT
       A fully managed, cross-platform 2D / 2.5D game engine for .NET, built on
@@ -24,19 +25,31 @@ This repository produces TWO published NuGet packages from THREE projects.
       src/CodeBrix.Platform.GameEngine.Sdl2. Consumer documentation:
       src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt.
 
-The two packages are versioned and PUBLISHED INDEPENDENTLY; they do not share a
-version number. That is intentional — the Sdl2 project uses only PUBLIC engine
-API and has no InternalsVisibleTo seam into the engine core.
+  CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever   License: MIT
+      Kenney asset bundle support: it catalogs what a bundle holds and
+      materializes images, sprite atlases, audio, fonts, SVG, Tiled maps and
+      glTF models into engine objects, through the engine's asset-provider
+      contract. Packed by src/CodeBrix.Platform.GameEngine.KenneyAssets.
+      Consumer documentation:
+      src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt.
+
+The three packages are versioned and PUBLISHED INDEPENDENTLY; they do not share a
+version number. That is intentional — both add-on projects use only PUBLIC engine
+API and neither has an InternalsVisibleTo seam into the engine core.
 
 REPOSITORY LAYOUT
 =================
     src/CodeBrix.Platform.GameEngine/          engine CORE (IsPackable=false)
     src/CodeBrix.Platform.GameEngine.Host/     host layer; PACKS both assemblies
     src/CodeBrix.Platform.GameEngine.Sdl2/     gamepad add-on; packs itself
+    src/CodeBrix.Platform.GameEngine.KenneyAssets/
+                                               Kenney asset add-on; packs itself
     tests/CodeBrix.Platform.GameEngine.Tests/
     tests/CodeBrix.Platform.GameEngine.Host.Tests/
     tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/
-    samples/                                   nine complete games/demos
+    tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/
+                                               + fixtures/ (CC0 Kenney bundles)
+    samples/                                   ten complete games/demos
     tools/padcheck/                            hand-run gamepad hardware check
     tools/sdl2_library_building/               SDL2 Windows-ARM64 build script
     native_libraries/<rid>/                    committed SDL2 binaries + provenance
@@ -46,9 +59,16 @@ REPOSITORY LAYOUT
 Engine-core source is grouped into sub-folders that mirror the sub-namespaces
 (Assets, Audio, Configuration, Drawing, Extensibility, Input, Logging, Physics,
 Rendering, Scenes, Serialization, SkiaSharp, Timers); entry types (Engine.cs,
-EngineState.cs, EngineDispatcher.cs, ...) sit at the project root. The Sdl2
-project follows the same rule with Gamepad/ and Native/ sub-folders and
-EngineGamepadExtensions.cs at the root.
+EngineState.cs, EngineDispatcher.cs, ...) sit at the project root. The asset
+PROVIDER contract lives in Assets/Providers/ and the format-neutral model data
+types in Assets/Models/. The Sdl2 project follows the same rule with Gamepad/ and
+Native/ sub-folders and EngineGamepadExtensions.cs at the root; the KenneyAssets
+project with Sources/ (archive readers and the pack catalog), Parsing/ (the
+classifier and the atlas and Tiled document parsers), Materialize/ (tilesheet,
+audio, font and Tiled-import work) and Models/ (the glTF reader and the software
+model sprite renderer), and EngineKenneyAssetsExtensions.cs,
+KenneyGameAssetProvider.cs, KenneyAssetsOptions.cs and KenneyPackSummary.cs at
+the root.
 
 Neither samples/ nor tools/ is in the .slnx, deliberately: the solution holds
 only product projects and their tests. Each sample carries its own .slnx.
@@ -57,50 +77,57 @@ The solution's Solution Items folder carries .gitignore, AGENT-README.txt,
 EXTRAS-README.txt, global.json, icon-codebrix-128.png, LICENSE,
 MAINTAINER-README.txt, README-INDEX.txt, README.md, the current
 RELEASE-NOTES-<yyyy-MM-dd>.md and THIRD-PARTY-NOTICES.txt; the Tests folder
-carries the three test projects. The gamepad package's own AGENT-README.txt is
-not listed there because it is a <None> item of the Sdl2 project and is already
-visible inside it.
+carries the four test projects. The add-on packages' own AGENT-README.txt files
+are not listed there because each is a <None> item of its own project and is
+already visible inside it.
 
 INTERNALS SEAMS
 ---------------
     CodeBrix.Platform.GameEngine  -> .Host and .Tests
     CodeBrix.Platform.GameEngine.Host -> .Host.Tests
     CodeBrix.Platform.GameEngine.Sdl2 -> .Sdl2.Tests
+    CodeBrix.Platform.GameEngine.KenneyAssets -> .KenneyAssets.Tests
 Every packable project ships an InternalsVisibleTo.cs to its own .Tests
-assembly. The Sdl2 project has NO seam into the engine core.
+assembly. Neither add-on project has a seam into the engine core. The
+KenneyAssets project keeps most of its own types internal — only six are public
+— so its test suite reaches the archive readers, the parsers, the materializers
+and the model code through that seam.
 
 BUILDING
 ========
     dotnet build CodeBrix.Platform.GameEngine.slnx
 
-All three projects are net10.0 only; never multi-target. All three set
+All four projects are net10.0 only; never multi-target. All four set
 <Nullable>enable</Nullable> and turn on GenerateDocumentationFile. The Sdl2
 project additionally sets <AllowUnsafeBlocks>true</AllowUnsafeBlocks> —
 the SDL2 bindings are function-pointer based and pass byte* strings; the unsafe
-context is confined to the Native folder.
+context is confined to the Native folder. The KenneyAssets project carries NO
+NoWarn list of any kind, so an undocumented public member or a broken XML cref
+there fails the build rather than passing quietly as it would in the engine core.
 
 The build NEVER reaches the network for native binaries. Everything under
 native_libraries/ is committed and read straight off disk at pack time.
 
-THE Sdl2 PROJECT BUILDS AGAINST THE PUBLISHED ENGINE
------------------------------------------------------
-src/CodeBrix.Platform.GameEngine.Sdl2 consumes the engine as a PUBLISHED
-PackageReference, not a ProjectReference. It has to: the engine project is
+THE ADD-ON PROJECTS BUILD AGAINST THE PUBLISHED ENGINE
+------------------------------------------------------
+src/CodeBrix.Platform.GameEngine.Sdl2 and
+src/CodeBrix.Platform.GameEngine.KenneyAssets consume the engine as a PUBLISHED
+PackageReference, not a ProjectReference. They have to: the engine project is
 IsPackable=false and its dll is embedded into the Host project's package, so a
 ProjectReference would compile locally but produce a package with an unsatisfied
 runtime dependency (NuGet emits no dependency for a non-packable
-ProjectReference, and the engine dll would not be inside the Sdl2 package
+ProjectReference, and the engine dll would not be inside the add-on package
 either).
 
 Consequences to keep in mind:
 
-  * If a change in Sdl2 needs the engine core to expose something new: publish
-    the engine package FIRST, wait for it to index, bump the pinned version in
-    the Sdl2 csproj, then build and publish Sdl2.
+  * If a change in an add-on needs the engine core to expose something new:
+    publish the engine package FIRST, wait for it to index, bump the pinned
+    version in the add-on csproj, then build and publish the add-on.
   * NEVER configure a local folder as a NuGet source holding a freshly-built
     engine package. Every engine build restamps its version, so a local source
-    could shadow nuget.org and Sdl2 would be built against an engine version
-    that was never published.
+    could shadow nuget.org and an add-on would be built against an engine
+    version that was never published.
 
 LOCAL VERIFICATION ESCAPE HATCH
 -------------------------------
@@ -111,7 +138,8 @@ That swaps the engine PackageReference for a ProjectReference so a local run
 tests THIS repository's engine source, and it forces GeneratePackageOnBuild off.
 A _BlockPackWithLocalEngineProject target makes Pack fail outright while the
 flag is set, because the resulting package would carry no engine dependency and
-no engine dll and must never be published.
+no engine dll and must never be published. Both add-on projects carry the switch
+and the guard.
 
 The same flag applies to padcheck, which sits downstream of Sdl2:
 
@@ -123,17 +151,57 @@ once shipped "fully hardware-verified" while being completely dead on the
 InputPump path — nothing that ran against real hardware had ever been built from
 local engine source.
 
+THE KenneyAssets PROJECT DEFAULTS THAT FLAG TO **TRUE** — AND THE HAND-OVER
+---------------------------------------------------------------------------
+The Sdl2 project defaults UseLocalEngineProject to false; the KenneyAssets
+project defaults it to TRUE, deliberately and temporarily. The asset-provider
+contract it compiles against was co-developed WITH it — the contract is exercised
+by a real provider before it is frozen — so until an engine package carrying the
+Assets.Providers and Assets.Models namespaces is published, a PackageReference
+build of that project cannot compile at all and the solution gate would be red.
+Local mode can never be packed (the same guard) and forces
+GeneratePackageOnBuild off, so no unpublishable package can escape meanwhile.
+
+THE HAND-OVER, in order, once the engine is published:
+
+  1. Publish the engine package and let it index.
+  2. In src/CodeBrix.Platform.GameEngine.KenneyAssets/
+     CodeBrix.Platform.GameEngine.KenneyAssets.csproj: flip the
+     UseLocalEngineProject default from true to false, and set the
+     CodeBrix.Platform.GameEngine.MitLicenseForever PackageReference version to
+     the engine version just published. Those TWO EDITS are the whole hand-over;
+     the comment block above them in the csproj says the same thing.
+  3. Rebuild the solution and run the four test suites against the package.
+  4. dotnet pack (or an ordinary Release build) and publish the KenneyAssets
+     package.
+  5. FROM THEN ON, THE IN-REPO SAMPLE NEEDS THE FLAG, exactly like padcheck: it
+     references the engine and the KenneyAssets project from source, so build it
+     with -p:UseLocalEngineProject=true when verifying an unpublished engine
+     change:
+
+    dotnet build samples/KenneyAssetsDemo/src/KenneyAssetsDemo.LinuxX11 \
+        -p:UseLocalEngineProject=true
+
+Until step 2 is done, note that `dotnet build -p:UseLocalEngineProject=false` on
+the KenneyAssets project fails with CS0234 ("Providers does not exist in the
+namespace CodeBrix.Platform.GameEngine.Assets"). That is the documented symptom
+of the pinned engine version being older than the contract, not a project fault.
+
 TESTING
 =======
     dotnet test CodeBrix.Platform.GameEngine.slnx
 
-xUnit v3 + SilverAssertions. No opt-in environment variables are required;
-head-dependent host behavior is env-gated or skipped with a reason.
+xUnit v3 + SilverAssertions. No opt-in environment variable is required for the
+suites to pass; head-dependent host behavior is env-gated or skipped with a
+reason, and the ONE opt-in test in the repository (the Kenney corpus scan, below)
+skips itself with a reason when its variable is unset.
 
-Test dependencies, all three suites: xunit.v3, xunit.runner.visualstudio,
+Test dependencies, all four suites: xunit.v3, xunit.runner.visualstudio,
 Microsoft.NET.Test.Sdk and SilverAssertions.ApacheLicenseForever; the
-engine-core suite adds SkiaSharp.NativeAssets.Linux and CodeBrix.Audio.Opus.
-No coverage collector is referenced by any test project.
+engine-core suite adds SkiaSharp.NativeAssets.Linux and CodeBrix.Audio.Opus, and
+the Kenney suite adds SkiaSharp.NativeAssets.Linux for the same reason (it
+decodes pictures and rasterizes models headlessly). No coverage collector is
+referenced by any test project.
 
 THE TEST RUNNER IS Microsoft.Testing.Platform (MTP), selected by global.json at
 the repository root. That file does NOT pin an SDK version, so the newest
@@ -153,13 +221,17 @@ to filter down to one class or method while iterating:
     dotnet tests/CodeBrix.Platform.GameEngine.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Tests.dll
     dotnet tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Sdl2.Tests.dll
     dotnet tests/CodeBrix.Platform.GameEngine.Host.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Host.Tests.dll
+    dotnet tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.KenneyAssets.Tests.dll
 
     # filters
     ... .Tests.dll -class 'CodeBrix.Platform.GameEngine.Tests.TimerTests'
     ... .Tests.dll -method 'CodeBrix.Platform.GameEngine.Tests.TimerTests.Add_with_a_sub_tick_length_throws'
 
-Current counts: 756 engine-core tests, 45 gamepad tests, 19 host tests (1 of the
-host tests skips without a UI head).
+The engine-core suite is by far the largest; the Kenney suite is next, and the
+gamepad and host suites are small. One host test skips without a UI head and one
+Kenney test skips unless its environment variable is set. Report the counts a run
+actually printed rather than a number from this file — every wave of work moves
+them.
 
 ENGINE CORE TESTS
 -----------------
@@ -227,6 +299,62 @@ need a person with a controller — see tools/padcheck (EXTRAS-README.txt), and
 RUN BOTH OF ITS DRIVE MODES: the default mode supplies its own refresh and
 therefore cannot detect a missing refresh on the InputPump path.
 
+KenneyAssets TESTS
+------------------
+THIS ASSEMBLY ALSO RUNS SERIALLY, for the engine's reason: materializing an asset
+registers it in the process-global tilesheet, audio and font registries and in
+the provider registry, so tests that populate those cannot overlap. Test classes
+clear what they registered, unload the audio keys they created and call
+AudioSystem.Shutdown() on dispose, exactly as the core suites do.
+
+IT TESTS AGAINST REAL BUNDLES. The suite's fixtures/ folder holds five Kenney
+bundles, copied to the test output directory and read exactly as they are:
+
+    kenney_puzzle-pack-1.zip        sprite atlases, identically named images in
+                                    sibling folders, an SVG, and the bundle the
+                                    extracted-FOLDER tests unzip
+    kenney_sci-fi-sounds.zip        .ogg audio, plus a stray desktop.ini that
+                                    must be classified rather than break anything
+    kenney_blocky-characters_20.zip the same models in .fbx, .glb and .obj form,
+                                    animated, with per-model textures
+    kenney_brick-kit.zip            a larger model pack whose three sibling
+                                    colormap.png files are why dependency
+                                    resolution must never guess by file name
+    simulated_bundle.zip            a small mixed bundle: audio, three fonts
+                                    (one of them an ICON font), images, SVG,
+                                    three glTF models and a Tiled map with two
+                                    tile sizes, a tileoffset and flip bits
+
+Four of them came from the KenneyAssetBrowser sample's bundle folder and the
+mixed one was assembled from Kenney content; ALL FIVE ARE CC0 and are credited in
+fixtures/FIXTURES-LICENSE.txt, which also says what each one exercises. They are
+test data only and ship in no package. Synthetic bundles — a stale atlas, a
+missing tile set image, a damaged zip, a base64 map — are BUILT IN CODE by the
+suite's TestFixtures helper into the test output folder, so no further binary
+needs committing; prefer that route for a new edge case.
+
+THE OPT-IN CORPUS SCAN. KenneyAllInOneCorpusScan registers a WHOLE Kenney
+collection as one source (the "all in one" layout, one pack per child folder) and
+asserts that registering hundreds of packs at once raises nothing, that every
+sprite atlas parses, that every tile map either parses or is refused with a
+message saying why, that every audio asset carries an extension the engine has a
+reader for, that no two packs share a slug and no two assets share a key, and
+that the asset count agrees with what Describe lists. It is skipped WITH A REASON
+unless an environment variable points at such a collection:
+
+    KENNEY_ALLIN1_DIR="/path/to/Kenney Game Assets All-in-1" \
+        dotnet tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.KenneyAssets.Tests.dll \
+        -class 'CodeBrix.Platform.GameEngine.KenneyAssets.Tests.KenneyAllInOneCorpusScan'
+
+It reads no asset file — only the listing and the small documents — so it takes a
+couple of seconds over a corpus of hundreds of packs and tens of thousands of
+assets, and it is the check worth running after any change to the catalog, the
+classifier or the key scheme. It is opt-in because the collection is a purchased
+download that cannot live in the repository; the committed fixtures cover every
+rule it exercises, at a smaller scale. RUN IT BEFORE PUBLISHING the KenneyAssets
+package: both defects it has found so far (a tile set hiding the sprites it
+lists, and an unclassified satellite buffer) were invisible at fixture scale.
+
 THE MusicDemo WALKTHROUGH
 ------------------------
 The music system's most important behaviours are audible-only: which instrument
@@ -251,10 +379,11 @@ when the asset factory has changed; assets are written only when missing.
 
 PACKAGING AND PUBLISHING
 ========================
-Both packable projects set GeneratePackageOnBuild=true, so an ordinary Release
-build produces the .nupkg.
+Every packable project sets GeneratePackageOnBuild=true, so an ordinary Release
+build produces the .nupkg — except while UseLocalEngineProject is true, which
+forces it off (see the hand-over above).
 
-VERSIONING SCHEME (both packages, independently)
+VERSIONING SCHEME (every package, independently)
 ------------------------------------------------
 Date-stamped and auto-incrementing: 1.<x>.<y>.<z>, every field derived from UTC
 "now" — major always 1; minor = whole years since the _VersionBaseYear property
@@ -298,7 +427,23 @@ Packed by src/CodeBrix.Platform.GameEngine.Sdl2.
     native binaries are zlib; the suffix tracks the more notice-demanding of the
     two.
 
-Two packaging sharp edges recorded in the csproj, worth not re-learning:
+WHAT SHIPS IN CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever
+--------------------------------------------------------------------------
+Packed by src/CodeBrix.Platform.GameEngine.KenneyAssets.
+
+  * Its own assembly, plus PackageReference dependencies on the engine package
+    and on CodeBrix.Graphics3D.Gltf2.MitLicenseForever (the ONLY direct
+    third-party reference; everything else — SkiaSharp, CodeBrix.Compression for
+    zip reading, CodeBrix.SkiaSvg, CodeBrix.Audio — arrives transitively through
+    the engine).
+  * icon-codebrix-128.png, the repository-root README.md and
+    THIRD-PARTY-NOTICES.txt, and ITS OWN LOCAL AGENT-README.txt (the file in the
+    KenneyAssets project folder, NOT the repository-root one).
+  * NO ASSETS. No Kenney bundle, no fixture and no native binary: the package is
+    the reader, and a game ships the CC0 bundles it uses.
+  * PackageLicenseExpression MIT; PackageRequireLicenseAcceptance true.
+
+Two packaging sharp edges recorded in the Sdl2 csproj, worth not re-learning:
 
   * The runtimes PackagePath values use FORWARD SLASHES WITH NO TRAILING
     SEPARATOR. A trailing separator produced package paths with an empty segment
@@ -313,16 +458,20 @@ Two packaging sharp edges recorded in the csproj, worth not re-learning:
 
 PUBLISH ORDER
 -------------
-Engine first, Sdl2 second, and only when Sdl2 needs something new from the
-engine. Publish the engine package, wait for it to index, bump the pinned engine
-version in the Sdl2 csproj, then build and publish Sdl2. Never pack Sdl2 with
-UseLocalEngineProject=true (the build blocks it).
+ENGINE FIRST, then whichever add-on needs something new from it. Publish the
+engine package, wait for it to index, bump the pinned engine version in the
+add-on csproj, then build and publish that add-on. Never pack an add-on with
+UseLocalEngineProject=true (the build blocks it). The KenneyAssets package has
+one further step the first time — see THE KenneyAssets PROJECT DEFAULTS THAT FLAG
+TO TRUE above — and consuming projects downstream of an add-on (padcheck, the
+samples) are re-pinned afterwards.
 
 RELEASE NOTES
 -------------
 A release that changes behaviour or API gets a dated release-notes file at the
 repository root, named RELEASE-NOTES-<yyyy-MM-dd>.md. The current one is
-RELEASE-NOTES-2026-09-03.md. Conventions:
+RELEASE-NOTES-2026-09-17.md, which is not published yet and is therefore still
+being amended in place. Conventions:
 
   * BREAKING changes come FIRST, each with the old shape, the new shape and
     what a consumer has to do. Behaviour changes that need no code edit but
@@ -336,8 +485,8 @@ RELEASE-NOTES-2026-09-03.md. Conventions:
   * Put the new file in the .slnx Solution Items folder (replacing the previous
     one there) so it is visible in the IDE.
 
-Release-notes files are repository content only: they are not packed into
-either NuGet package (only README.md, THIRD-PARTY-NOTICES.txt and the relevant
+Release-notes files are repository content only: they are not packed into any
+NuGet package (only README.md, THIRD-PARTY-NOTICES.txt and the relevant
 AGENT-README.txt are — see PACKAGING). Update AGENT-README.txt in the same pass,
 because that file DOES ship and consumers read it as the current truth.
 
@@ -386,8 +535,20 @@ bumping, refresh every platform in the same pass so all shipped binaries are the
 same SDL2 version, and add the new source tarball SHA-256 to the script's
 $PinnedHashes table so the pin stays under version control.
 
+KENNEY ASSET SUPPORT — NO VENDORED SOURCE. The KenneyAssets project is code
+written for this repository; it vendors nothing and carries no provenance
+markers. Its one direct third-party dependency,
+CodeBrix.Graphics3D.Gltf2.MitLicenseForever, is an ordinary PackageReference
+(MIT, no dependencies of its own) and is recorded in THIRD-PARTY-NOTICES.txt as
+a package, not as incorporated source. What it READS — Kenney's bundles — is CC0
+content a game supplies; the only Kenney files in this repository are the test
+fixtures under tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/fixtures/,
+which are credited in FIXTURES-LICENSE.txt beside them and ship in no package.
+When adding or replacing a fixture, keep it small, keep it CC0, and describe in
+that file what rule it exercises.
+
 THIRD-PARTY-NOTICES.txt (repository root) carries the full license texts and
-ships inside BOTH packages.
+ships inside EVERY package.
 
 CODING CONVENTIONS
 ==================
@@ -466,6 +627,24 @@ CodeBrix.Platform.GameEngine.Sdl2
     at start-up and its event queue is never pumped — state is polled directly,
     so no second event loop runs alongside the CodeBrix.Platform one.
 
+CodeBrix.Platform.GameEngine.KenneyAssets
+    refs: the engine (as a package once published; as a ProjectReference while
+          UseLocalEngineProject defaults to true).
+    deps: CodeBrix.Graphics3D.Gltf2 only; SkiaSharp, CodeBrix.Compression,
+          CodeBrix.SkiaSvg and CodeBrix.Audio come through the engine.
+    Fills the engine's IGameAssetProvider seam for Kenney bundles, implementing
+    every capability interface the contract defines. Two layers, deliberately:
+    a CATALOG (Sources/ + Parsing/) that reads only the archive listing and the
+    small atlas, tile set and map documents, and MATERIALIZING (Materialize/ +
+    Models/) that turns one catalogued asset into an engine object registered
+    under the asset's own key. All transformation lives here — the engine core
+    knows nothing Kenney-shaped, and the contract stays describe-and-materialize.
+    Only six types are public; the rest is internal and reached by the test seam.
+    The model work is the largest piece: a glTF reader onto the engine's
+    GameModel family, and a pure-managed z-buffered software rasterizer that
+    pre-renders a model into a sprite sheet, so no GPU and no display is needed
+    and the tests run headless.
+
 NOTES
 =====
   * The engine core is a process-global singleton machine. Anything that
@@ -477,10 +656,15 @@ NOTES
     idempotence and post-Dispose Update() safety.
   * samples/ is the living reference for the engine's subsystems and each sample
     carries its own .slnx; see EXTRAS-README.txt.
+  * An asset PROVIDER must be callable from more than one thread: the registry
+    locks its own bookkeeping but calls a provider outside that lock.
+    Materializing also has to be idempotent by key, because the engine's
+    registries hold one object per key and re-registering disposes what a game is
+    already using — the KenneyAssets provider is the worked example of both.
   * Documentation files in this repository: see README-INDEX.txt. The
-    repository-root AGENT-README.txt ships in the engine package; the Sdl2
-    project's local AGENT-README.txt ships in the Sdl2 package; this file,
-    EXTRAS-README.txt and the RELEASE-NOTES-*.md files ship in neither.
+    repository-root AGENT-README.txt ships in the engine package; each add-on
+    project's local AGENT-README.txt ships in that add-on's package; this file,
+    EXTRAS-README.txt and the RELEASE-NOTES-*.md files ship in none of them.
 
 ================================================================================
 END OF MAINTAINER-README

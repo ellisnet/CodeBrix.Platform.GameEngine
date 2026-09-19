@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using CodeBrix.Audio.Opus;
 using CodeBrix.Audio.Wave;
 using CodeBrix.Platform.GameEngine.Audio;
@@ -23,26 +24,36 @@ public class PlatformAudioFactoryTests
 {
     private const string OpusFileName = "tone.opus";
 
-    // CodeBrixAudioOpus.Register() is process-wide and permanent, so ".opus is not registered yet"
-    // can only be observed ONCE per process. These are captured during static initialization of this
-    // class - which the runtime performs before the first test in the class runs, and nothing else in
-    // the assembly registers Opus - so the "before registration" assertions below cannot be changed
-    // by whichever sibling test happens to run first.
-    private static readonly bool _opusSupportedBeforeRegistration =
-        PlatformAudioFactory.Supports(OpusFileName);
+    private static bool _opusSupportedBeforeRegistration;
 
-    private static readonly Exception? _opusFailureBeforeRegistration = CaptureOpusFailure();
+    private static Exception? _opusFailureBeforeRegistration;
 
-    private static Exception? CaptureOpusFailure()
+    /// <summary>
+    /// Records what the engine makes of an unregistered <c>.opus</c> file, before anything in this
+    /// assembly has had the chance to register the codec.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CodeBrixAudioOpus.Register"/> writes to process-wide state and there is no unregister,
+    /// so ".opus is not registered yet" exists exactly once per process. A class's static initializer
+    /// is not early enough to catch it: the runtime is free to defer that until a static field is first
+    /// read, which is inside the test below, by which time a sibling test that registers Opus may
+    /// already have run. A module initializer is, because the runtime runs it before any other code in
+    /// this assembly - test discovery and test execution included - so this observation cannot be
+    /// raced whatever order the tests run in, and cannot be raced by a future test either.
+    /// </remarks>
+    [ModuleInitializer]
+    internal static void CaptureOpusStateBeforeRegistration()
     {
+        _opusSupportedBeforeRegistration = PlatformAudioFactory.Supports(OpusFileName);
+
         try
         {
             PlatformAudioFactory.GetReaderFactory(OpusFileName);
-            return null;
+            _opusFailureBeforeRegistration = null;
         }
         catch (Exception ex)
         {
-            return ex;
+            _opusFailureBeforeRegistration = ex;
         }
     }
 
@@ -135,8 +146,8 @@ public class PlatformAudioFactoryTests
     [Fact]
     public void Opus_is_unsupported_until_registered_and_then_loads_like_any_other_format()
     {
-        //Arrange - the BEFORE state was captured during this class's static initialization, so this
-        // test asserts the same thing whether or not a sibling test has already registered Opus.
+        //Arrange - the BEFORE state was captured by this assembly's module initializer, so this test
+        // asserts the same thing whether or not a sibling test has already registered Opus.
         var supportedBefore = _opusSupportedBeforeRegistration;
         var failureBefore = _opusFailureBeforeRegistration;
 

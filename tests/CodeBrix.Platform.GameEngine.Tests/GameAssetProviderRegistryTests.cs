@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using CodeBrix.Platform.GameEngine.Assets.Models;
 using CodeBrix.Platform.GameEngine.Assets.Providers;
 using CodeBrix.Platform.GameEngine.Audio;
+using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;
 using SilverAssertions;
+using SkiaSharp;
 using Xunit;
 
 namespace CodeBrix.Platform.GameEngine.Tests;
@@ -24,6 +27,7 @@ public class GameAssetProviderRegistryTests : IDisposable
 
     private readonly GameAssetProviderRegistry _registry = GameAssetProviderRegistry.Instance;
     private readonly List<FakeGameAssetProvider> _providers = [];
+    private readonly List<FakeCatalogProvider> _modelProviders = [];
 
     /// <summary>Starts from an empty registry; the assembly runs its tests serially.</summary>
     public GameAssetProviderRegistryTests()
@@ -31,13 +35,19 @@ public class GameAssetProviderRegistryTests : IDisposable
         _registry.Clear();
     }
 
-    /// <summary>Clears the global registry and unloads every audio key the fakes materialized.</summary>
+    /// <summary>
+    /// Clears the global registry, unloads every audio key the fakes materialized, and disposes the
+    /// model fakes (which own the tilesheets they rendered) whether they were registered or not.
+    /// </summary>
     public void Dispose()
     {
         _registry.Clear();
 
         foreach (var key in _providers.SelectMany(provider => provider.MaterializedKeys))
             AudioResourceManager.Instance.Unload(key);
+
+        foreach (var provider in _modelProviders)
+            provider.Dispose();
 
         GC.SuppressFinalize(this);
     }
@@ -309,6 +319,233 @@ public class GameAssetProviderRegistryTests : IDisposable
     }
 
     [Fact]
+    public void LoadModel_dispatches_to_the_provider_that_owns_the_key()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        var provider = CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], asset);
+        _registry.Register(provider);
+        var options = new ModelMaterializeOptions { BakeAllAnimations = true };
+
+        //Act
+        var model = _registry.LoadModel(asset.Key, options);
+
+        //Assert
+        model.Should().BeSameAs(provider.ModelToReturn);
+        provider.MaterializedKeys.Should().ContainSingle();
+        provider.MaterializedKeys[0].Should().Be(asset.Key);
+        provider.LastOptions.Should().BeSameAs(options);
+    }
+
+    [Fact]
+    public void LoadModel_throws_for_an_asset_that_is_not_a_model()
+    {
+        //Arrange
+        var asset = Image(FakeProviderId, "PNG/ballBlue.png");
+        _registry.Register(CreateModelProvider(
+            FakeProviderId,
+            [GameAssetKind.Model3D, GameAssetKind.Image],
+            asset));
+
+        //Act
+        var thrown = Assert.Throws<UnsupportedGameAssetException>(() => _registry.LoadModel(asset.Key));
+
+        //Assert
+        thrown.Kind.Should().Be(GameAssetKind.Image);
+        thrown.Key.Should().Be(asset.Key);
+    }
+
+    [Fact]
+    public void LoadModel_throws_when_the_provider_has_no_model_capability()
+    {
+        //Arrange - the fake implements only the audio capability.
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        _registry.Register(CreateProvider(
+            FakeProviderId,
+            supportedKinds: [GameAssetKind.Model3D],
+            assets: asset));
+
+        //Act
+        var thrown = Assert.Throws<UnsupportedGameAssetException>(() => _registry.LoadModel(asset.Key));
+
+        //Assert
+        thrown.Kind.Should().Be(GameAssetKind.Model3D);
+        thrown.Key.Should().Be(asset.Key);
+    }
+
+    [Fact]
+    public void LoadModel_throws_when_the_provider_does_not_declare_the_kind()
+    {
+        //Arrange - the provider can read models but lists this kind for discovery only.
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        _registry.Register(CreateModelProvider(FakeProviderId, [], asset));
+
+        //Act
+        var thrown = Assert.Throws<UnsupportedGameAssetException>(() => _registry.LoadModel(asset.Key));
+
+        //Assert
+        thrown.Kind.Should().Be(GameAssetKind.Model3D);
+        thrown.Key.Should().Be(asset.Key);
+    }
+
+    [Fact]
+    public void LoadModelAnimation_dispatches_to_the_provider_that_owns_the_key()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        var provider = CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], asset);
+        _registry.Register(provider);
+
+        //Act
+        var clip = _registry.LoadModelAnimation(asset.Key, "walk", framesPerSecond: 12);
+
+        //Assert
+        clip.Should().BeSameAs(provider.ClipToReturn);
+        provider.LastAnimationName.Should().Be("walk");
+        provider.LastFramesPerSecond.Should().Be(12);
+    }
+
+    [Fact]
+    public void LoadModelAnimation_validates_its_arguments()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        _registry.Register(CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], asset));
+
+        //Act
+        Action blankName = () => _registry.LoadModelAnimation(asset.Key, "   ");
+        Action noFrameRate = () => _registry.LoadModelAnimation(asset.Key, "walk", framesPerSecond: 0);
+        Action unknownProvider = () => _registry.LoadModelAnimation("missing:Models/character", "walk");
+        Action unknownAsset = () => _registry.LoadModelAnimation($"{FakeProviderId}:Models/nothing", "walk");
+
+        //Assert
+        blankName.Should().Throw<ArgumentException>();
+        noFrameRate.Should().Throw<ArgumentOutOfRangeException>();
+        unknownProvider.Should().Throw<KeyNotFoundException>();
+        unknownAsset.Should().Throw<KeyNotFoundException>();
+    }
+
+    [Fact]
+    public void LoadModelAnimation_throws_when_the_provider_has_no_model_capability()
+    {
+        //Arrange - the fake implements only the audio capability.
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        _registry.Register(CreateProvider(
+            FakeProviderId,
+            supportedKinds: [GameAssetKind.Model3D],
+            assets: asset));
+
+        //Act
+        var thrown = Assert.Throws<UnsupportedGameAssetException>(
+            () => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        //Assert
+        thrown.Kind.Should().Be(GameAssetKind.Model3D);
+        thrown.Key.Should().Be(asset.Key);
+    }
+
+    [Fact]
+    public void LoadModelAnimation_throws_for_an_internally_inconsistent_clip()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        var provider = CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], asset);
+        _registry.Register(provider);
+
+        //Act & Assert - each case is the only thing wrong with the clip the provider hands back.
+        provider.ClipToReturn = null;
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        provider.ClipToReturn = TestGameModels.Clip(frames: []);
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        provider.ClipToReturn = TestGameModels.Clip(frames: [TestGameModels.Frame()]);
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        provider.ClipToReturn = TestGameModels.Clip(
+            frames: [TestGameModels.Frame(3), TestGameModels.Frame(3, 3)]);
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        provider.ClipToReturn = TestGameModels.Clip(
+            frames: [TestGameModels.Frame(3), TestGameModels.Frame(6)]);
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        provider.ClipToReturn = TestGameModels.Clip(
+            frames:
+            [
+                new GameModelAnimationFrame
+                {
+                    Meshes = [new GameModelFrameMesh { Positions = new float[9], Normals = new float[3] }]
+                }
+            ]);
+        Assert.Throws<InvalidDataException>(() => _registry.LoadModelAnimation(asset.Key, "walk"));
+    }
+
+    [Fact]
+    public void LoadModelAnimation_names_the_provider_and_the_key_when_a_clip_is_inconsistent()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        var provider = CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], asset);
+        provider.ClipToReturn = TestGameModels.Clip(frames: []);
+        _registry.Register(provider);
+
+        //Act
+        var thrown = Assert.Throws<InvalidDataException>(
+            () => _registry.LoadModelAnimation(asset.Key, "walk"));
+
+        //Assert
+        thrown.Message.Should().Contain(FakeProviderId);
+        thrown.Message.Should().Contain(asset.Key);
+    }
+
+    [Fact]
+    public void LoadTilesheet_materializes_a_model_as_pre_rendered_sprites()
+    {
+        //Arrange
+        var asset = Model(FakeProviderId, "Models/character.glb");
+        var provider = CreateSpriteProvider(FakeProviderId, [GameAssetKind.Model3D], asset);
+        _registry.Register(provider);
+        var options = new TilesheetMaterializeOptions
+        {
+            ModelRender = new ModelRenderOptions { Directions = 4 }
+        };
+
+        //Act
+        var sheet = _registry.LoadTilesheet(asset.Key, options);
+
+        //Assert
+        sheet.Should().NotBeNull();
+        provider.MaterializedKeys.Should().ContainSingle();
+        provider.MaterializedKeys[0].Should().Be(asset.Key);
+        provider.LastOptions.Should().BeSameAs(options);
+        provider.LastOptions!.ModelRender!.Directions.Should().Be(4);
+    }
+
+    [Fact]
+    public void LoadTilesheet_throws_for_a_model_the_provider_cannot_render()
+    {
+        //Arrange - one provider hands out model data only; the other renders sheets but lists the
+        //model kind for discovery only.
+        var dataAsset = Model(FakeProviderId, "Models/character.glb");
+        var spriteAsset = Model(OtherProviderId, "Models/robot.glb");
+        _registry.Register(CreateModelProvider(FakeProviderId, [GameAssetKind.Model3D], dataAsset));
+        _registry.Register(CreateSpriteProvider(OtherProviderId, [GameAssetKind.Image], spriteAsset));
+
+        //Act
+        var noTilesheetCapability = Assert.Throws<UnsupportedGameAssetException>(
+            () => _registry.LoadTilesheet(dataAsset.Key));
+        var kindNotDeclared = Assert.Throws<UnsupportedGameAssetException>(
+            () => _registry.LoadTilesheet(spriteAsset.Key));
+
+        //Assert
+        noTilesheetCapability.Kind.Should().Be(GameAssetKind.Model3D);
+        noTilesheetCapability.Key.Should().Be(dataAsset.Key);
+        kindNotDeclared.Kind.Should().Be(GameAssetKind.Model3D);
+        kindNotDeclared.Key.Should().Be(spriteAsset.Key);
+    }
+
+    [Fact]
     public void Clear_disposes_every_registered_provider()
     {
         //Arrange
@@ -353,6 +590,28 @@ public class GameAssetProviderRegistryTests : IDisposable
         return provider;
     }
 
+    private FakeModelAssetProvider CreateModelProvider(
+        string providerId,
+        GameAssetKind[] supportedKinds,
+        params GameAssetDescriptor[] assets)
+    {
+        var provider = new FakeModelAssetProvider(providerId, supportedKinds, assets);
+        _modelProviders.Add(provider);
+
+        return provider;
+    }
+
+    private FakeModelSpriteProvider CreateSpriteProvider(
+        string providerId,
+        GameAssetKind[] supportedKinds,
+        params GameAssetDescriptor[] assets)
+    {
+        var provider = new FakeModelSpriteProvider(providerId, supportedKinds, assets);
+        _modelProviders.Add(provider);
+
+        return provider;
+    }
+
     private static GameAssetDescriptor Audio(string providerId, string path)
     {
         return Describe(providerId, path, GameAssetKind.Audio);
@@ -361,6 +620,11 @@ public class GameAssetProviderRegistryTests : IDisposable
     private static GameAssetDescriptor Image(string providerId, string path)
     {
         return Describe(providerId, path, GameAssetKind.Image);
+    }
+
+    private static GameAssetDescriptor Model(string providerId, string path)
+    {
+        return Describe(providerId, path, GameAssetKind.Model3D);
     }
 
     private static GameAssetDescriptor Describe(string providerId, string path, GameAssetKind kind)
@@ -448,6 +712,156 @@ public class GameAssetProviderRegistryTests : IDisposable
         public void Dispose()
         {
             IsDisposed = true;
+        }
+    }
+
+    /// <summary>
+    /// The catalog half of a fake provider: it lists a fixed set of descriptors and hands out raw
+    /// bytes, leaving each subclass to add exactly one capability interface.
+    /// </summary>
+    private abstract class FakeCatalogProvider : IGameAssetProvider
+    {
+        private readonly Dictionary<string, GameAssetDescriptor> _assets =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        protected FakeCatalogProvider(
+            string providerId,
+            GameAssetKind[] supportedKinds,
+            GameAssetDescriptor[] assets)
+        {
+            ProviderId = providerId;
+            SupportedKinds = new HashSet<GameAssetKind>(supportedKinds);
+
+            foreach (var asset in assets)
+                _assets[asset.Key] = asset;
+        }
+
+        public string ProviderId { get; }
+
+        public IReadOnlySet<GameAssetKind> SupportedKinds { get; }
+
+        public bool IsDisposed { get; private set; }
+
+        public List<string> MaterializedKeys { get; } = [];
+
+        public IReadOnlyList<GameAssetDescriptor> Describe(GameAssetQuery? query = null)
+        {
+            return _assets.Values
+                .Where(asset => query is null || query.Matches(asset))
+                .ToArray();
+        }
+
+        public bool TryDescribe(string key, [NotNullWhen(true)] out GameAssetDescriptor? descriptor)
+        {
+            return _assets.TryGetValue(key, out descriptor);
+        }
+
+        public Stream OpenRaw(GameAssetDescriptor descriptor)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+
+            if (!_assets.ContainsKey(descriptor.Key))
+                throw new KeyNotFoundException(descriptor.Key);
+
+            return new MemoryStream(PcmBytes, writable: false);
+        }
+
+        public virtual void Dispose()
+        {
+            IsDisposed = true;
+        }
+    }
+
+    /// <summary>
+    /// A provider that offers the model-DATA route only, so that the registry's model dispatchers
+    /// can be exercised, including what it does with a clip a provider got wrong.
+    /// </summary>
+    private sealed class FakeModelAssetProvider : FakeCatalogProvider, IModelAssetSource
+    {
+        public FakeModelAssetProvider(
+            string providerId,
+            GameAssetKind[] supportedKinds,
+            GameAssetDescriptor[] assets)
+            : base(providerId, supportedKinds, assets)
+        {
+            ModelToReturn = TestGameModels.Model();
+            ClipToReturn = TestGameModels.ClipFor(ModelToReturn);
+        }
+
+        public GameModel ModelToReturn { get; }
+
+        public GameModelAnimationClip? ClipToReturn { get; set; }
+
+        public ModelMaterializeOptions? LastOptions { get; private set; }
+
+        public string? LastAnimationName { get; private set; }
+
+        public int LastFramesPerSecond { get; private set; }
+
+        public GameModel MaterializeModel(
+            GameAssetDescriptor descriptor,
+            ModelMaterializeOptions? options = null)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+
+            MaterializedKeys.Add(descriptor.Key);
+            LastOptions = options;
+
+            return ModelToReturn;
+        }
+
+        public GameModelAnimationClip MaterializeModelAnimation(
+            GameAssetDescriptor descriptor,
+            string animationName,
+            int framesPerSecond = 24)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+
+            LastAnimationName = animationName;
+            LastFramesPerSecond = framesPerSecond;
+
+            return ClipToReturn!;
+        }
+    }
+
+    /// <summary>
+    /// A provider that offers the SPRITE route for a model: it pre-renders into a tilesheet, which
+    /// it owns and disposes, and records the options it was given.
+    /// </summary>
+    private sealed class FakeModelSpriteProvider : FakeCatalogProvider, ITilesheetAssetSource
+    {
+        private readonly List<Tilesheet> _sheets = [];
+
+        public FakeModelSpriteProvider(
+            string providerId,
+            GameAssetKind[] supportedKinds,
+            GameAssetDescriptor[] assets)
+            : base(providerId, supportedKinds, assets) { }
+
+        public TilesheetMaterializeOptions? LastOptions { get; private set; }
+
+        public Tilesheet MaterializeTilesheet(
+            GameAssetDescriptor descriptor,
+            TilesheetMaterializeOptions? options = null)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+
+            MaterializedKeys.Add(descriptor.Key);
+            LastOptions = options;
+
+            var sheet = TilesheetFactory.FromBitmap(descriptor.Key, new SKBitmap(16, 16));
+            _sheets.Add(sheet);
+
+            return sheet;
+        }
+
+        public override void Dispose()
+        {
+            foreach (var sheet in _sheets)
+                sheet.Dispose();
+
+            _sheets.Clear();
+            base.Dispose();
         }
     }
 }
