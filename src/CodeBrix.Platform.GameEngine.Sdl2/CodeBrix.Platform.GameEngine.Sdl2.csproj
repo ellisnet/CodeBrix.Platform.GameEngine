@@ -127,7 +127,7 @@
     <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
   </ItemGroup>
 
-  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="Pack"
+  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="GenerateNuspec;Pack"
           Condition="'$(UseLocalEngineProject)' == 'true'">
     <Error Text="UseLocalEngineProject=true is for local hardware verification only. The resulting package would have no engine dependency and no engine dll. Pack without it." />
   </Target>

@@ -58,7 +58,13 @@ public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio, IM
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        _volumeProvider = new VolumeSampleProvider(source);
+        // The mixer's current gain applies from the first sample, as it does for every other engine
+        // voice: a stream created while the music slider is down, or while a duck is active, must not
+        // play at full level until something happens to change a volume.
+        _volumeProvider = new VolumeSampleProvider(source)
+        {
+            Volume = AudioMixer.EffectiveVolume(_volume, _bus),
+        };
         _output.Init(_volumeProvider);
 
         AudioPauseRegistry.Register(this);
@@ -124,6 +130,9 @@ public sealed class StreamingAudioSource : IDisposable, IEnginePausableAudio, IM
     void IMixerVoice.ApplyMixerVolume() => ApplyMixerVolume();
 
     private void ApplyMixerVolume() => _volumeProvider.Volume = AudioMixer.EffectiveVolume(_volume, _bus);
+
+    /// <summary>The gain actually applied to the stream: its volume scaled by its bus, any duck and the master.</summary>
+    internal float AppliedGain => _volumeProvider.Volume;
 
     /// <summary>True while the stream voice is playing.</summary>
     public bool IsPlaying => _output.PlaybackState == PlaybackState.Playing;

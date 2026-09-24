@@ -33,6 +33,12 @@ public sealed class EngineManagers
     public AudioResourceManager AudioResources { get; } = AudioResourceManager.Instance;
 
     /// <summary>
+    /// Gets the registry holding the game's one active streaming music provider — the endless source
+    /// <see cref="MusicManager.PlayStreaming"/> plays from.
+    /// </summary>
+    public StreamingMusicRegistry StreamingMusic { get; } = StreamingMusicRegistry.Instance;
+
+    /// <summary>
     /// Gets the direct drawing manager for immediate-mode rendering operations.
     /// </summary>
     public DirectDrawingManager DirectDrawings { get; } = DirectDrawingManager.Instance;

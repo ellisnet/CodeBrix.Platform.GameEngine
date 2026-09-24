@@ -121,6 +121,58 @@ public sealed class MusicManager : IDisposable
     }
 
     /// <summary>
+    /// Plays the streaming music provider registered with <see cref="StreamingMusicRegistry"/>
+    /// (<c>Engine.Instance.Managers.StreamingMusic</c>) — endless music in one call.
+    /// </summary>
+    /// <param name="fadeIn">How long to fade in over. Zero starts at full volume.</param>
+    /// <returns>
+    /// The track now playing. The manager does not dispose it; it holds no audio resources once it is
+    /// stopped, so keeping or dropping the reference are both fine.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// It is <see cref="Play(MusicTrack, TimeSpan)"/> with a new <see cref="StreamingMusicTrack"/> over
+    /// the registered provider, so whatever was playing stops at once (use
+    /// <see cref="CrossfadeTo(MusicTrack, TimeSpan)"/> with
+    /// <see cref="StreamingMusicRegistry.CreateTrack"/> to overlap them instead).
+    /// </para>
+    /// <para>
+    /// IDEMPOTENT WHILE STREAMING: when the current track is already a streaming track over the
+    /// registered provider, and that provider has not stopped or faulted, it is returned as it is —
+    /// the stream is not restarted, so calling this on every screen change keeps the music going.
+    /// </para>
+    /// <para>
+    /// The provider may take a while to produce its first audio; the track plays silence meanwhile,
+    /// and the fade-in runs regardless. That gap is the contract, not a fault.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">No streaming music provider is registered.</exception>
+    public StreamingMusicTrack PlayStreaming(TimeSpan fadeIn = default)
+    {
+        var registry = StreamingMusicRegistry.Instance;
+        var provider = registry.Provider;
+
+        MusicTrack? current;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            current = _current;
+        }
+
+        if (provider is not null
+            && current is StreamingMusicTrack streaming
+            && ReferenceEquals(streaming.Provider, provider)
+            && streaming.State is not (StreamingMusicState.Stopped or StreamingMusicState.Faulted))
+        {
+            return streaming;
+        }
+
+        var track = registry.CreateTrack();
+        Play(track, fadeIn);
+        return track;
+    }
+
+    /// <summary>
     /// Crossfades from the current track to another: both play at once, the outgoing one fading
     /// down as the incoming one fades up, following <see cref="CrossfadeCurve"/>.
     /// </summary>

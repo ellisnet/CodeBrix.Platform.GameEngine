@@ -79,6 +79,22 @@ public class InputPumpGamepadTests : IDisposable
     }
 
     [Fact]
+    public void Initialize_keeps_a_gamepad_manager_assigned_before_it_when_none_is_passed()
+    {
+        //Arrange
+        // The hosts assign the manager (InitializeSdlGamepadManager) during input configuration and
+        // only then call Engine.Initialize with no adapters at all; a null argument must mean "keep".
+        var manager = new FakeGamepadManager();
+        Engine.Instance.Input.GamepadManager = manager;
+
+        //Act
+        Engine.Instance.Initialize();
+
+        //Assert
+        Engine.Instance.Input.GamepadManager.Should().BeSameAs(manager);
+    }
+
+    [Fact]
     public void PollNow_does_not_throw_when_no_gamepad_manager_is_assigned()
     {
         //Arrange

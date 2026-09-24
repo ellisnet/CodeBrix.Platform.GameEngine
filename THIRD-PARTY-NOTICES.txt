@@ -16,10 +16,18 @@ INCORPORATES NO THIRD-PARTY SOURCE and redistributes no asset: it is a reader,
 and the bundles it reads are supplied by the game using it. Notice 4 records the
 Kenney content that is committed to this REPOSITORY as test and sample material.
 
+CodeBrix.Platform.GameEngine.GeneratedMusic is another separate, optional
+package in this repository; it plays generated music through the engine's
+music system. It INCORPORATES NO THIRD-PARTY SOURCE and redistributes no model,
+instrument or music of its own: the music generation, the models and the
+instrument libraries are NuGet packages the game references itself.
+
 NuGet package dependencies (SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression,
 CodeBrix.Audio, CodeBrix.Json.Extensions, CodeBrix.Graphics3D.Gltf2 — the glTF
 reader the KenneyAssets package depends on, and its only direct third-party
-dependency — System.Text.Json, and the Microsoft.Extensions.* packages) are NOT
+dependency — CodeBrix.Audio.MusicGeneration (the GeneratedMusic package's
+music generation) and the model and instrument-library packages its tests use,
+System.Text.Json, and the Microsoft.Extensions.* packages) are NOT
 listed here: they are referenced as packages and ship with their own LICENSE and
 third-party notices; their source is not incorporated into these assemblies.
 

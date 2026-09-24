@@ -3,9 +3,10 @@ using System;
 namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 
 /// <summary>
-/// One piece of music the <see cref="MusicManager"/> can play — either a decoded audio file
-/// (<see cref="FileMusicTrack"/>) or a MIDI sequence rendered through a SoundFont or SFZ instrument
-/// (<see cref="MidiMusicTrack"/>).
+/// One piece of music the <see cref="MusicManager"/> can play — a decoded audio file
+/// (<see cref="FileMusicTrack"/>), a MIDI sequence rendered through a sampled instrument
+/// (<see cref="MidiMusicTrack"/>), or an endless stream pulled from an
+/// <see cref="IStreamingMusicProvider"/> (<see cref="StreamingMusicTrack"/>).
 /// </summary>
 /// <remarks>
 /// <para>

@@ -39,6 +39,38 @@ public class KenneyNamesTests
     }
 
     [Fact]
+    public void TryParseLicenseTitle_skips_a_decorative_rule_before_the_title()
+    {
+        //Arrange
+        // Some packs open their licence with a row of '#' characters; that row is not the title.
+        string licence = "\r\n" + new string('#', 79) + "\r\n\r\n\tSpace Shooter (Redux)\r\n\r\n\tCreated by Kenney";
+
+        //Act
+        bool parsed = KenneyNames.TryParseLicenseTitle(licence, out string? title, out string? version);
+
+        //Assert
+        parsed.Should().BeTrue();
+        title.Should().Be("Space Shooter");
+        version.Should().Be("Redux");
+    }
+
+    [Fact]
+    public void TryParseLicenseTitle_falls_through_to_a_too_long_title_after_a_decorative_rule()
+    {
+        //Arrange
+        // A rule, then a title line over the length limit: the rule must not be taken as the title
+        // and the long line must still be rejected, so the caller falls back to the file name.
+        string licence = new string('#', 79) + "\r\n\r\n\t" + new string('x', 84) + "\r\n";
+
+        //Act
+        bool parsed = KenneyNames.TryParseLicenseTitle(licence, out string? title, out _);
+
+        //Assert
+        parsed.Should().BeFalse();
+        title.Should().BeNull();
+    }
+
+    [Fact]
     public void TryParseLicenseTitle_accepts_a_title_without_a_version()
     {
         //Act

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.248.1071" />
+    <!-- The base SkiaSharp package carries Windows/macOS natives; Linux needs this explicit
+         native-assets package for anything in the engine that touches SkiaSharp. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.152.0" />
+  </ItemGroup>
+
+  <!--
+    The instrument libraries and models the tests play through. The library under test registers
+    none of them - a game does - so the tests register what each one needs. ModestSynth arrives with
+    MusicGeneration anyway; it is named here because the tests register it. The two model packages and
+    FluidR3Gm are only EXERCISED by the opt-in tests (GENERATEDMUSIC_MODEL_TESTS=1); the fast tests use
+    the embedded replay, and only register the model generators, which loads nothing.
+  -->
+  <ItemGroup>
+    <PackageReference Include="CodeBrix.Audio.ModestSynth.MitLicenseForever" Version="1.0.267.279" />
+    <PackageReference Include="CodeBrix.Audio.MusicGeneration.SkyTNT.ApacheLicenseForever" Version="1.0.266.271" />
+    <PackageReference Include="CodeBrix.Audio.MusicGeneration.MuPT.ApacheLicenseForever" Version="1.0.266.257" />
+    <PackageReference Include="CodeBrix.Audio.Samples.FluidR3Gm.MitLicenseForever" Version="1.0.264.1274" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine.GeneratedMusic\CodeBrix.Platform.GameEngine.GeneratedMusic.csproj" />
+  </ItemGroup>
+
+</Project>

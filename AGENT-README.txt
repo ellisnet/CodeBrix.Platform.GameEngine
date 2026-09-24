@@ -45,6 +45,15 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   package fills it for Kenney's CC0 bundles: images, sprite atlases, audio,
   fonts, SVG, Tiled maps and glTF models, read straight out of the .zip.
 
+  CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever — generated
+  in-game music (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt. This engine
+  package defines the STREAMING MUSIC PROVIDER seam (IStreamingMusicProvider,
+  StreamingMusicTrack and Engine.Managers.StreamingMusic — see STREAMING MUSIC
+  PROVIDERS) and that package fills it with CodeBrix.Audio.MusicGeneration's
+  endless, model-generated music: one engine.UseGeneratedMusic(options) call
+  after registering an instrument library and a model.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):
@@ -96,7 +105,8 @@ KEY NAMESPACES / USINGS
                                                         //   TypedValueBag, ValueKey<T>
     using CodeBrix.Platform.GameEngine.Assets;          // AssetsFile
     using CodeBrix.Platform.GameEngine.Audio;           // AudioSystem, SoundChannel, streams,
-                                                        //   MusicManager, SfxVoicePool
+                                                        //   MusicManager, SfxVoicePool,
+                                                        //   IStreamingMusicProvider
     using CodeBrix.Platform.GameEngine.Configuration;   // EngineConfiguration[File]
     using CodeBrix.Platform.GameEngine.Drawing;         // Tile, ImageFilterQuality, SvgResource
     using CodeBrix.Platform.GameEngine.Drawing.Sprites; // Sprite, CompositeSprite, SpriteManager
@@ -306,8 +316,8 @@ There are exactly three thread contexts a Mode-A game touches:
     thread has no dispatcher queue).
 
   AUDIO CALLBACK THREAD (only if the game uses streaming audio)
-    Runs: StreamingAudioSource fill callbacks. Must be fast, allocation-free,
-    and never block. Do not touch game state or UI from it; hand it data
+    Runs: StreamingAudioSource fill callbacks and IStreamingMusicProvider.Render
+    (streaming music). Must be fast, allocation-free, and never block. Do not touch game state or UI from it; hand it data
     through lock-free fields.
 
 Mode B is simpler: the GAME-LOOP THREAD (FixedRateGameLoop's dedicated thread)
@@ -1175,7 +1185,7 @@ place the policy lives, so a game does not reimplement fade timing and
 
   TRACKS — a track is a HANDLE, not a transport. Read its state and set its
   Volume; play/stop/crossfade/seek through the manager, which owns the fades.
-  Three kinds:
+  Four kinds:
     * FileMusicTrack   — wraps an AudioResource, so it STREAMS from the loaded
                          data. The right choice for long linear music.
     * MidiMusicTrack   — a MIDI sequence rendered live through a SoundFont
@@ -1213,6 +1223,9 @@ place the policy lives, so a game does not reimplement fade timing and
                          from an AssetsFile before loading.
     * MusicStemSet     — several recordings of one piece playing in lock, with
                          the game fading layers in and out. See ADAPTIVE STEMS.
+    * StreamingMusicTrack — endless music PULLED from an
+                         IStreamingMusicProvider (generated music, a procedural
+                         score). See STREAMING MUSIC PROVIDERS.
 
   TRANSPORT: Play(track, fadeIn), CrossfadeTo(track, duration), Stop(fadeOut),
   Pause(), Resume(), Seek(), NowPlaying, IsPlaying, ActiveFadeCount.
@@ -1396,6 +1409,112 @@ place the policy lives, so a game does not reimplement fade timing and
   MusicManager.JumpToMarker("chorus") seeks the current track to one
   (case-insensitive; returns false rather than seeking somewhere arbitrary if
   there is no such marker).
+
+  STREAMING MUSIC PROVIDERS — endless music the engine pulls as it plays.
+  An IStreamingMusicProvider is a source that produces music AS IT GOES
+  (generated music, a procedural score) rather than from a finished file. A
+  library that supplies one registers it, and the game plays it with ONE call:
+
+      Engine.Instance.Managers.StreamingMusic.Register(provider); // usually done
+                                                   // for you by the supplying
+                                                   // library's start-up method
+      AudioSystem.Initialize(48000, 2);            // pin the format (see below)
+      MusicManager.Instance.PlayStreaming(TimeSpan.FromSeconds(2));
+
+  PlayStreaming(fadeIn) is Play(new StreamingMusicTrack(provider), fadeIn), so
+  the result is an ordinary music track: fades, CrossfadeTo, Stop(fadeOut),
+  Pause/Resume, PushDuck/Duck, PlayStinger over it, the music slider and the
+  global engine pause all work unchanged. It is IDEMPOTENT while streaming —
+  calling it again while that provider is playing returns the same track and
+  does not restart the stream, so it is safe on every screen change. It throws
+  InvalidOperationException when no provider is registered.
+
+  THE CONTRACT (what a provider must do — read this before writing one):
+    Name, Description           short name for logs; one opaque line saying
+                                what is playing (the engine only logs it).
+    State, Fault, StateChanged  StreamingMusicState Stopped / Starting /
+                                Playing / Starved / Faulted. StateChanged may
+                                be raised on any thread, including the audio
+                                fill thread from inside Render.
+    Start(sampleRate, channels) MUST RETURN PROMPTLY. Slow work (a model load)
+                                continues in the background while the state is
+                                Starting. Render at exactly sampleRate.
+    Stop()                      prompt, and safe when already stopped. A later
+                                Start begins a fresh timeline.
+    Render(left, right) -> n    called on the AUDIO FILL THREAD: fast, no
+                                allocations, never blocking. Fill up to
+                                left.Length frames of two planes and return how
+                                many were written.
+  The engine's side: Render is never called concurrently, never before Start
+  returns and never after Stop returns; a stream is always stopped before it is
+  started again; the engine NEVER disposes a provider.
+
+  GAP TOLERANCE IS THE CONTRACT. Starting and Starved are ORDINARY states.
+  Returning fewer frames than asked (0 included) is always allowed: the engine
+  fills the rest with silence and keeps pulling. The track never stops because
+  the music went quiet, and never throws on the fill thread. A provider that
+  fails sets State = Faulted and Fault, and never throws into the engine (an
+  exception escaping Render is caught and treated as a fault, but that is a
+  safety net). Each state change is logged once at Information; Starved/Playing
+  flapping is limited to one line every few seconds, with a count of what was
+  skipped.
+
+  THE SAMPLE-RATE RULE: the provider is started at the output's REAL format —
+  AudioSystem.DeviceSampleRate / DeviceChannels when the game called
+  AudioSystem.Initialize, else the rate the shared output is running at or was
+  configured for, and only when nothing has claimed the output yet
+  StreamingMusicTrack.UnclaimedOutputSampleRate (48 kHz), which the output
+  then ADOPTS (the log says so). Call AudioSystem.Initialize at start-up to
+  choose the rate. Render always produces TWO planes; for a mono output the
+  engine down-mixes them.
+
+  THE TRACK: StreamingMusicTrack(provider) or (key, provider); Provider; State
+  (Stopped while not playing, else the provider's); Fault; SampleRate /
+  Channels it last started at; SuspendOnEnginePause (null = suspend, like all
+  music). Position = time pulled since the last start, SILENCE INCLUDED — the
+  stream's own clock; it holds still while paused. Duration = TimeSpan.Zero
+  (the MusicTrack "not known" convention, read as endless). IsLooping is always
+  true (setting it does nothing); Seek does nothing; Timeline is null, so a
+  Beat/Bar-quantised transition away from it runs immediately (and says so).
+
+  ENDED is raised (at most once per start) when the PROVIDER ends the stream
+  by itself — it reports Stopped or Faulted, or someone other than the track
+  calls its Stop(), as Register does to a provider it replaces. Stopping the
+  track through MusicManager does NOT raise it, as for every track (a playlist
+  would otherwise advance on its own stop). After the provider ends, the track
+  plays silence until the game stops or restarts it.
+
+  THE REGISTRY — Engine.Instance.Managers.StreamingMusic (also
+  StreamingMusicRegistry.Instance): Provider, HasProvider, Register(provider),
+  Unregister() -> the removed provider, CreateTrack(). ONE provider at a time:
+  registering a different one STOPS the old one (a track playing it raises
+  Ended) and replaces it; registering the same one again does nothing.
+  Unregister stops and removes. NOTHING here disposes a provider — whoever
+  created it owns it. Engine.Dispose() unregisters (stops) the active provider.
+
+  PITFALLS:
+    * ONE STREAM PER PROVIDER. Starting a second track over the SAME provider
+      takes the stream over: the provider is stopped and started afresh and the
+      first track goes silent. So CrossfadeTo between two tracks over one
+      provider RESTARTS it — to change what a provider plays, use the
+      provider's own controls. Crossfading between a streaming track and a file
+      or MIDI track works as usual.
+    * Do not guess the rate inside a provider; use the one Start hands you. A
+      provider rendering 44.1 kHz into a 48 kHz output plays sharp and fast.
+    * Ended arrives on a background or audio thread — marshal with
+      Engine.Instance.EngineDispatcher.Post before touching game state.
+    * A stopped track holds no audio resources, so keeping or dropping the
+      reference PlayStreaming returns are both fine; disposing it is tidy but
+      optional. Dispose the PROVIDER yourself when the game is done with it,
+      after unregistering it.
+
+  THE FIRST PROVIDER is the separate
+  CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever package:
+  CodeBrix.Audio.MusicGeneration's generated music, registered and started with
+  one call — engine.UseGeneratedMusic(options) — and
+  src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt documents its
+  options, follow-ups and degraded paths. Read it as the worked example of this
+  contract before writing a provider of your own.
 
 SCENES, LAYERS, AND TILES (Mode A)
 --------------------------------------------------------------------------------
@@ -3598,7 +3717,15 @@ AUDIO / MUSIC
         TimeSpan duration[, MusicTransitionQuantize]); Stop(fadeOut[, quantize]); Pause(); Resume();
         Seek(); PushDuck(depth, attack, release) -> IDisposable; Duck(depth, attack, hold, release);
         ClearDucks(); PlayStinger(key, volume, duckMusic); Play(playlist, crossfade); Next(crossfade);
-        JumpToMarker(name); HasPendingTransition; CancelPendingTransition(); NowPlaying; IsPlaying
+        JumpToMarker(name); HasPendingTransition; CancelPendingTransition(); NowPlaying; IsPlaying;
+        PlayStreaming(fadeIn) -> StreamingMusicTrack (plays the registered provider; idempotent)
+    Engine.Instance.Managers.StreamingMusic (StreamingMusicRegistry): Provider; HasProvider;
+        Register(IStreamingMusicProvider); Unregister(); CreateTrack()
+    IStreamingMusicProvider: Name; Description; State; Fault; StateChanged; Start(sampleRate,
+        channels); Stop(); int Render(Span<float> left, Span<float> right)
+    StreamingMusicState: Stopped, Starting, Playing, Starved, Faulted
+    StreamingMusicTrack(provider) / (key, provider): Provider; State; Fault; SampleRate; Channels;
+        SuspendOnEnginePause; UnclaimedOutputSampleRate (48000)
     MusicTimeline(beatsPerMinute, beatsPerBar[, offsetSeconds, markers]);
         MusicTimeline(MidiTempoMap, beatsPerBar[, offsetSeconds, markers]);
         static FromMidiFile(path) / FromMidiEvents(events) / FromMidiSequence(sequence, beatsPerBar);

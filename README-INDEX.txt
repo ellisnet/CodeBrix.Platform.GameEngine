@@ -24,6 +24,12 @@ AGENT-README FILES (consumer documentation, one per NuGet package)
       holds and materializes images, sprite atlases, audio, fonts, SVG, Tiled
       maps and glTF models into engine objects. License: MIT.
 
+  src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt
+      CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever — optional
+      generated in-game music for that engine: CodeBrix.Audio.MusicGeneration's
+      endless, model-generated music played on the engine's music bus through
+      one UseGeneratedMusic call. License: MIT.
+
 MAINTAINER AND EXTRAS
 ---------------------
   MAINTAINER-README.txt

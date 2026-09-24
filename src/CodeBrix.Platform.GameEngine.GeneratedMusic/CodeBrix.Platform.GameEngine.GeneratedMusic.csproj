@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>CodeBrix.Platform.GameEngine.KenneyAssets</AssemblyName>
-    <RootNamespace>CodeBrix.Platform.GameEngine.KenneyAssets</RootNamespace>
-    <!-- NRT enabled to match every other project in this repo (the engine core, the host and the
-         SDL2 package). See AGENT-README.txt. -->
+    <AssemblyName>CodeBrix.Platform.GameEngine.GeneratedMusic</AssemblyName>
+    <RootNamespace>CodeBrix.Platform.GameEngine.GeneratedMusic</RootNamespace>
+    <!-- NRT enabled to match every other project in this repo (the engine core, the host, the
+         SDL2 package and the Kenney asset package). See AGENT-README.txt. -->
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
@@ -53,15 +53,16 @@
 
   <!--
     This is a SEPARATE published package from CodeBrix.Platform.GameEngine.MitLicenseForever.
-    Keeping it separate means a game that never touches a Kenney asset bundle does not inherit the
-    glTF reader or the bundle-reading code by adding the engine.
+    Keeping it separate means a game that never plays generated music does not inherit the music
+    generation stack (CodeBrix.Audio.MusicGeneration and the model runner under it) by adding the
+    engine.
   -->
   <PropertyGroup>
-    <PackageId>CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever</PackageId>
-    <Product>CodeBrix.Platform.GameEngine.KenneyAssets</Product>
-    <Title>CodeBrix.Platform.GameEngine.KenneyAssets</Title>
+    <PackageId>CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever</PackageId>
+    <Product>CodeBrix.Platform.GameEngine.GeneratedMusic</Product>
+    <Title>CodeBrix.Platform.GameEngine.GeneratedMusic</Title>
     <Authors>Jeremy Ellis</Authors>
-    <Description>Kenney asset bundle support for CodeBrix.Platform.GameEngine: catalogs the assets in Kenney .zip bundles and extracted bundle folders, and materializes images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models into engine objects.</Description>
+    <Description>Generated in-game music for CodeBrix.Platform.GameEngine through one call: plays CodeBrix.Audio.MusicGeneration's endless, model-generated music on the engine's music bus, so fades, crossfades, ducking, stingers and the global pause work on it like on any other track.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ellisnet/CodeBrix.Platform.GameEngine</RepositoryUrl>
@@ -72,7 +73,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <IsPackable>true</IsPackable>
-    <PackageTags>game-engine;gamedev;assets;kenney;sprites;tiled;gltf;CodeBrix</PackageTags>
+    <PackageTags>game-engine;gamedev;music;generated-music;midi;streaming-audio;CodeBrix</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -93,15 +94,23 @@
     package. Every engine build restamps its version, so a local source could shadow nuget.org and
     this package would be built against an engine version that was never published.
 
-    LOCAL VERIFICATION ESCAPE HATCH (-p:UseLocalEngineProject=true), the same switch the SDL2 package
-    has: it swaps the PackageReference for a ProjectReference so a local build compiles this project
-    against THIS repo's engine source, for developing the engine's asset-provider contract and this
-    provider together. Local mode can never be packed (the guard below) and forces
-    GeneratePackageOnBuild off, because a package built that way would carry no engine dependency
-    and no engine dll. The default is false: a normal build uses the published engine pinned below.
+    WHY UseLocalEngineProject DEFAULTS TO TRUE HERE (it defaults to false in the SDL2 and Kenney
+    asset packages): the newest PUBLISHED engine package predates the streaming-music seam entirely -
+    it has no IStreamingMusicProvider, no StreamingMusicTrack and no Managers.StreamingMusic - so a
+    PackageReference build of this project cannot compile. The seam and this first implementation of
+    it are deliberately being developed together against the working tree, so that a real provider
+    exercises the seam before it is frozen. Local mode can never be packed (the guard below) and
+    forces GeneratePackageOnBuild off.
+
+    HAND-OVER, once the engine carrying the streaming-music seam is published: flip the default below
+    to false and set the PackageReference version to the published engine version. Those two edits
+    are the whole hand-over; nothing else in this project depends on the switch.
+
+    The guard runs before GenerateNuspec, not only before Pack, so a refused pack leaves no
+    engine-less .nupkg behind in the output folder.
   -->
   <PropertyGroup>
-    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">false</UseLocalEngineProject>
+    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">true</UseLocalEngineProject>
     <GeneratePackageOnBuild Condition="'$(UseLocalEngineProject)' == 'true'">false</GeneratePackageOnBuild>
   </PropertyGroup>
 
@@ -119,13 +128,14 @@
   </Target>
 
   <!--
-    The only direct third-party dependency. glTF reading is transformation logic and belongs in a
-    provider, not in the engine core, so the reader package is referenced here and nowhere else.
-    Everything else this library needs - SkiaSharp, CodeBrix.Compression (zip reading),
-    CodeBrix.SkiaSvg and CodeBrix.Audio - arrives transitively through the engine.
+    The only direct dependency besides the engine. CodeBrix.Audio.MusicGeneration brings
+    CodeBrix.Audio, CodeBrix.Audio.ModestSynth (the synthesized General MIDI instrument library) and
+    the model runner with it. This library REGISTERS NOTHING - no instrument library and no
+    generator: which instruments and which model a game uses are the game's decisions, made with one
+    Register() call each at start-up.
   -->
   <ItemGroup>
-    <PackageReference Include="CodeBrix.Graphics3D.Gltf2.MitLicenseForever" Version="1.0.261.293" />
+    <PackageReference Include="CodeBrix.Audio.MusicGeneration.MitLicenseForever" Version="1.0.267.291" />
   </ItemGroup>
 
 </Project>

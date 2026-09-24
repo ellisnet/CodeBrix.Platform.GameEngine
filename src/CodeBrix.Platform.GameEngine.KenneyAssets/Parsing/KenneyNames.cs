@@ -68,10 +68,12 @@ internal static class KenneyNames
         version = null;
         if (string.IsNullOrWhiteSpace(licenseText)) { return false; }
 
+        //Some licence files open with a decorative rule (a row of '#' or '=' characters) before the
+        //  title; a line with no letter or digit in it cannot be a title, so skip those.
         string? firstLine = licenseText
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
-            .FirstOrDefault(line => line.Length > 0);
+            .FirstOrDefault(line => line.Any(char.IsLetterOrDigit));
         if (firstLine is null) { return false; }
 
         //A title line is short prose, not one of the licence body sentences

@@ -2,14 +2,15 @@
 
 A fully managed, cross-platform 2D and 2.5D game engine for .NET. CodeBrix.Platform.GameEngine provides tile maps, sprites, layered scenes, camera/view systems, animation, physics and collision, input handling, audio, and SkiaSharp-based rendering — designed for tile-based worlds and a practical engine architecture.
 
-This repository ships **two** core libraries, plus two optional add-ons:
+This repository ships **two** core libraries, plus optional add-ons:
 
 * **`CodeBrix.Platform.GameEngine`** — the platform-agnostic engine core. It has no UI-framework dependency and is headless-testable; its rendering seam is SkiaSharp `SKImage` plus a render-surface-adapter abstraction.
 * **`CodeBrix.Platform.GameEngine.Host`** — the host layer that runs the engine on **CodeBrix.Platform**, across all six heads (Windows Win32-Skia, Windows WPF-Skia, Linux X11, Linux Wayland, Linux Frame Buffer, macOS). It provides the CPU and GPU render-surface adapters, pointer/keyboard input adapters, and a UI dispatcher.
 * **`CodeBrix.Platform.GameEngine.Sdl2`** — *optional* game controller (gamepad) support; see below.
 * **`CodeBrix.Platform.GameEngine.KenneyAssets`** — *optional* Kenney asset bundle support; see below.
+* **`CodeBrix.Platform.GameEngine.GeneratedMusic`** — *optional* generated in-game music; see below.
 
-CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and three NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads, and the optional `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` for Kenney asset bundles.
+CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads, the optional `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` for Kenney asset bundles, and the optional `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` for generated music.
 
 CodeBrix.Platform.GameEngine supports applications and assemblies that target Microsoft .NET version 10.0 and later.
 Microsoft .NET version 10.0 is a Long-Term Supported (LTS) version of .NET, and was released on Nov 11, 2025; and will be actively supported by Microsoft until Nov 14, 2028.
@@ -29,6 +30,10 @@ dotnet add package CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever
 dotnet add package CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever
 ```
 
+```
+dotnet add package CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever
+```
+
 Note that the NuGet package IDs and the namespaces are different - there is no package named plain `CodeBrix.Platform.GameEngine`:
 
 * NuGet package ID: `CodeBrix.Platform.GameEngine.MitLicenseForever`
@@ -38,8 +43,10 @@ Note that the NuGet package IDs and the namespaces are different - there is no p
   * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.Sdl2` - i.e. `using CodeBrix.Platform.GameEngine.Sdl2;`
 * NuGet package ID: `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever`
   * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.KenneyAssets` - i.e. `using CodeBrix.Platform.GameEngine.KenneyAssets;`
+* NuGet package ID: `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever`
+  * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.GeneratedMusic` - i.e. `using CodeBrix.Platform.GameEngine.GeneratedMusic;`
 
-**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one. Add `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` only when your game loads Kenney asset bundles, for the same reason.
+**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one. Add `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` only when your game loads Kenney asset bundles, and `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` only when it plays generated music, for the same reason.
 
 XML documentation (IntelliSense) ships alongside the assemblies.
 
@@ -71,6 +78,7 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 * Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, per-clip playback speed, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
 * MIDI music rendered live through a sampled instrument — SoundFont, SFZ and Decent Sampler instruments — with per-channel layering, a tempo control that does not change pitch, and MPE
 * A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems (including the stems of a Suno download, loaded straight from the zip or folder), and transitions quantised to the next beat or bar — exactly, through the tempo map, even where the music changes tempo
+* Endless streaming music: a provider contract for music that is produced as it plays (generated music, a procedural score), played with one call and handled by the music system like any other track — silence while the provider starts or falls behind is part of the contract, never an error
 * Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
 * A global pause that parks the whole engine at near-zero CPU and shifts every time baseline on resume, so nothing bursts or teleports
 * A UI-agnostic core with a render-surface-adapter seam for headless unit testing
@@ -149,11 +157,36 @@ var ball = sheet["ballBlue", 0, 0];
 
 Nothing is unpacked, renamed or repacked: the bundles are read where they lie. Images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models all become ordinary engine objects - tilesheets, audio resources, typefaces, scene layers, and models either as data or as pre-rendered sprite frames a 2D game can draw. It is the first implementation of the engine's asset-provider contract, so it is also the worked example for a provider of your own. Kenney's content is CC0 and is not part of the package.
 
+## Generated music (optional)
+
+Endless, model-generated in-game music ships as a **separate** NuGet package, so that games which do not use it do not inherit the music generation stack:
+
+```
+dotnet add package CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever
+```
+
+Register an instrument library and, usually, a model package's generator at start-up, and one call starts the music on the engine's music bus - where fades, crossfades, ducking, stingers and the global pause work on it like on any other track:
+
+```csharp
+using CodeBrix.Audio.ModestSynth;
+using CodeBrix.Audio.MusicGeneration.SkyTNT;
+using CodeBrix.Platform.GameEngine.GeneratedMusic;
+
+GeneralMidiInstrumentLibrary.Register();
+SkyTNTModel.Register();
+
+var music = Engine.Instance.UseGeneratedMusic(new GeneratedMusicOptions { Preset = "ClubArrangement" });
+
+music.FollowUp("FourOnTheFloor");   // new music for the next level, at a bar line
+```
+
+The music is generated while the game runs and never ends; silence while a model loads or falls behind is part of the design, never an error. With no model registered a recorded piece plays in its place, and the engine log says so. The package registers no instruments and no model of its own: those are the game's choices, one `Register()` line each. It is the first implementation of the engine's streaming-music provider contract, so it is also the worked example for a provider of your own.
+
 ## Documentation
 
 The NuGet package includes `AGENT-README.txt`, a complete API reference and usage guide written for AI coding agents - point your agent at that file when it is writing code against this library.
 
-The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads. The Kenney asset package carries its own `AGENT-README.txt` too, covering asset keys, the per-kind rules and the limits of its Tiled and model support.
+The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads. The Kenney asset package carries its own `AGENT-README.txt` too, covering asset keys, the per-kind rules and the limits of its Tiled and model support; and so does the generated-music package, covering its options, follow-ups and degraded paths.
 
 Additional sample code and usage examples are available in the `CodeBrix.Platform.GameEngine.Tests` project:
 https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests

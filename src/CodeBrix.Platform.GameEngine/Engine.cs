@@ -401,7 +401,12 @@ public sealed class Engine : IDisposable
             if (touchAdapter != null)
                 Input.TouchAdapter = touchAdapter;
 
-            Input.GamepadManager = gamepadManager;
+            // Like the adapters above, a null argument means "keep what is already assigned": the
+            // hosts wire the gamepad manager (InitializeSdlGamepadManager) BEFORE calling Initialize,
+            // and overwriting it with null here left the game reading a manager the engine never
+            // refreshed again - every controller looked connected but frozen.
+            if (gamepadManager != null)
+                Input.GamepadManager = gamepadManager;
 
             if (UiDispatcher == null)
                 PostInitialization?.Invoke();
@@ -1887,6 +1892,10 @@ public sealed class Engine : IDisposable
 
         Timer.ClearAll();
         State.Clear();
+
+        // The streaming music provider is a runtime registration: stop it and drop it before the
+        // output goes away. It is never disposed here - whoever created it owns it.
+        Managers.StreamingMusic.Unregister();
 
         // Release the shared audio output: stops any remaining voices and frees the
         // native device (and un-pins any AudioSystem.Initialize format). Harmless
