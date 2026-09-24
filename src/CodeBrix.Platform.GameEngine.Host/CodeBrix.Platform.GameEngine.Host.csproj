@@ -117,7 +117,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.12" />
     <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.252.363" />
     <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.248.1109" />
-    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.261.233" />
+    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.267.279" />
     <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.248.1133" />
   </ItemGroup>
 
