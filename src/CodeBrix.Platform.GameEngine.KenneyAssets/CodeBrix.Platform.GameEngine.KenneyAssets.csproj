@@ -106,7 +106,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' != 'true'">
-    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.262.1014" />
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.268.223" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' == 'true'">

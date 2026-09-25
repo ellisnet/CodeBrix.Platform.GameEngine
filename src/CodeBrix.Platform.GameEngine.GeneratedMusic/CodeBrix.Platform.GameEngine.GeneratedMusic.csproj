@@ -110,12 +110,12 @@
     engine-less .nupkg behind in the output folder.
   -->
   <PropertyGroup>
-    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">true</UseLocalEngineProject>
+    <UseLocalEngineProject Condition="'$(UseLocalEngineProject)' == ''">false</UseLocalEngineProject>
     <GeneratePackageOnBuild Condition="'$(UseLocalEngineProject)' == 'true'">false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' != 'true'">
-    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.262.1014" />
+    <PackageReference Include="CodeBrix.Platform.GameEngine.MitLicenseForever" Version="1.0.268.223" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEngineProject)' == 'true'">
