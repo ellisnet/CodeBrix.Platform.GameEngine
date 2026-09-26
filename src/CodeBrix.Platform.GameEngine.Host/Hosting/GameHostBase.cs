@@ -3,6 +3,7 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using CodeBrix.Platform.GameEngine.Logging;
 using CodeBrix.Platform.GameEngine.Scenes;
+using CodeBrix.Platform.GameEngine.Timers;
 
 namespace CodeBrix.Platform.GameEngine.Host.Hosting; //was previously: Gondwana.Hosting;
 
@@ -21,6 +22,8 @@ public abstract class GameHostBase : IDisposable
     private bool _engineStarted;
     private Action? _enginePausedHandler;
     private Action? _engineResumedHandler;
+    private Action<FixedUpdateStep>? _fixedUpdateHandler;
+    private Action<int>? _afterFixedUpdatesHandler;
 
     /// <summary>
     /// Gets the singleton instance of the engine.
@@ -60,6 +63,13 @@ public abstract class GameHostBase : IDisposable
         Engine.Paused += _enginePausedHandler;
         Engine.Resumed += _engineResumedHandler;
 
+        // The fixed-step hook raises nothing until the game sets
+        // Engine.Configuration.FixedUpdateRate (typically in OnEngineInitialized).
+        _fixedUpdateHandler = OnFixedUpdate;
+        _afterFixedUpdatesHandler = OnAfterFixedUpdates;
+        Engine.FixedUpdate += _fixedUpdateHandler;
+        Engine.AfterFixedUpdates += _afterFixedUpdatesHandler;
+
         InitializeEngine(configPath, autoSaveConfig);
 
         StartEngine();
@@ -87,6 +97,31 @@ public abstract class GameHostBase : IDisposable
     /// implementation does nothing.
     /// </summary>
     protected virtual void OnEngineResumed()
+    {
+    }
+
+    /// <summary>
+    /// Called on the engine thread for every step of the engine's fixed-step update hook
+    /// (<see cref="GameEngine.Engine.FixedUpdate"/>) - the place for deterministic game logic
+    /// that must run at the same rate on every machine. The hook is off until the game sets
+    /// <see cref="CodeBrix.Platform.GameEngine.Configuration.EngineConfiguration.FixedUpdateRate"/>
+    /// above zero, typically in <see cref="OnEngineInitialized"/>
+    /// (<c>Engine.Configuration.FixedUpdateRate = 60;</c>). Steps are frozen while the engine is
+    /// paused. The base implementation does nothing.
+    /// </summary>
+    /// <param name="step">The step: its fixed duration, running number and place in the cycle.</param>
+    protected virtual void OnFixedUpdate(FixedUpdateStep step)
+    {
+    }
+
+    /// <summary>
+    /// Called on the engine thread once per engine cycle in which at least one
+    /// <see cref="OnFixedUpdate"/> step ran, after the last of them and before the cycle's render
+    /// (<see cref="GameEngine.Engine.AfterFixedUpdates"/>) - the place to build what the next
+    /// frame shows. The base implementation does nothing.
+    /// </summary>
+    /// <param name="stepCount">The number of steps that ran in this cycle.</param>
+    protected virtual void OnAfterFixedUpdates(int stepCount)
     {
     }
 
@@ -429,6 +464,16 @@ public abstract class GameHostBase : IDisposable
         {
             Engine.Resumed -= _engineResumedHandler;
             _engineResumedHandler = null;
+        }
+        if (_fixedUpdateHandler is not null)
+        {
+            Engine.FixedUpdate -= _fixedUpdateHandler;
+            _fixedUpdateHandler = null;
+        }
+        if (_afterFixedUpdatesHandler is not null)
+        {
+            Engine.AfterFixedUpdates -= _afterFixedUpdatesHandler;
+            _afterFixedUpdatesHandler = null;
         }
 
         OnDisposing();

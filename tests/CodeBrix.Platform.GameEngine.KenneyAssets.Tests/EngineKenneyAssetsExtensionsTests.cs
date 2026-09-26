@@ -397,6 +397,91 @@ public class EngineKenneyAssetsExtensionsTests : IDisposable
         stillThere.Should().BeSameAs(sheet);
     }
 
+    [Fact]
+    public void RegisterKenneyAssets_twice_with_the_same_paths_adds_nothing_the_second_time()
+    {
+        //Arrange
+        string[] paths =
+        [
+            TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName),
+            TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName),
+        ];
+
+        //Act
+        KenneyAssetsRegistration first = Engine.Instance.RegisterKenneyAssets(paths);
+        int assetsAfterFirst = first.Provider.AssetCount;
+        KenneyAssetsRegistration second = Engine.Instance.RegisterKenneyAssets(paths);
+
+        //Assert
+        second.Provider.Should().BeSameAs(first.Provider);
+        _registry.Count.Should().Be(1);
+        first.Sources.Should().AllSatisfy(source => source.Status.Should().Be(KenneySourceStatus.Read));
+        second.Sources.Should().AllSatisfy(
+            source => source.Status.Should().Be(KenneySourceStatus.AlreadyRegistered));
+        second.Provider.AssetCount.Should().Be(assetsAfterFirst);
+        second.Provider.Packs.Select(pack => pack.Slug).Should().BeEquivalentTo([SimulatedSlug, PuzzleSlug]);
+        second.Packs.Should().BeEquivalentTo(first.Packs);
+        second.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RegisterKenneyAssets_skips_what_UseKenneyAssets_already_registered_and_reports_the_rest()
+    {
+        //Arrange
+        KenneyGameAssetProvider used = Register(TestFixtures.SimulatedBundleFileName);
+
+        //Act
+        KenneyAssetsRegistration registration = Engine.Instance.RegisterKenneyAssets(
+            TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName),
+            TestFixtures.BundlePath("no-such-bundle.zip"));
+
+        //Assert
+        registration.Provider.Should().BeSameAs(used);
+        registration.Sources[0].Status.Should().Be(KenneySourceStatus.AlreadyRegistered);
+        registration.Sources[1].Status.Should().Be(KenneySourceStatus.Missing);
+        registration.Unavailable.Should().ContainSingle();
+        used.Packs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void RegisterKenneyAssets_on_a_fresh_engine_matches_UseKenneyAssets()
+    {
+        //Arrange
+        string path = TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName);
+        KenneyGameAssetProvider used = Register(TestFixtures.PuzzlePackFileName);
+        IReadOnlyList<KenneyPackSummary> usedPacks = used.Packs;
+        int usedCount = used.AssetCount;
+        _registry.Clear();
+
+        //Act
+        KenneyAssetsRegistration registration = Engine.Instance.RegisterKenneyAssets(path);
+
+        //Assert
+        registration.Provider.Should().NotBeSameAs(used);
+        _registry.Providers.Should().ContainSingle().Which.Should().BeSameAs(registration.Provider);
+        registration.Provider.AssetCount.Should().Be(usedCount);
+        registration.Provider.Packs.Should().BeEquivalentTo(usedPacks);
+        registration.Sources.Should().ContainSingle().Which.Status.Should().Be(KenneySourceStatus.Read);
+    }
+
+    [Fact]
+    public void RegisterKenneyAssets_leaves_nothing_registered_when_a_source_must_not_be_ignored()
+    {
+        //Arrange
+        KenneyAssetsOptions options = new()
+        {
+            Sources = [TestFixtures.BundlePath("no-such-bundle.zip")],
+            IgnoreUnreadableSources = false,
+        };
+
+        //Act
+        Action act = () => Engine.Instance.RegisterKenneyAssets(options);
+
+        //Assert
+        act.Should().Throw<FileNotFoundException>();
+        _registry.Count.Should().Be(0);
+    }
+
     private static GameAssetDescriptor Describe(KenneyGameAssetProvider provider, string key)
     {
         provider.TryDescribe(key, out GameAssetDescriptor? descriptor).Should().BeTrue();

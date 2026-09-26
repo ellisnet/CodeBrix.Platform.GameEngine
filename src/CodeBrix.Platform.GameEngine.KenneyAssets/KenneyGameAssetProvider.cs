@@ -2,6 +2,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using CodeBrix.Platform.GameEngine.Assets.Models;
@@ -79,6 +80,11 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
         GameAssetKind.TiledMap,
         GameAssetKind.Model3D,
     ]);
+
+    //Linux file systems tell case apart; the Windows and macOS defaults do not
+    private static readonly StringComparison SourcePathComparison = OperatingSystem.IsLinux()
+        ? StringComparison.Ordinal
+        : StringComparison.OrdinalIgnoreCase;
 
     private readonly object _gate = new();
     private readonly List<KenneyAssetSource> _sources = [];
@@ -243,14 +249,7 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
     {
         ArgumentNullException.ThrowIfNull(options);
         ThrowIfDisposed();
-
-        if (!string.Equals(options.ProviderId, ProviderId, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                $"These options name the asset provider '{options.ProviderId}' while this provider is " +
-                $"'{ProviderId}'. A provider's identifier is fixed when it is created.",
-                nameof(options));
-        }
+        ThrowIfOtherProvider(options);
 
         return AddSourcesCore(options.Sources, options.RecursiveFolders, options.IgnoreUnreadableSources);
     }
@@ -277,6 +276,172 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
         ArgumentNullException.ThrowIfNull(zipFilesOrFolders);
 
         return AddSources(new KenneyAssetsOptions { ProviderId = ProviderId, Sources = zipFilesOrFolders });
+    }
+
+    /// <summary>
+    /// Registers more asset sources with this provider, leaving out any path it already holds, and
+    /// reports what happened to each path.
+    /// </summary>
+    /// <param name="options">
+    /// The sources to add and how to read them. Its <see cref="KenneyAssetsOptions.ProviderId"/> must
+    /// name this provider, because a provider's identifier is fixed when it is created.
+    /// </param>
+    /// <returns>
+    /// One <see cref="KenneySourceResult"/> per path, in the order given - read, already registered,
+    /// missing or unreadable, with the packs it stands for - plus the warnings this call added.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the options name a different provider; and, when
+    /// <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off, when a source path is
+    /// blank.
+    /// </exception>
+    /// <exception cref="FileNotFoundException">
+    /// Thrown when <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off and no file
+    /// or folder exists at a source path.
+    /// </exception>
+    /// <exception cref="IOException">
+    /// Thrown when <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off and a source
+    /// zip file cannot be read.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">Thrown when the provider has been disposed.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is <see cref="AddSources(KenneyAssetsOptions)"/> made safe to call again: a zip file or
+    /// folder is recognized by its full path, and a path this provider already read - earlier, or
+    /// earlier in the same call - is reported as <see cref="KenneySourceStatus.AlreadyRegistered"/>
+    /// instead of being added a second time under a <c>-2</c> slug with a second set of keys. For a
+    /// path read once the outcome is exactly what <c>AddSources</c> gives.
+    /// </para>
+    /// <para>
+    /// The same bundle copied to another path is a different source and IS read again.
+    /// </para>
+    /// </remarks>
+    public KenneyAssetsRegistration AddNewSources(KenneyAssetsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ThrowIfDisposed();
+        ThrowIfOtherProvider(options);
+
+        IReadOnlyList<string> warnings = AddSourcesCore(
+            options.Sources,
+            options.RecursiveFolders,
+            options.IgnoreUnreadableSources,
+            skipRegistered: true,
+            out IReadOnlyList<KenneySourceResult> results);
+
+        return new KenneyAssetsRegistration(this, results, warnings);
+    }
+
+    /// <summary>
+    /// Registers more asset sources with this provider, with the default settings, leaving out any
+    /// path it already holds, and reports what happened to each path.
+    /// </summary>
+    /// <param name="zipFilesOrFolders">
+    /// The paths of the Kenney bundles (.zip files) and extracted bundle folders to add.
+    /// </param>
+    /// <returns>One result per path, in the order given, plus the warnings this call added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="zipFilesOrFolders"/> is null.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when the provider has been disposed.</exception>
+    /// <remarks>
+    /// The same as <see cref="AddNewSources(KenneyAssetsOptions)"/> with options holding these paths
+    /// and nothing else, so an unreadable source is reported rather than thrown.
+    /// </remarks>
+    public KenneyAssetsRegistration AddNewSources(params string[] zipFilesOrFolders)
+    {
+        ArgumentNullException.ThrowIfNull(zipFilesOrFolders);
+
+        return AddNewSources(new KenneyAssetsOptions { ProviderId = ProviderId, Sources = zipFilesOrFolders });
+    }
+
+    /// <summary>
+    /// Gets one credit line per registered pack, in registration order, with a line two packs would
+    /// share listed once.
+    /// </summary>
+    /// <remarks>
+    /// Each line is <see cref="KenneyPackSummary.CreditLine"/>, so a credits screen built from this
+    /// credits exactly what the game loaded.
+    /// </remarks>
+    public IReadOnlyList<string> CreditLines =>
+        Packs.Select(pack => pack.CreditLine).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>
+    /// Checks a list of asset keys against the catalog without materializing anything: which keys
+    /// resolve, which do not, and the kind and size of each one that does.
+    /// </summary>
+    /// <param name="keys">
+    /// The keys to check, in either form <see cref="TryDescribe"/> accepts. A null or blank entry is
+    /// reported as not found.
+    /// </param>
+    /// <returns>One status per key, in the order given, with the missing keys and a count per kind.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="keys"/> is null.</exception>
+    /// <remarks>
+    /// This is what a game's test calls with every key constant it hand-writes, asserting
+    /// <see cref="KenneyKeyCheck.MissingKeys"/> is empty, and what a start-up log summarizes with
+    /// <see cref="KenneyKeyCheck.ToString"/>. A key carrying another provider's prefix is not found
+    /// here, since this provider does not hold it.
+    /// </remarks>
+    public KenneyKeyCheck CheckKeys(IEnumerable<string> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        List<KenneyKeyStatus> statuses = [];
+        foreach (string key in keys)
+        {
+            if (_index.TryGetEntry(key, out KenneyAssetEntry? entry))
+            {
+                statuses.Add(new KenneyKeyStatus(
+                    key, true, entry.Kind, entry.SizeBytes, entry.SpriteAtlas?.Frames.Count ?? 0));
+            }
+            else
+            {
+                statuses.Add(new KenneyKeyStatus(key ?? string.Empty, false, GameAssetKind.Unknown, 0, 0));
+            }
+        }
+
+        return new KenneyKeyCheck(statuses);
+    }
+
+    /// <summary>
+    /// Writes a readable catalog of the keys: every key grouped by pack, with its kind, and under
+    /// each sprite atlas the names of the frames inside it.
+    /// </summary>
+    /// <param name="writer">Where to write the catalog.</param>
+    /// <param name="query">A filter on the keys listed, or <see langword="null"/> to list every key.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="writer"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is for a developer choosing assets and copying exact spellings: keys are spelled as the
+    /// registry wants them, and the frame names are the region names the materialized atlas gets
+    /// with the default options (image extension removed), so <c>sheet["frameName", 0, 0]</c>
+    /// works as written. Nothing is materialized; only the catalog and the atlas documents already
+    /// read at registration are used.
+    /// </para>
+    /// <para>
+    /// The format is plain text meant for reading, not parsing: a heading line, then per pack a
+    /// blank line, a <c>slug - title - N key(s)</c> line, and one indented <c>key  [Kind]</c> line
+    /// per key, with an atlas's frame names indented further below it. Packs with no listed key are
+    /// left out.
+    /// </para>
+    /// </remarks>
+    public void WriteKeyCatalog(TextWriter writer, GameAssetQuery? query = null)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        KenneyKeyCatalogWriter.Write(writer, ProviderId, Packs, _index.Describe(query), _index, query is not null);
+    }
+
+    /// <summary>
+    /// Returns the readable key catalog <see cref="WriteKeyCatalog"/> writes, as one string.
+    /// </summary>
+    /// <param name="query">A filter on the keys listed, or <see langword="null"/> to list every key.</param>
+    /// <returns>The catalog text.</returns>
+    public string GetKeyCatalog(GameAssetQuery? query = null)
+    {
+        using StringWriter writer = new(CultureInfo.InvariantCulture);
+        WriteKeyCatalog(writer, query);
+
+        return writer.ToString();
     }
 
     /// <inheritdoc/>
@@ -522,11 +687,27 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
     }
 
     private IReadOnlyList<string> AddSourcesCore(
-        IReadOnlyList<string>? paths, bool recursiveFolders, bool ignoreUnreadableSources)
+        IReadOnlyList<string>? paths, bool recursiveFolders, bool ignoreUnreadableSources) =>
+        AddSourcesCore(paths, recursiveFolders, ignoreUnreadableSources, skipRegistered: false, out _);
+
+    //The one registration routine. skipRegistered = false is the historical AddSources behavior: every
+    //  path is opened, and a pack whose slug is taken gets a numeric suffix. skipRegistered = true
+    //  leaves out a path the provider already holds a source for, and reports every path.
+    private IReadOnlyList<string> AddSourcesCore(
+        IReadOnlyList<string>? paths,
+        bool recursiveFolders,
+        bool ignoreUnreadableSources,
+        bool skipRegistered,
+        out IReadOnlyList<KenneySourceResult> results)
     {
-        if (paths is null || paths.Count == 0) { return []; }
+        if (paths is null || paths.Count == 0)
+        {
+            results = [];
+            return [];
+        }
 
         List<string> added = [];
+        List<(string Path, KenneySourceStatus Status, KenneyAssetSource? Source, string? Message)> outcomes = [];
 
         lock (_gate)
         {
@@ -534,6 +715,12 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
 
             foreach (string path in paths)
             {
+                if (skipRegistered && FindRegisteredSource(path) is { } registered)
+                {
+                    outcomes.Add((path, KenneySourceStatus.AlreadyRegistered, registered, null));
+                    continue;
+                }
+
                 KenneyAssetSource source;
 
                 if (ignoreUnreadableSources)
@@ -543,6 +730,9 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
                     {
                         _sourceWarnings.Add(warning!);
                         added.Add(warning!);
+                        outcomes.Add((path, SourceExists(path)
+                            ? KenneySourceStatus.Unreadable
+                            : KenneySourceStatus.Missing, null, warning));
                         continue;
                     }
 
@@ -555,14 +745,68 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
 
                 _sources.Add(source);
                 _index.AddSource(source);
+                outcomes.Add((path, KenneySourceStatus.Read, source, null));
             }
 
             added.AddRange(_index.Warnings.Skip(catalogWarningsBefore));
             _packs = BuildPackSummaries();
+
+            Dictionary<KenneyPack, KenneyPackSummary> summaries = new(ReferenceEqualityComparer.Instance);
+            IReadOnlyList<KenneyPack> indexedPacks = _index.Packs;
+            for (int index = 0; index < indexedPacks.Count; index++) { summaries[indexedPacks[index]] = _packs[index]; }
+
+            results = outcomes
+                .Select(outcome => new KenneySourceResult
+                {
+                    SourcePath = outcome.Path,
+                    Status = outcome.Status,
+                    Packs = outcome.Source is null
+                        ? []
+                        : outcome.Source.Packs
+                            .Where(summaries.ContainsKey)
+                            .Select(pack => summaries[pack])
+                            .ToList(),
+                    Message = outcome.Message,
+                })
+                .ToList();
         }
 
         return added;
     }
+
+    //The source already registered from this path, compared as full paths
+    private KenneyAssetSource? FindRegisteredSource(string? path)
+    {
+        string? wanted = NormalizeSourcePath(path);
+        if (wanted is null) { return null; }
+
+        foreach (KenneyAssetSource source in _sources)
+        {
+            if (string.Equals(NormalizeSourcePath(source.SourcePath), wanted, SourcePathComparison))
+            {
+                return source;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeSourcePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) { return null; }
+
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private static bool SourceExists(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && (File.Exists(path) || Directory.Exists(path));
 
     //One summary per pack, counting only the assets that ended up addressable, so the numbers agree
     //  with what Describe lists
@@ -647,6 +891,17 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    private void ThrowIfOtherProvider(KenneyAssetsOptions options)
+    {
+        if (!string.Equals(options.ProviderId, ProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"These options name the asset provider '{options.ProviderId}' while this provider is " +
+                $"'{ProviderId}'. A provider's identifier is fixed when it is created.",
+                nameof(options));
+        }
+    }
 
     private void ReleaseEverything()
     {

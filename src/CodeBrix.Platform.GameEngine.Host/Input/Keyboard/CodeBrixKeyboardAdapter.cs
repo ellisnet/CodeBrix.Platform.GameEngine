@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using CodeBrix.Platform.GameEngine.Input.Keyboard;
@@ -22,8 +23,25 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Keyboard;
 /// <see cref="UIElement.KeyDown"/>/<see cref="UIElement.KeyUp"/> while it holds keyboard focus.
 /// This adapter sets <see cref="UIElement.IsTabStop"/> and grabs focus on load and on pointer press,
 /// so clicking the game surface restores keyboard input.
+/// <para>
+/// Keys the game uses are marked handled (<see cref="KeyRoutedEventArgs.Handled"/>) as they arrive, so while
+/// the game surface has focus they stay with the game: they do not bubble on to the application's
+/// keyboard accelerators (a menu item's Ctrl+S, say) or to Tab / arrow-key focus navigation, which would
+/// move focus off the surface. A key is used when it is registered for monitoring on the
+/// <see cref="KeyboardEventPoller"/> this adapter feeds (<see cref="KeyboardEventPoller.StartMonitoringKey"/>,
+/// <see cref="KeyboardEventPoller.StartMonitoringAllKeys"/>, ...) or claimed with <see cref="ClaimKey"/> /
+/// <see cref="ClaimKeys"/> - the way a game that only polls <see cref="IsDown"/> declares its keys. Every
+/// other key passes through unhandled, so application shortcuts keep working while the game has focus.
+/// Set <see cref="MarkUsedKeysHandled"/> to <see langword="false"/> to leave every key unhandled.
+/// The claim methods implement <see cref="IKeyClaimingAdapter"/>, through which an
+/// <see cref="CodeBrix.Platform.GameEngine.Input.Actions.InputActionMap"/> claims the keys of its binding profile.
+/// </para>
+/// <para>
+/// Losing keyboard focus releases every held key: a key released while focus is elsewhere (in a menu, a
+/// dialog, another window) never sends its KeyUp here and would otherwise stay down.
+/// </para>
 /// </remarks>
-public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
+public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IKeyClaimingAdapter, IDisposable
 {
     /// <summary>
     /// Converts a <see cref="VirtualKey"/> name (case-insensitive) to its integer key code.
@@ -52,7 +70,51 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
     private Microsoft.UI.Dispatching.DispatcherQueueHandler? _finalizeReleasesHandler;
     private int _finalizeScheduled;
 
+    private readonly KeyClaims _claims = new();
+
     private bool _isDisposed;
+
+    /// <summary>
+    /// Gets or sets whether keys the game uses are marked handled as they arrive (see the class remarks).
+    /// Defaults to <see langword="true"/>.
+    /// </summary>
+    public bool MarkUsedKeysHandled { get; set; } = true;
+
+    /// <summary>
+    /// Declares that the game uses <paramref name="keyCode"/> (a <see cref="VirtualKey"/> value cast to
+    /// <see cref="int"/>), so it is marked handled while the game surface has focus. Keys registered for
+    /// monitoring on the <see cref="KeyboardEventPoller"/> are used already and need no claim.
+    /// </summary>
+    /// <param name="keyCode">A <see cref="VirtualKey"/> value cast to <see cref="int"/>.</param>
+    public void ClaimKey(int keyCode) => _claims.Claim(keyCode);
+
+    /// <summary>
+    /// Declares that the game uses every key in <paramref name="keyCodes"/> - a polling game's whole
+    /// binding set, for example. Equivalent to calling <see cref="ClaimKey"/> for each code.
+    /// </summary>
+    /// <param name="keyCodes"><see cref="VirtualKey"/> values cast to <see cref="int"/>.</param>
+    public void ClaimKeys(IEnumerable<int> keyCodes) => _claims.Claim(keyCodes);
+
+    /// <summary>
+    /// Withdraws a claim made with <see cref="ClaimKey"/> or <see cref="ClaimKeys"/>. A key that is also
+    /// registered for monitoring stays used.
+    /// </summary>
+    /// <param name="keyCode">A <see cref="VirtualKey"/> value cast to <see cref="int"/>.</param>
+    public void UnclaimKey(int keyCode) => _claims.Unclaim(keyCode);
+
+    /// <summary>
+    /// Withdraws every claim made with <see cref="ClaimKey"/> or <see cref="ClaimKeys"/>.
+    /// </summary>
+    public void UnclaimAllKeys() => _claims.UnclaimAll();
+
+    /// <summary>
+    /// Returns <see langword="true"/> if the game uses <paramref name="keyCode"/>: it is claimed, or it is
+    /// registered for monitoring on the <see cref="KeyboardEventPoller"/> this adapter feeds.
+    /// Safe to call from any thread.
+    /// </summary>
+    /// <param name="keyCode">A <see cref="VirtualKey"/> value cast to <see cref="int"/>.</param>
+    /// <returns><see langword="true"/> if the game uses the key; otherwise <see langword="false"/>.</returns>
+    public bool IsKeyUsed(int keyCode) => _claims.IsUsed(keyCode, this, KeyboardEventPoller.Instance);
 
     /// <summary>
     /// Gets the current state of keyboard modifiers (Shift, Ctrl, Alt).
@@ -74,6 +136,7 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
         _element.IsTabStop = true;
         _element.KeyDown += OnKeyDown;
         _element.KeyUp += OnKeyUp;
+        _element.LostFocus += OnLostFocus;
         _element.PointerPressed += OnPointerPressed;
 
         if (_element is FrameworkElement frameworkElement)
@@ -88,6 +151,28 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
             _element.Focus(FocusState.Programmatic);
     }
 
+    // A key released after focus has moved away (into a menu, a dialog, another window) never sends its
+    // KeyUp to this element, so it would stay down for good - a stuck Alt, a stuck movement key. Losing
+    // focus releases every held key, through the same deferred release as OnKeyUp, so a KeyDown for a
+    // key still physically held (focus coming straight back) keeps it down.
+    private void OnLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_isDisposed) return;
+
+        var anyReleased = false;
+        for (var keyCode = 0; keyCode < _down.Length; keyCode++)
+        {
+            if (Volatile.Read(ref _down[keyCode]) == 1)
+            {
+                Volatile.Write(ref _down[keyCode], 2);
+                anyReleased = true;
+            }
+        }
+
+        if (anyReleased)
+            ScheduleFinalizeReleases();
+    }
+
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         // Restore keyboard focus to the game surface when it is clicked.
@@ -100,6 +185,14 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
         if (_isDisposed) return;
         SetDown((int)e.Key, true);
         RecomputeMods();
+        MarkHandledIfUsed(e);
+    }
+
+    // A key the game uses stays with the game (see the class remarks).
+    private void MarkHandledIfUsed(KeyRoutedEventArgs e)
+    {
+        if (MarkUsedKeysHandled && IsKeyUsed((int)e.Key))
+            e.Handled = true;
     }
 
     private void OnKeyUp(object sender, KeyRoutedEventArgs e)
@@ -119,6 +212,7 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
 
         RecomputeMods();
         ScheduleFinalizeReleases();
+        MarkHandledIfUsed(e);
     }
 
     private void ScheduleFinalizeReleases()
@@ -195,6 +289,7 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IDisposable
 
         _element.KeyDown -= OnKeyDown;
         _element.KeyUp -= OnKeyUp;
+        _element.LostFocus -= OnLostFocus;
         _element.PointerPressed -= OnPointerPressed;
         if (_element is FrameworkElement frameworkElement)
             frameworkElement.Loaded -= OnLoaded;

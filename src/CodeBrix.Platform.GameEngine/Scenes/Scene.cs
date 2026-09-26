@@ -173,7 +173,9 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
         foreach (var sceneLayer in _sceneLayers)
             OnSceneLayerAdded(sceneLayer);
 
-        if (!ReferenceEquals(this, Empty))
+        // While the static Empty property is being initialized its value is still null, so a
+        // reference comparison cannot recognize the placeholder here; its type can.
+        if (this is not EmptyScene)
             _allScenes.Add(this);
     }
 
@@ -488,6 +490,45 @@ public class Scene : IEnumerable<SceneLayer>, IDisposable
                                CoordinateSystemTypes coordinateSystem = CoordinateSystemTypes.Orthogonal)
     {
         var sceneLayer = new SceneLayer(columnCount, rowCount, width, height, parallax, coordinateSystem);
+        sceneLayer.ZOrder = zOrder;
+
+        _sceneLayers.Add(sceneLayer);
+        OnSceneLayerAdded(sceneLayer);
+
+        FullRefreshNeeded = true;
+
+        return sceneLayer;
+    }
+
+    /// <summary>
+    /// Creates and adds a pixel layer: a layer with no tile grid, sized in world pixels, that
+    /// carries sprites and scene-layer direct drawings (particles, health bars, a game's own
+    /// drawings) for a game that has no tile map (see <see cref="SceneLayer.IsPixelLayer"/>).
+    /// </summary>
+    /// <param name="widthPx">The layer width in world pixels, typically the render width.</param>
+    /// <param name="heightPx">The layer height in world pixels, typically the render height.</param>
+    /// <param name="zOrder">
+    /// The rendering order for this layer relative to other layers. Lower values render first (behind).
+    /// Default is 0.
+    /// </param>
+    /// <param name="parallax">The parallax scrolling factor for this layer. Default is 1.0 (no parallax).</param>
+    /// <returns>The newly created and added pixel layer.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="widthPx"/> or <paramref name="heightPx"/> is not greater than zero.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// protected override Scene CreateInitialScene()
+    /// {
+    ///     var scene = new Scene();
+    ///     _world = scene.AddPixelLayer(1280, 720);
+    ///     return scene;
+    /// }
+    /// </code>
+    /// </example>
+    public SceneLayer AddPixelLayer(int widthPx, int heightPx, int zOrder = 0, float parallax = 1f)
+    {
+        var sceneLayer = SceneLayer.CreatePixelLayer(widthPx, heightPx, parallax);
         sceneLayer.ZOrder = zOrder;
 
         _sceneLayers.Add(sceneLayer);

@@ -431,8 +431,9 @@ public sealed class EngineState
     {
         return new EngineStateSnapshot
         {
+            // A bundle read from a stream has no path a load could reopen it from, so it is left out.
             AssetsFiles = parts.HasFlag(EngineStateParts.AssetsFiles)
-                ? AssetsFiles.ToList()
+                ? AssetsFiles.Where(file => !string.IsNullOrEmpty(file.FilePath)).ToList()
                 : null,
 
             Tilesheets = parts.HasFlag(EngineStateParts.Tilesheets)
@@ -775,8 +776,9 @@ public sealed class EngineState
                 existingIndexById.Add(id, i);
         }
 
-        // Avoid duplicating the same incoming ID twice (keeps last one)
-        var seenIncoming = new HashSet<string>(StringComparer.Ordinal);
+        // IDs this merge has placed: a later incoming copy of the same ID replaces the earlier copy
+        // (last one wins) without ever touching a live scene the caller asked to keep.
+        var placedByMerge = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var incoming in scenes)
         {
@@ -791,17 +793,11 @@ public sealed class EngineState
             if (string.IsNullOrWhiteSpace(incoming.ID))
                 incoming.ID = Guid.NewGuid().ToString();
 
-            // If the incoming list contains the same ID multiple times, last one wins.
-            if (!seenIncoming.Add(incoming.ID))
-            {
-                // Replace the previously added/replaced incoming with this one:
-                // easiest way: treat it as overwriteExisting=true for that ID
-                overwriteExisting = true;
-            }
-
+            // If the incoming list contains the same ID multiple times, last one wins - for that ID
+            // only; a repeated ID must not switch overwriting on for the entries that follow.
             if (existingIndexById.TryGetValue(incoming.ID, out int existingIndex))
             {
-                if (!overwriteExisting)
+                if (!overwriteExisting && !placedByMerge.Contains(incoming.ID))
                     continue;
 
                 Scene._allScenes[existingIndex] = incoming;
@@ -811,6 +807,8 @@ public sealed class EngineState
                 existingIndexById[incoming.ID] = Scene._allScenes.Count;
                 Scene._allScenes.Add(incoming);
             }
+
+            placedByMerge.Add(incoming.ID);
         }
     }
 
@@ -827,7 +825,9 @@ public sealed class EngineState
                 existingIndexById.Add(id, i);
         }
 
-        var seenIncoming = new HashSet<string>(StringComparer.Ordinal);
+        // IDs this merge has placed (see MergeScenes): last incoming copy wins, live sprites the
+        // caller asked to keep are never replaced.
+        var placedByMerge = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var incoming in sprites)
         {
@@ -841,17 +841,17 @@ public sealed class EngineState
             if (string.IsNullOrWhiteSpace(incoming.Nickname))
                 incoming.Nickname = Guid.NewGuid().ToString();
 
-            if (!seenIncoming.Add(incoming.Nickname))
-            {
-                // Same-ID appears again in the incoming list: last one wins.
-                overwriteExisting = true;
-            }
-
             if (existingIndexById.TryGetValue(incoming.Nickname, out int existingIndex))
             {
-                if (!overwriteExisting)
+                if (!overwriteExisting && !placedByMerge.Contains(incoming.Nickname))
+                {
+                    // Rehydration above attached a collider; a skipped sprite must release it.
+                    incoming.DisposeImmediate();
                     continue;
+                }
 
+                // The replaced sprite leaves the registry here, so it is disposed here as well.
+                SpriteManager.Instance._spriteList[existingIndex].DisposeImmediate();
                 SpriteManager.Instance._spriteList[existingIndex] = incoming;
             }
             else
@@ -859,6 +859,8 @@ public sealed class EngineState
                 existingIndexById[incoming.Nickname] = SpriteManager.Instance._spriteList.Count;
                 SpriteManager.Instance.AddSprite(incoming);
             }
+
+            placedByMerge.Add(incoming.Nickname);
         }
     }
 

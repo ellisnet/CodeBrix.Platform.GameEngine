@@ -248,6 +248,52 @@ public class GameAssetProviderRegistryTests : IDisposable
     }
 
     [Fact]
+    public void A_missing_key_message_suggests_the_closest_real_keys()
+    {
+        //Arrange
+        _registry.Register(CreateProvider(
+            FakeProviderId,
+            Audio(FakeProviderId, "Audio/laser1.ogg"),
+            Audio(FakeProviderId, "Audio/laser2.ogg"),
+            Audio(FakeProviderId, "Audio/explosion.ogg")));
+
+        //Act
+        Action act = () => _registry.LoadAudio($"{FakeProviderId}:Audio/lazer1");
+
+        //Assert
+        act.Should().Throw<KeyNotFoundException>()
+            .WithMessage($"*does not hold an asset with the key '{FakeProviderId}:Audio/lazer1'. " +
+                         $"Did you mean: '{FakeProviderId}:Audio/laser1', '{FakeProviderId}:Audio/laser2'?");
+    }
+
+    [Fact]
+    public void A_key_with_an_unknown_provider_prefix_suggests_keys_of_the_registered_providers()
+    {
+        //Arrange
+        _registry.Register(CreateProvider(FakeProviderId, Audio(FakeProviderId, "Audio/laser.ogg")));
+
+        //Act
+        Action act = () => _registry.LoadAudio("fak:Audio/laser");
+
+        //Assert
+        act.Should().Throw<KeyNotFoundException>()
+            .WithMessage($"No asset provider is registered for the key 'fak:Audio/laser'.* Did you mean: '{FakeProviderId}:Audio/laser'?");
+    }
+
+    [Fact]
+    public void A_missing_key_message_carries_no_suggestion_when_nothing_is_close()
+    {
+        //Arrange
+        _registry.Register(CreateProvider(FakeProviderId, Audio(FakeProviderId, "Audio/laser.ogg")));
+
+        //Act
+        Action act = () => _registry.LoadAudio($"{FakeProviderId}:Music/theme-song-long");
+
+        //Assert
+        act.Should().Throw<KeyNotFoundException>().Which.Message.Should().NotContain("Did you mean");
+    }
+
+    [Fact]
     public void LoadAudio_throws_when_no_provider_owns_the_key()
     {
         //Arrange

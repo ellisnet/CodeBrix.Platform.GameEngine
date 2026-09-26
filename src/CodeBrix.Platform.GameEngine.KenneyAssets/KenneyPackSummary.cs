@@ -72,6 +72,18 @@ public sealed record KenneyPackSummary
     public IReadOnlyDictionary<GameAssetKind, int> CountsByKind { get; init; } = EmptyCounts;
 
     /// <summary>
+    /// Gets the line a credits screen shows for this pack: its licence title when the pack has a
+    /// licence file, else its display name, followed by <c> - Kenney (CC0)</c>.
+    /// </summary>
+    /// <remarks>
+    /// For example <c>Puzzle Pack (1.1) - Kenney (CC0)</c>. Kenney's content needs no attribution;
+    /// crediting it is good practice. <see cref="KenneyGameAssetProvider.CreditLines"/> gives the
+    /// line of every registered pack.
+    /// </remarks>
+    public string CreditLine =>
+        $"{(string.IsNullOrWhiteSpace(LicenseTitle) ? DisplayName : LicenseTitle.Trim())} - Kenney (CC0)";
+
+    /// <summary>
     /// Returns the pack's slug and display name.
     /// </summary>
     /// <returns>A short description of the pack.</returns>

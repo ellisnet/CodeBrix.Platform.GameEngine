@@ -83,6 +83,13 @@ public sealed class Engine : IDisposable
     private long _lastTimerDrivenForegroundDriverTick;
     private int _timerDrivenForegroundTargetFps;
 
+    // Fixed-step update hook (EngineConfiguration.FixedUpdateRate): its own accumulator, driven by
+    // the simulation tick of each cycle, so both loop modes share one code path. A rate of zero in
+    // _fixedUpdateActiveRate means "re-baseline on the next cycle that has the hook switched on".
+    private readonly FixedStepAccumulator _fixedUpdateSteps = new();
+    private int _fixedUpdateActiveRate;
+    private long _fixedUpdateStepNumber;
+
     private long _grossCyclesThisMeasure = 0;
     private long _netCyclesThisMeasure = 0;
     private double _grossCPS = 0;
@@ -225,6 +232,44 @@ public sealed class Engine : IDisposable
     /// </para>
     /// </remarks>
     public event Action<CyclesPerSecondCalculatedEventArgs>? CPSCalculated;
+
+    /// <summary>
+    /// Occurs once for every fixed step of the engine's fixed-step update hook, which is off
+    /// until <see cref="EngineConfiguration.FixedUpdateRate"/> is set above zero.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Raised on the engine thread, inside the engine cycle, after the background tasks (timers,
+    /// input polling, sprite movement, collisions, cameras and
+    /// <see cref="AfterBackgroundTasksExecute"/>) and before the cycle's render, in both loop
+    /// modes (<see cref="Start()"/> and <see cref="StartTimerDriven"/>). Each cycle turns the
+    /// time elapsed since the previous cycle into zero or more steps of
+    /// <see cref="FixedUpdateStep.DeltaSeconds"/>, at most
+    /// <see cref="EngineConfiguration.MaxFixedUpdateSteps"/>; excess time is discarded.
+    /// </para>
+    /// <para>
+    /// The step clock is frozen across <see cref="Pause"/>: no steps run while paused and the
+    /// paused interval is not replayed after <see cref="Resume"/>. A handler that pauses or
+    /// stops the engine ends the cycle's remaining steps.
+    /// </para>
+    /// <para>
+    /// This is the place for deterministic game logic (movement, rules, reading input into the
+    /// simulation), so it runs at the same rate on every machine whatever the cycle or frame
+    /// rate. It does not change how often the engine cycles or renders.
+    /// </para>
+    /// </remarks>
+    public event Action<FixedUpdateStep>? FixedUpdate;
+
+    /// <summary>
+    /// Occurs once per engine cycle in which at least one <see cref="FixedUpdate"/> step ran,
+    /// after the last of them and before the cycle's render. The argument is the number of steps
+    /// that ran. Raised on the engine thread.
+    /// </summary>
+    /// <remarks>
+    /// The natural place to build whatever the next frame shows from the simulation state, since
+    /// nothing changed in a cycle that ran no step.
+    /// </remarks>
+    public event Action<int>? AfterFixedUpdates;
 
     /// <summary>
     /// Raised when the global engine pause takes effect — the game's "do this when paused"
@@ -546,6 +591,7 @@ public sealed class Engine : IDisposable
 
         _isTimerDriven = false;
         EngineSimulationClock.UseWallClock();
+        _fixedUpdateActiveRate = 0;
         IsRunning = true;
 
         _startTick = HighResTimer.GetCurrentTick();
@@ -649,6 +695,7 @@ public sealed class Engine : IDisposable
         _lastTimerDrivenForegroundDriverTick = _startTick;
         _timerDrivenForegroundTargetFps = Configuration.TargetFPS;
         EngineSimulationClock.BeginTimerDriven(_startTick);
+        _fixedUpdateActiveRate = 0;
 
         _isTimerDriven = true;
         IsRunning = true;
@@ -1180,6 +1227,10 @@ public sealed class Engine : IDisposable
             if (shiftUpdateSideBaselines)
             {
                 _lastBackgroundTick = HighResTimer.ShiftBaselineForResume(_lastBackgroundTick, pausedTicks, resumeTick);
+
+                // The fixed-step hook runs on wall-clock cycle ticks in this mode; in timer-driven
+                // mode it runs on the frozen simulation clock and needs no shift.
+                _fixedUpdateSteps.ShiftForResume(pausedTicks);
             }
             else
             {
@@ -1566,6 +1617,8 @@ public sealed class Engine : IDisposable
 
         DoBackgroundTasks(simulationTick);
 
+        RunFixedUpdates(simulationTick);
+
         if (render)
             RenderFrame(renderTick, frameDelta);
 
@@ -1577,6 +1630,55 @@ public sealed class Engine : IDisposable
             CalculateCPS(renderTick);
 
         EnginePluginRegistry.InvokePostCycle(this, simulationDelta);
+    }
+
+    /// <summary>
+    /// Runs the fixed steps of the fixed-step update hook that are due at <paramref name="tick"/>
+    /// (see <see cref="FixedUpdate"/>). Does nothing, and costs one configuration read, while the
+    /// hook is off.
+    /// </summary>
+    /// <param name="tick">The simulation tick of the current cycle.</param>
+    private void RunFixedUpdates(long tick)
+    {
+        int rate = Configuration.FixedUpdateRate;
+        if (rate <= 0)
+        {
+            _fixedUpdateActiveRate = 0;
+            return;
+        }
+
+        if (rate != _fixedUpdateActiveRate)
+        {
+            // Switched on, rate changed, or first cycle after a start: begin counting from now.
+            _fixedUpdateSteps.Reset(tick);
+            _fixedUpdateActiveRate = rate;
+            return;
+        }
+
+        var batch = _fixedUpdateSteps.Advance(tick, rate, Configuration.MaxFixedUpdateSteps);
+        if (batch.StepCount == 0)
+            return;
+
+        double stepSeconds = batch.StepTicks / (double)HighResTimer.TicksPerSecond;
+        int ran = 0;
+
+        for (int index = 0; index < batch.StepCount; index++)
+        {
+            if (_isPaused || !IsRunning)
+                break;
+
+            _fixedUpdateStepNumber++;
+            FixedUpdate?.Invoke(new FixedUpdateStep(
+                _fixedUpdateStepNumber,
+                stepSeconds,
+                batch.GetStepTick(index),
+                index,
+                batch.StepCount));
+            ran++;
+        }
+
+        if (ran > 0)
+            AfterFixedUpdates?.Invoke(ran);
     }
 
     // if TargetFPS <= 0, render to screen unbounded; otherwise check whether the throttle time

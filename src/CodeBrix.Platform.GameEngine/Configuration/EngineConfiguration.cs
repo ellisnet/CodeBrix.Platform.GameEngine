@@ -162,6 +162,48 @@ public partial class EngineConfiguration
         set => _maxTimerDrivenSimulationSteps = Math.Max(1, value);
     }
 
+    private int _fixedUpdateRate;
+
+    /// <summary>
+    /// Gets or sets the rate, in hertz, of the engine's fixed-step update hook
+    /// (<see cref="Engine.FixedUpdate"/> and <see cref="Engine.AfterFixedUpdates"/>). Zero turns
+    /// the hook off, which is the default: the engine then raises neither event and its cycle is
+    /// exactly what it was without the hook.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// With a positive rate, every engine cycle (after input polling and the rest of the
+    /// background tasks, before any render) converts the time elapsed since the previous cycle
+    /// into zero or more fixed steps of <c>1 / FixedUpdateRate</c> seconds, capped by
+    /// <see cref="MaxFixedUpdateSteps"/>. Steps are frozen across <see cref="Engine.Pause"/>: the
+    /// paused interval is never replayed as a burst of steps.
+    /// </para>
+    /// <para>
+    /// The rate may be changed while the engine runs; a change (including switching the hook on)
+    /// restarts the step clock from the current cycle, so no backlog is carried over.
+    /// </para>
+    /// </remarks>
+    /// <value>The fixed update rate in hertz, or zero for off. Negative values are clamped to zero.</value>
+    public int FixedUpdateRate
+    {
+        get => _fixedUpdateRate;
+        set => _fixedUpdateRate = Math.Max(0, value);
+    }
+
+    private int _maxFixedUpdateSteps = 5;
+
+    /// <summary>
+    /// Gets or sets the maximum number of fixed steps (see <see cref="FixedUpdateRate"/>) one
+    /// engine cycle may run. Time beyond the cap is discarded, so a stall (a debugger break, a
+    /// slow frame, a suspended process) never turns into a long catch-up sequence.
+    /// </summary>
+    /// <value>The maximum steps per cycle. Values below one are clamped to one. The default is 5.</value>
+    public int MaxFixedUpdateSteps
+    {
+        get => _maxFixedUpdateSteps;
+        set => _maxFixedUpdateSteps = Math.Max(1, value);
+    }
+
     private bool _vSync = true;
 
     /// <summary>

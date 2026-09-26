@@ -9,6 +9,8 @@
     "TimeBetweenMouseEvents": 0.03,
     "StartInitializationWaitTimeout": 30,
     "TimerDrivenSimulationRate": 120,
-    "MaxTimerDrivenSimulationSteps": 8
+    "MaxTimerDrivenSimulationSteps": 8,
+    "FixedUpdateRate": 0,
+    "MaxFixedUpdateSteps": 5
   }
 }

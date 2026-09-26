@@ -159,7 +159,7 @@ public class Animator : IDisposable
 
             if (CurrentCycle?.NextCycle != null)
                 CurrentCycle = CurrentCycle.NextCycle;
-            else if (CurrentCycle?.NextCycle.HideTileOnCycleEnd == true)
+            else if (CurrentCycle?.HideTileOnCycleEnd == true)
                 parent.Visible = false;
         }
     }
@@ -181,10 +181,10 @@ public class Animator : IDisposable
         if (CurrentCycle is null)
             return;
 
-        var throttle = CurrentCycle._throttle;
+        var throttle = CurrentCycle.CurrentFrameThrottle;
 
-        // if throttle is 0, stop the animation so loop doesn't hang
-        if (throttle == 0)
+        // if throttle is 0 or negative, stop the animation so loop doesn't hang
+        if (throttle <= 0)
         {
             StopAnimation();
             return;
@@ -214,8 +214,8 @@ public class Animator : IDisposable
             }
 
             // recalculate throttle for the new current frame
-            throttle = CurrentCycle._throttle;
-            if (throttle == 0)
+            throttle = CurrentCycle.CurrentFrameThrottle;
+            if (throttle <= 0)
             {
                 StopAnimation();
                 return;

@@ -2,6 +2,7 @@ using System.Drawing;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using CodeBrix.Platform.GameEngine.Assets;
+using CodeBrix.Platform.GameEngine.Assets.Providers;
 using CodeBrix.Platform.GameEngine.Physics.Collisions;
 using CodeBrix.Platform.GameEngine.SkiaSharp;
 using System;
@@ -602,7 +603,12 @@ public sealed class Tilesheet : IDisposable
     /// <param name="regionName">The name of the region to retrieve.</param>
     /// <returns>The matching <see cref="TilesheetRegion"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when no region with the specified name exists.</exception>
-    public TilesheetRegion this[string regionName] => GetRegion(regionName) ?? throw new ArgumentException($"No tilesheet region named '{regionName}' exists.", nameof(regionName));
+    public TilesheetRegion this[string regionName] =>
+        GetRegion(regionName)
+        ?? throw new ArgumentException(
+            $"No tilesheet region named '{regionName}' exists."
+            + KeySuggestions.DidYouMean(regionName, () => Regions.Select(region => region.Name)),
+            nameof(regionName));
 
     /// <summary>
     /// Returns a <see cref="Frame"/> representing the tile at the given

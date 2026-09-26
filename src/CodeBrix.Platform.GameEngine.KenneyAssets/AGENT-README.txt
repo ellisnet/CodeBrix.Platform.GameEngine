@@ -101,15 +101,22 @@ KEY NAMESPACES / USINGS
     using CodeBrix.Platform.GameEngine.KenneyAssets;          // the ONE entry
                                                               //   point:
                                                               //   UseKenneyAssets
+                                                              //   (and
+                                                              //   RegisterKenneyAssets)
                                                               //   + the provider,
-                                                              //   its options and
+                                                              //   its options,
                                                               //   KenneyPackSummary
+                                                              //   and the result
+                                                              //   types
     using CodeBrix.Platform.GameEngine.KenneyAssets.Sources;  // KenneyAssetProperties
     using CodeBrix.Platform.GameEngine.KenneyAssets.Parsing;  // TiledMapParseException
 
-THE PUBLIC SURFACE OF THIS PACKAGE IS SIX TYPES:
+THE PUBLIC SURFACE OF THIS PACKAGE IS SMALL:
 EngineKenneyAssetsExtensions, KenneyAssetsOptions, KenneyGameAssetProvider,
-KenneyPackSummary, KenneyAssetProperties and TiledMapParseException. Everything
+KenneyPackSummary, KenneyAssetProperties and TiledMapParseException, plus the
+result types of registering and checking keys (KenneyAssetsRegistration,
+KenneySourceResult, KenneySourceStatus, KenneyKeyCheck, KenneyKeyStatus), which
+live in the root namespace like the entry point. Everything
 else — the archive readers, the classifier, the atlas and Tiled parsers, the
 materializers, the glTF reader and the model rasterizer — is internal on
 purpose: it is transformation logic, and a consumer works in terms of the
@@ -225,6 +232,12 @@ The entry point for the whole package.
 
         public static KenneyGameAssetProvider UseKenneyAssets(
             this Engine engine, KenneyAssetsOptions options);
+
+        public static KenneyAssetsRegistration RegisterKenneyAssets(
+            this Engine engine, params string[] zipFilesOrFolders);
+
+        public static KenneyAssetsRegistration RegisterKenneyAssets(
+            this Engine engine, KenneyAssetsOptions options);
     }
 
   * Builds the provider, registers the sources, puts the provider in
@@ -252,6 +265,13 @@ The entry point for the whole package.
     before the assets are needed. In a CodeBrixGameHost game (Mode A) the
     natural place is the LoadAssets override, ahead of LoadTilesheets; a
     Mode B game registers in OnLoadContent.
+  * RegisterKenneyAssets is UseKenneyAssets MADE SAFE TO CALL AGAIN, with a
+    report. A zip file or folder the provider already read (compared by full
+    path) is NOT added a second time - UseKenneyAssets would add it again under
+    a "-2" slug with a second set of keys - and the call returns a
+    KenneyAssetsRegistration saying per path what happened. For a path read
+    once the outcome, the log lines and the exceptions are exactly those of
+    UseKenneyAssets. See REGISTERING MORE THAN ONCE below.
 
 KenneyAssetsOptions (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
 ------------------------------------------------------------------------
@@ -300,6 +320,13 @@ KenneyGameAssetProvider (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
 
         public IReadOnlyList<string> AddSources(KenneyAssetsOptions options);
         public IReadOnlyList<string> AddSources(params string[] zipFilesOrFolders);
+        public KenneyAssetsRegistration AddNewSources(KenneyAssetsOptions options);
+        public KenneyAssetsRegistration AddNewSources(params string[] zipFilesOrFolders);
+
+        public IReadOnlyList<string> CreditLines { get; }
+        public KenneyKeyCheck CheckKeys(IEnumerable<string> keys);
+        public void WriteKeyCatalog(TextWriter writer, GameAssetQuery? query = null);
+        public string GetKeyCatalog(GameAssetQuery? query = null);
 
         public IReadOnlyList<GameAssetDescriptor> Describe(GameAssetQuery? query = null);
         public bool TryDescribe(string key, out GameAssetDescriptor? descriptor);
@@ -348,6 +375,15 @@ KenneyGameAssetProvider (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
     provider.AddSources(paths) and UseKenneyAssets(engine, paths) mean exactly
     the same thing. AddSources(options) throws ArgumentException when the
     options name a different provider — an identifier is fixed at construction.
+  * AddNewSources is AddSources that leaves out a path the provider already
+    holds (earlier, or earlier in the same call) and returns a
+    KenneyAssetsRegistration instead of bare warnings; it is what
+    RegisterKenneyAssets calls. The same bundle copied to ANOTHER path is a
+    different source and is read again.
+  * CreditLines is one KenneyPackSummary.CreditLine per registered pack, in
+    registration order, a line two packs share listed once.
+  * CheckKeys and WriteKeyCatalog / GetKeyCatalog: see CHECKING KEYS and THE
+    KEY CATALOG below. Neither materializes anything.
   * Adding sources is safe while the game is reading: the catalog is rebuilt and
     swapped in, so a lookup in flight sees either the old catalog or the new
     one, and assets already materialized keep working.
@@ -372,6 +408,7 @@ KenneyPackSummary (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
         public int AssetCount { get; init; }
         public int MaterializableAssetCount { get; init; }
         public IReadOnlyDictionary<GameAssetKind, int> CountsByKind { get; init; }
+        public string CreditLine { get; }           // "<title> - Kenney (CC0)"
         public override string ToString();          // "slug (Display Name)"
     }
 
@@ -383,6 +420,55 @@ KenneyPackSummary (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
     the bundle, for the reasons under WHAT IS NOT AN ASSET OF ITS OWN.
   * CountsByKind OMITS a kind the pack holds none of, rather than mapping it to
     zero. Use GetValueOrDefault.
+  * CreditLine is the line a credits screen shows for the pack: the licence
+    title, trimmed (the display name when the pack has no licence file),
+    followed by " - Kenney (CC0)", e.g. "Puzzle Pack (1.1) - Kenney (CC0)".
+
+KenneyAssetsRegistration, KenneySourceResult, KenneySourceStatus
+----------------------------------------------------------------
+    public sealed class KenneyAssetsRegistration
+    {
+        public KenneyGameAssetProvider Provider { get; }
+        public IReadOnlyList<KenneySourceResult> Sources { get; }   // one per path, in order
+        public IReadOnlyList<KenneyPackSummary> Packs { get; }      // read now or earlier, once each
+        public IReadOnlyList<string> Warnings { get; }              // what THIS call added
+        public IReadOnlyList<KenneySourceResult> Unavailable { get; } // Missing + Unreadable
+    }
+
+    public sealed record KenneySourceResult
+    {
+        public required string SourcePath { get; init; }   // as passed in
+        public required KenneySourceStatus Status { get; init; }
+        public IReadOnlyList<KenneyPackSummary> Packs { get; init; }
+        public string? Message { get; init; }       // why, for Missing / Unreadable
+        public bool IsAvailable { get; }            // Read or AlreadyRegistered
+        public override string ToString();          // "kenney_planets.zip: Read - planets (Planets)"
+    }
+
+    public enum KenneySourceStatus { Read, AlreadyRegistered, Missing, Unreadable }
+
+  * Packs of an AlreadyRegistered result are the packs of the EARLIER
+    registration, so a game logs one line per pack the same way on every call.
+  * Missing = no file or folder at the path (or a blank path); Unreadable = it
+    exists but would not open (a damaged zip). Both only when
+    IgnoreUnreadableSources is on (the default); with it off they throw, as
+    UseKenneyAssets does.
+
+KenneyKeyCheck, KenneyKeyStatus
+-------------------------------
+    public sealed class KenneyKeyCheck
+    {
+        public IReadOnlyList<KenneyKeyStatus> Keys { get; }   // one per key, in order
+        public IReadOnlyList<string> MissingKeys { get; }
+        public bool AllFound { get; }
+        public IReadOnlyDictionary<GameAssetKind, int> CountsByKind { get; } // found keys only
+        public long TotalSizeBytes { get; }
+        public KenneyKeyStatus this[string key] { get; }      // case-insensitive
+        public override string ToString();  // "72 key(s) checked - Audio 36, ... - 0 missing, 9.1 MB"
+    }
+
+    public sealed record KenneyKeyStatus(string Key, bool Found, GameAssetKind Kind,
+        long SizeBytes, int AtlasFrameCount);
 
 KenneyAssetProperties (namespace …KenneyAssets.Sources)
 ------------------------------------------------------
@@ -851,8 +937,8 @@ REGISTERING, AND SEEING WHAT ARRIVED
     foreach (KenneyPackSummary pack in kenney.Packs)
     {
         Engine.Logger.LogInformation(
-            "{Pack}: {Assets} asset(s), credit as {Licence}",
-            pack.Slug, pack.AssetCount, pack.LicenseTitle);
+            "{Pack}: {Assets} asset(s), credit as {Credit}",
+            pack.Slug, pack.AssetCount, pack.CreditLine);
     }
 
     foreach (string warning in kenney.Warnings)
@@ -969,6 +1055,88 @@ ADDING A MOD FOLDER LATER
         });
 
     Tilesheet modArt = providers.LoadTilesheet("mods:extra-tiles/PNG/tile_0001");
+
+REGISTERING MORE THAN ONCE
+--------------------------
+UseKenneyAssets ADDS every path it is given, so calling it twice with the same
+zip gives that pack a second slug ("planets-2") and a second set of keys. When
+registration can run more than once - a loading screen that can be re-entered, a
+game and its tests sharing one engine - use RegisterKenneyAssets, which skips a
+path already registered and says per path what happened:
+
+    string folder = Path.Combine(AppContext.BaseDirectory, "assets", "kenney");
+    string[] zips = ["kenney_planets.zip", "kenney_sci-fi-sounds.zip"];
+
+    KenneyAssetsRegistration registration = Engine.Instance.RegisterKenneyAssets(
+        [.. zips.Select(zip => Path.Combine(folder, zip))]);
+
+    if (registration.Packs.Count == 0)
+    {
+        throw new InvalidOperationException($"No Kenney pack could be read from '{folder}'.");
+    }
+
+    foreach (KenneySourceResult source in registration.Sources)
+    {
+        Engine.Logger.LogInformation("Kenney: {Source}", source);   // Read / AlreadyRegistered / ...
+    }
+
+    foreach (KenneySourceResult missing in registration.Unavailable)
+    {
+        Engine.Logger.LogWarning("Kenney: {File} is missing; its assets are too.", missing.SourcePath);
+    }
+
+    KenneyGameAssetProvider kenney = registration.Provider;
+
+CHECKING KEYS
+-------------
+A game that writes its keys down as constants wants a test proving every one
+still resolves - the registry compares keys case-insensitively but is otherwise
+spelling-exact. CheckKeys answers from the catalog without loading anything:
+
+    KenneyKeyCheck check = kenney.CheckKeys(MyAssetKeys.All);
+
+    check.MissingKeys.Should().BeEmpty();
+    check[MyAssetKeys.MainAtlas].Kind.Should().Be(GameAssetKind.SpriteAtlas);
+    Engine.Logger.LogInformation("Kenney keys: {Summary}", check);  // one-line summary
+
+  * One KenneyKeyStatus per key, in the order given: Found, Kind (Unknown when
+    not found), SizeBytes, and AtlasFrameCount for a sprite atlas.
+  * CountsByKind counts FOUND keys only; a kind with none is absent.
+  * A key with another provider's prefix is not found - this provider does not
+    hold it. The bare "pack/path" form is accepted, as TryDescribe accepts it.
+  * A key that fails to LOAD through the registry says "Did you mean: ..." with
+    the closest real keys (engine core); CheckKeys is the up-front version.
+
+THE KEY CATALOG
+---------------
+Describe() gives descriptors; it does not give the frame names inside an atlas.
+GetKeyCatalog (or WriteKeyCatalog to any TextWriter) writes a readable listing
+of every key grouped by pack, with its kind, and under each sprite atlas the
+frame names the materialized sheet answers to - for a developer choosing assets
+and copying exact spellings:
+
+    Console.Write(kenney.GetKeyCatalog());
+    kenney.WriteKeyCatalog(writer, new GameAssetQuery { Pack = "puzzle-pack" });
+
+    Asset keys of provider 'kenney': 1 pack(s), <n> key(s) matching the query.
+
+    puzzle-pack - Puzzle Pack (1.1) - <n> key(s)
+      kenney:puzzle-pack/License.txt  [Document, listed only]
+      kenney:puzzle-pack/PNG/Default/ballBlue  [Image]
+      kenney:puzzle-pack/Spritesheet/spritesheet_default  [SpriteAtlas, <n> frame(s)]
+          ballBlue
+          ballGrey
+          ...
+
+  * The frame names are the REGION names with the default options (image
+    extension removed, blanks left out, the first of two equal names kept), so
+    sheet["ballBlue", 0, 0] works as written. With StripFrameExtension = false
+    the regions keep the extension the atlas writes.
+  * The query filters KEYS (Pack, Kind, NameContains, PathPrefix); an atlas that
+    is listed always shows all its frames. A pack with no listed key is left
+    out.
+  * Plain text for reading, not a format to parse; nothing is materialized. It
+    is not a code generator - a game writes its own constants from it.
 
 LAZINESS, CACHING AND IDEMPOTENCE
 =================================
@@ -1172,7 +1340,8 @@ COMMON PITFALLS TO AVOID
     than guessing it from the download's file name.
   * TWO BUNDLES OF ONE PACK GET A -2 SUFFIX. Registering the same pack twice —
     a zip and a folder extracted from it, say — gives the second one slug-2 and
-    a second set of keys. Register one of them.
+    a second set of keys. Register one of them. The SAME PATH registered twice
+    through UseKenneyAssets does this too; RegisterKenneyAssets skips it.
   * AN UNREADABLE BUNDLE IS SILENT BY DEFAULT. It is in Warnings and the log,
     not in an exception. Read Warnings after registering, or set
     IgnoreUnreadableSources = false while developing.
@@ -1244,10 +1413,7 @@ pack's licence title line is in KenneyPackSummary.LicenseTitle and in each
 descriptor's Properties["license"], so a credits screen can be generated from
 what is actually loaded.
 
-    foreach (KenneyPackSummary pack in kenney.Packs)
-    {
-        if (pack.LicenseTitle is not null) { credits.Add($"{pack.LicenseTitle} - Kenney (CC0)"); }
-    }
+    credits.AddRange(kenney.CreditLines);   // "<licence title> - Kenney (CC0)" per pack
 
 Each bundle also carries Kenney's own License.txt, which is listed as an asset
 and can be shown verbatim through OpenRaw. A few Kenney packs are sold rather
@@ -1283,8 +1449,13 @@ Repository root: https://github.com/ellisnet/CodeBrix.Platform.GameEngine
           registry refuses.
       KenneyGameAssetProviderTests.cs — the provider's own surface: Describe
           and its query, the descriptor cache, Packs and their counts, Warnings,
-          OpenRaw on a non-materializable asset, and disposal semantics.
+          OpenRaw on a non-materializable asset, disposal semantics,
+          AddNewSources and its per-source report, CreditLines, CheckKeys and
+          the key catalog.
       KenneyAssetsOptionsTests.cs — the options record's defaults.
+      KenneyPackSummaryTests.cs / KenneySourceResultTests.cs /
+          KenneyKeyCheckTests.cs — the credit line, the per-source report and
+          the key check's statuses, counts and summary line.
       KenneyZipArchiveTests.cs / KenneyFolderArchiveTests.cs — a zip bundle and
           an extracted folder answering identically, including strict
           dependency resolution and a damaged zip.
@@ -1325,6 +1496,11 @@ REGISTER (once, after the engine is initialized; call again to ADD sources)
         "assets/kenney_pixel-platformer.zip", "assets/kenney_sci-fi-sounds.zip");
     // options form: new KenneyAssetsOptions { Sources = [...], ProviderId = "mods",
     //     RecursiveFolders = true, IgnoreUnreadableSources = false }
+    KenneyAssetsRegistration registration = Engine.Instance.RegisterKenneyAssets(...);
+    // same paths or options; skips a path already registered and reports each one:
+    // Provider, Sources (KenneySourceResult: SourcePath, Status Read /
+    // AlreadyRegistered / Missing / Unreadable, Packs, Message), Packs, Warnings,
+    // Unavailable
 
 KEYS   <providerId>:<pack-slug>/<path>   case-insensitive; extension DROPPED for
        a materializable asset, KEPT for a listed-only one; the key is also the
@@ -1352,13 +1528,19 @@ PROVIDER  (KenneyGameAssetProvider)
     const DefaultProviderId = "kenney"
     IReadOnlyList<KenneyPackSummary> Packs      int AssetCount
     IReadOnlyList<string> Warnings              IReadOnlySet<GameAssetKind> SupportedKinds
-    AddSources(...)    Describe / TryDescribe / OpenRaw
+    AddSources(...)    AddNewSources(...) -> KenneyAssetsRegistration
+    Describe / TryDescribe / OpenRaw
+    IReadOnlyList<string> CreditLines           one line per registered pack
+    KenneyKeyCheck CheckKeys(keys)              Keys, MissingKeys, AllFound,
+                                                CountsByKind, TotalSizeBytes, [key]
+    GetKeyCatalog(GameAssetQuery?) / WriteKeyCatalog(TextWriter, GameAssetQuery?)
     Materialize Tilesheet / Audio / Font / TiledMap / Model / ModelAnimation
     Dispose()   // the ENGINE calls this; the catalog still answers afterwards
 
 PACK  (KenneyPackSummary)
     Slug  DisplayName  Version  LicenseTitle  SourcePath
     AssetCount  MaterializableAssetCount  CountsByKind
+    CreditLine   "<licence title> - Kenney (CC0)"
 
 DESCRIPTOR PROPERTIES  (KenneyAssetProperties — use the constants)
     packName  packVersion  license  extension  materializable

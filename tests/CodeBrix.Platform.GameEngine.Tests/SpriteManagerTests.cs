@@ -14,15 +14,18 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// Covers the clone-to-another-layer defect fixed upstream after the vendored baseline: the copy
 /// constructor built the movement controller and the collider against the SOURCE layer and the
 /// destination layer was swapped in afterwards, so a clone wrapped and bounded against the wrong
-/// grid.
+/// grid. Also covers a throwing <see cref="SpriteManager.SpriteCreated"/> handler: the sprite the caller never
+/// received is rolled back, so no orphan stays registered.
 /// </summary>
 public class SpriteManagerTests : IDisposable
 {
     private readonly List<Scene> _scenes = new();
+    private readonly List<Sprite> _createdSprites = new();
 
     /// <summary>Clears the global sprite and scene registries this fixture populated.</summary>
     public void Dispose()
     {
+        SpriteManager.Instance.SpriteCreated -= ThrowingHandler;
         SpriteManager.Instance.ClearImmediate();
 
         foreach (var scene in _scenes)
@@ -89,5 +92,47 @@ public class SpriteManagerTests : IDisposable
         //Assert
         SpriteManager.Instance.AllSprites.Should().Contain(clone);
         ReferenceEquals(layer, clone.SceneLayer).Should().BeTrue();
+    }
+
+    private void ThrowingHandler(Sprite sprite)
+    {
+        _createdSprites.Add(sprite);
+        throw new InvalidOperationException("handler failed");
+    }
+
+    [Fact]
+    public void CreateSprite_rolls_the_sprite_back_when_a_SpriteCreated_handler_throws()
+    {
+        //Arrange
+        var layer = CreateLayer(columns: 4, rows: 4, tileWidth: 16, tileHeight: 16);
+        SpriteManager.Instance.SpriteCreated += ThrowingHandler;
+
+        //Act
+        var act = () => SpriteManager.Instance.CreateSprite(layer, default, "orphan");
+
+        //Assert
+        act.Should().Throw<InvalidOperationException>().WithMessage("handler failed");
+        _createdSprites.Should().HaveCount(1);
+        SpriteManager.Instance.AllSprites.Should().NotContain(_createdSprites[0]);
+        _createdSprites[0].Collider.Should().BeNull();
+    }
+
+    [Fact]
+    public void CloneSprite_rolls_the_clone_back_when_a_SpriteCreated_handler_throws()
+    {
+        //Arrange
+        var layer = CreateLayer(columns: 4, rows: 4, tileWidth: 16, tileHeight: 16);
+        var source = CreateSprite(layer, new Vector2(1f, 1f));
+        SpriteManager.Instance.SpriteCreated += ThrowingHandler;
+
+        //Act
+        var act = () => SpriteManager.Instance.CloneSprite(source);
+
+        //Assert
+        act.Should().Throw<InvalidOperationException>().WithMessage("handler failed");
+        _createdSprites.Should().HaveCount(1);
+        SpriteManager.Instance.AllSprites.Should().NotContain(_createdSprites[0]);
+        SpriteManager.Instance.AllSprites.Should().Contain(source);
+        _createdSprites[0].Collider.Should().BeNull();
     }
 }

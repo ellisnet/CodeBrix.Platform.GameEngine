@@ -86,6 +86,18 @@ public sealed partial class ParticleSurface : DirectDrawingMovableBase
     private int _alive;
     private long _particlesLastTick = 0;
 
+    //The GPU tier paints on the UI thread while the engine thread integrates and compacts _particles in place.
+    //  Once the UI thread has painted this surface, every Update copies the live particles into _published under
+    //  _publishLock; the UI thread copies that into _painting under the same lock and paints its own copy. Both
+    //  buffers are made on the first GPU-tier paint, so the CPU tier (which paints _particles on the engine
+    //  thread, as before) never pays for them.
+    private readonly object _publishLock = new();
+    private volatile bool _paintedOnUiThread;
+    private Particle[]? _published;
+    private int _publishedCount;
+    private Particle[]? _painting;
+    private int _paintingCount;
+
     // If you want textured particles, supply a tilesheet frame and draw bitmap quads instead of circles.
     private readonly SKBitmap? _particleSprite;
 
@@ -382,6 +394,9 @@ public sealed partial class ParticleSurface : DirectDrawingMovableBase
         }
         _alive = write;
 
+        if (_paintedOnUiThread)
+            PublishForUiThreadPainting();
+
         ForceRefresh();
 
         base.Update(tick);
@@ -395,6 +410,11 @@ public sealed partial class ParticleSurface : DirectDrawingMovableBase
     /// Draws each particle as either a Skia circle or a textured quad (if a sprite
     /// is provided). Alpha fades with age. Uses additive blending
     /// (<see cref="SkiaSharp.SKBlendMode.Plus"/>) by default for bright/glowy effects.
+    /// </para>
+    /// <para>
+    /// On the CPU tier (engine thread) the live particles are drawn; on the GPU tier (UI thread) a copy taken at
+    /// the end of the last <see cref="Update"/> is drawn, so a frame never mixes two steps. The first GPU-tier
+    /// frame draws no particles, because copies are only taken once the surface has been painted there.
     /// </para>
     /// <para>
     /// Do not call this directly. Once the system is registered with
@@ -430,43 +450,94 @@ public sealed partial class ParticleSurface : DirectDrawingMovableBase
         // Usually uniform; if not, pick one (or average) for size scaling
         float sSize = (sx + sy) * 0.5f;
 
-        for (int i = 0; i < _alive; i++)
+        if (backbuffer.IsGlThreadRendered)
         {
-            ref var p = ref _particles[i];
+            _paintedOnUiThread = true;
 
-            // blend mode
-            _paint.BlendMode = p.BlendMode;
+            int count = TakePublishedForPainting();
 
-            // life-based fade
-            float t = 1f - (p.Life / p.MaxLife);
-            byte a = (byte)(255 * (1f - t));
+            for (int i = 0; i < count; i++)
+                DrawParticle(canvas, in _painting![i], srcBounds, destRectScreen, sx, sy, sSize);
 
-            // choose tint: emitter override if set, otherwise current global
-            var tint = p.Tint ?? GlobalColorTint;
+            return;
+        }
 
-            // apply global tint
-            _paint.Color = ApplyTint(p.Color, a, tint);
+        for (int i = 0; i < _alive; i++)
+            DrawParticle(canvas, in _particles[i], srcBounds, destRectScreen, sx, sy, sSize);
+    }
 
-            // Map particle position from srcBounds space -> destRectScreen space
-            float x = destRectScreen.Left + (p.X - srcBounds.Left) * sx;
-            float y = destRectScreen.Top + (p.Y - srcBounds.Top) * sy;
+    private void DrawParticle(SKCanvas canvas, in Particle p, Rectangle srcBounds, RectangleF destRectScreen,
+                              float sx, float sy, float sSize)
+    {
+        // blend mode
+        _paint.BlendMode = p.BlendMode;
 
-            if (p.ParticleSprite is null)
-            {
-                float size = (p.Size * sSize) * (1f + 0.5f * t);
-                canvas.DrawCircle(x, y, size, _paint);
-            }
-            else
-            {
-                float s = p.Size * sSize;
-                var dst = new SKRect(x - s * 0.5f, y - s * 0.5f,
-                                     x + s * 0.5f, y + s * 0.5f);
+        // life-based fade
+        float t = 1f - (p.Life / p.MaxLife);
+        byte a = (byte)(255 * (1f - t));
 
-                canvas.Save();
-                canvas.RotateDegrees(p.Rotation, x, y);
-                canvas.DrawBitmap(p.ParticleSprite, dst, SKSamplingOptions.Default, _paint);
-                canvas.Restore();
-            }
+        // choose tint: emitter override if set, otherwise current global
+        var tint = p.Tint ?? GlobalColorTint;
+
+        // apply global tint
+        _paint.Color = ApplyTint(p.Color, a, tint);
+
+        // Map particle position from srcBounds space -> destRectScreen space
+        float x = destRectScreen.Left + (p.X - srcBounds.Left) * sx;
+        float y = destRectScreen.Top + (p.Y - srcBounds.Top) * sy;
+
+        if (p.ParticleSprite is null)
+        {
+            float size = (p.Size * sSize) * (1f + 0.5f * t);
+            canvas.DrawCircle(x, y, size, _paint);
+        }
+        else
+        {
+            float s = p.Size * sSize;
+            var dst = new SKRect(x - s * 0.5f, y - s * 0.5f,
+                                 x + s * 0.5f, y + s * 0.5f);
+
+            canvas.Save();
+            canvas.RotateDegrees(p.Rotation, x, y);
+            canvas.DrawBitmap(p.ParticleSprite, dst, SKSamplingOptions.Default, _paint);
+            canvas.Restore();
+        }
+    }
+
+    //Engine thread: copies the live particles for the UI thread
+    private void PublishForUiThreadPainting()
+    {
+        lock (_publishLock)
+        {
+            _published ??= new Particle[_particles.Length];
+
+            int count = _alive;
+            Array.Copy(_particles, _published, count);
+
+            if (_publishedCount > count)
+                Array.Clear(_published, count, _publishedCount - count);
+
+            _publishedCount = count;
+        }
+    }
+
+    //UI thread: takes a private copy of the last published particles and returns how many there are
+    private int TakePublishedForPainting()
+    {
+        lock (_publishLock)
+        {
+            _painting ??= new Particle[_particles.Length];
+
+            int count = _publishedCount;
+
+            if (count > 0)
+                Array.Copy(_published!, _painting, count);
+
+            if (_paintingCount > count)
+                Array.Clear(_painting, count, _paintingCount - count);
+
+            _paintingCount = count;
+            return count;
         }
     }
 

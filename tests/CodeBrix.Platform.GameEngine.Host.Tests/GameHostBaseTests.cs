@@ -1,7 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using CodeBrix.Platform.GameEngine.Host.Hosting;
+using CodeBrix.Platform.GameEngine.Timers;
 using SilverAssertions;
 using Xunit;
 
@@ -63,6 +66,55 @@ public class GameHostBaseTests
         }
     }
 
+    [Fact]
+    public void the_fixed_update_hooks_run_once_the_game_sets_a_rate_and_stop_after_dispose()
+    {
+        //Arrange - a timer-driven engine, so the test drives every cycle itself
+        var host = new FixedStepHost();
+        host.Initialize();
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            //Act
+            while ((host.Steps < 5 || host.Batches == 0) && stopwatch.ElapsedMilliseconds < 5000)
+            {
+                Thread.Sleep(10);
+                Engine.Instance.Tick();
+            }
+
+            //Assert
+            host.Steps.Should().BeGreaterThanOrEqualTo(5);
+            host.Batches.Should().BeGreaterThan(0);
+            host.LastStep.DeltaSeconds.Should().BeApproximately(0.01, 0.0005);
+        }
+        finally
+        {
+            Action dispose = () => host.Dispose();
+            dispose.Should().Throw<CleanupReachedException>();
+            Engine.Instance.Configuration.FixedUpdateRate = 0;
+        }
+
+        //Assert - the hooks were unsubscribed: a restarted engine with the rate back on no longer reaches them
+        int stepsAtDispose = host.Steps;
+        Engine.Instance.StartTimerDriven(new SynchronizationContext());
+        try
+        {
+            Engine.Instance.Configuration.FixedUpdateRate = 100;
+            for (int i = 0; i < 10; i++)
+            {
+                Thread.Sleep(10);
+                Engine.Instance.Tick();
+            }
+            host.Steps.Should().Be(stepsAtDispose);
+        }
+        finally
+        {
+            Engine.Instance.Configuration.FixedUpdateRate = 0;
+            Engine.Instance.StopAndWait();
+        }
+    }
+
     private sealed class CleanupReachedException : Exception
     {
     }
@@ -86,5 +138,34 @@ public class GameHostBaseTests
             // End the probe before disposing the process-wide singleton used by other tests.
             throw new CleanupReachedException();
         }
+    }
+
+    private sealed class FixedStepHost : GameHostBase
+    {
+        public int Steps;
+        public int Batches;
+        public FixedUpdateStep LastStep;
+
+        protected override void ConfigurePlatform()
+        {
+        }
+
+        protected override SynchronizationContext? GetSynchronizationContext() => new();
+
+        protected override void StartEngineCore(SynchronizationContext syncContext) =>
+            Engine.StartTimerDriven(syncContext);
+
+        protected override void OnEngineInitialized() => Engine.Configuration.FixedUpdateRate = 100;
+
+        protected override void OnFixedUpdate(FixedUpdateStep step)
+        {
+            Steps++;
+            LastStep = step;
+        }
+
+        protected override void OnAfterFixedUpdates(int stepCount) => Batches++;
+
+        // End the probe before disposing the process-wide singleton used by other tests.
+        protected override void OnDisposing() => throw new CleanupReachedException();
     }
 }

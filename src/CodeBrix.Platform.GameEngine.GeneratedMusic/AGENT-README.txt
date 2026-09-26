@@ -107,7 +107,11 @@ KEY NAMESPACES / USINGS
 =======================
     using CodeBrix.Platform.GameEngine.GeneratedMusic;   // UseGeneratedMusic,
                                                          // GeneratedMusicOptions,
-                                                         // GeneratedMusicProvider
+                                                         // GeneratedMusicProvider,
+                                                         // IGeneratedMusicSession,
+                                                         // IGeneratedMusicStarter,
+                                                         // EngineGeneratedMusicStarter,
+                                                         // GeneratedMusicSourceInfo
     using CodeBrix.Platform.GameEngine.Audio;            // MusicManager,
                                                          // StreamingMusicState,
                                                          // StreamingMusicTrack
@@ -392,6 +396,13 @@ GeneratedMusicProvider - API REFERENCE
                                       After a follow-up it changes at the
                                       switch, not at the call.
       string ActiveSourceSummary      ActiveSource as one line ("" before)
+      GeneratedMusicSourceInfo? ActiveSourceInfo
+                                      ActiveSource as plain values a test fake
+                                      can construct: GeneratorName,
+                                      GeneratorFamily, InstrumentLibraryName,
+                                      IsReplay. Null until the music has started.
+      int StarvationGapCount          Diagnostics.StarvationGapCount (0 before)
+      string DiagnosticsSummary       Diagnostics as one line ("" before)
       MusicDiagnostics? Diagnostics   starvation gaps, RealTimeFactor (null =
                                       not measured yet, never "slow"), Mode,
                                       Lead, seams; cheap every frame
@@ -421,6 +432,59 @@ EngineGeneratedMusicExtensions
   UseGeneratedMusic call, or when the engine is disposed. The game never has to
   dispose it. (A provider the game constructed itself is the game's to dispose,
   after unregistering it.)
+
+TESTING THE GAME'S MUSIC POLICY - THE SESSION SEAMS
+===================================================
+  A game's music code (start the title music, follow up per level, duck under
+  the pause menu, log what plays) is worth unit-testing, and none of it should
+  need a model, an instrument library or an audio device. Three seams make that
+  possible with no adapter classes of the game's own:
+
+    IGeneratedMusicSession    one running session as the game drives it:
+                              StateChanged, State, Fault, GenerationError,
+                              Options, ActiveSourceSummary, ActiveSourceInfo,
+                              StarvationGapCount, DiagnosticsSummary,
+                              FollowUp(string), FollowUp(options).
+                              GeneratedMusicProvider implements it. Everything
+                              on it is a plain value (strings, counts,
+                              GeneratedMusicSourceInfo), so a fake can script
+                              all of it - the music-generation library's
+                              ActiveMusicSource and MusicDiagnostics cannot be
+                              constructed outside that library.
+    IGeneratedMusicStarter    IGeneratedMusicSession Start(options): the seam
+                              over UseGeneratedMusic. EngineGeneratedMusicStarter
+                              is the real one (new EngineGeneratedMusicStarter()
+                              reads Engine.Instance when Start is called, so it
+                              can be created before the engine starts;
+                              new EngineGeneratedMusicStarter(engine) pins one).
+    IMusicManager             (engine core, CodeBrix.Platform.GameEngine.Audio)
+                              the duck/stinger/music-slider surface;
+                              MusicManager.Instance implements it.
+
+      public sealed class MusicDirector(IGeneratedMusicStarter starter, IMusicManager music,
+                                        IEngineDispatcher dispatcher)
+      {
+          private IGeneratedMusicSession? _session;
+
+          public void Start(GeneratedMusicOptions options)
+          {
+              var session = starter.Start(options);
+              _session = session;
+              //StateChanged arrives on any thread: marshal before touching game state
+              session.StateChanged += (_, _) => dispatcher.Post(() => Log(session.State));
+          }
+
+          public void OnLevel(string preset) => _session?.FollowUp(preset);
+      }
+
+      //In the game:
+      new MusicDirector(new EngineGeneratedMusicStarter(), MusicManager.Instance,
+                        Engine.Instance.EngineDispatcher);
+      //In a test: a fake starter returning a scripted session, a recording
+      //IMusicManager, and an IEngineDispatcher that runs the action at once.
+
+  The seams add nothing to what the provider does: the game-side object is
+  still the provider UseGeneratedMusic created, with the same ownership rules.
 
 THREADING
 =========
@@ -530,6 +594,9 @@ Repository root: https://github.com/ellisnet/CodeBrix.Platform.GameEngine
           tempo, seed, seam and priming, and that the session never opens an
           audio device.
       GeneratedMusicOptionsTests.cs — the documented defaults.
+      GeneratedMusicSessionTests.cs — the session seams: the provider as an
+          IGeneratedMusicSession, the real starter, and a music policy driven
+          entirely by scripted fakes.
       ModelPlaybackOptInTests.cs — OPT-IN: SkyTNT and MuPT through ModestSynthGm
           and FluidR3Gm, skipped unless GENERATEDMUSIC_MODEL_TESTS=1.
 
@@ -557,6 +624,9 @@ LATER START                                StartImmediately = false, then
                                            MusicManager.Instance.PlayStreaming(fadeIn);
 WHAT IS PLAYING                            music.ActiveSourceSummary / ActiveSource.IsReplay
 HOW IT IS DOING                            music.State, music.Diagnostics, music.Fault
+TEST SEAMS                                 IGeneratedMusicSession (the provider),
+                                           IGeneratedMusicStarter / EngineGeneratedMusicStarter,
+                                           GeneratedMusicSourceInfo, core IMusicManager
 
 TOP FIVE MISTAKES
     1. No instrument library registered (silence, Faulted).

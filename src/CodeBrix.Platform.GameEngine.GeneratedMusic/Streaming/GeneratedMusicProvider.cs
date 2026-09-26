@@ -39,12 +39,17 @@ namespace CodeBrix.Platform.GameEngine.GeneratedMusic;
 /// (what is really playing and how it is doing) and <see cref="Release"/> (give a model's memory back).
 /// </para>
 /// <para>
+/// It is also an <see cref="IGeneratedMusicSession"/>: a game's music code can hold it through that
+/// interface (and start it through <see cref="IGeneratedMusicStarter"/>) so the code is testable
+/// against a fake session.
+/// </para>
+/// <para>
 /// THREADING: <see cref="Render"/> runs on the audio fill thread while the start-up work completes on
 /// a worker, and every other member may be called from any thread; the provider is safe for all of
 /// that. <see cref="StateChanged"/> may be raised on any of those threads.
 /// </para>
 /// </remarks>
-public sealed class GeneratedMusicProvider : IStreamingMusicProvider
+public sealed class GeneratedMusicProvider : IStreamingMusicProvider, IGeneratedMusicSession
 {
     /// <summary>The provider's <see cref="Name"/>: <c>"Generated music"</c>.</summary>
     public const string ProviderName = "Generated music";
@@ -173,6 +178,31 @@ public sealed class GeneratedMusicProvider : IStreamingMusicProvider
     /// has started.
     /// </summary>
     public string ActiveSourceSummary => ActiveSource?.ToString() ?? string.Empty;
+
+    /// <summary>
+    /// <see cref="ActiveSource"/> as plain values a game (or its test fake) can construct, or
+    /// <see langword="null"/> until the music has started.
+    /// </summary>
+    public GeneratedMusicSourceInfo? ActiveSourceInfo
+    {
+        get
+        {
+            ActiveMusicSource? source = ActiveSource;
+            return source is null
+                ? null
+                : new GeneratedMusicSourceInfo(source.GeneratorName ?? string.Empty, source.GeneratorFamily ?? string.Empty,
+                                               source.InstrumentLibraryName ?? string.Empty, source.IsReplay);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="MusicDiagnostics.StarvationGapCount"/> of <see cref="Diagnostics"/>: how many times the
+    /// music has waited for the generator; 0 before the first start.
+    /// </summary>
+    public int StarvationGapCount => Diagnostics?.StarvationGapCount ?? 0;
+
+    /// <summary><see cref="Diagnostics"/> as one line for a log, or an empty string before the first start.</summary>
+    public string DiagnosticsSummary => Diagnostics?.ToString() ?? string.Empty;
 
     /// <summary>
     /// How the music is doing - starvation gaps, the measured real-time factor, the delivery mode, the

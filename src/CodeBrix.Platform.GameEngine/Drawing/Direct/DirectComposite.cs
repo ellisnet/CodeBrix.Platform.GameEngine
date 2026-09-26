@@ -547,7 +547,7 @@ public class DirectComposite : IDirectDrawable, IMovable
     /// Updates the composite's movement controller based on the current tick.
     /// </summary>
     /// <param name="tick">The current high-resolution tick value.</param>
-    public void Update(long tick)
+    public virtual void Update(long tick)
     {
         Movement.AdvanceMovement(HighResTimer.GetDuration(_lastTick, tick));
         _lastTick = tick;

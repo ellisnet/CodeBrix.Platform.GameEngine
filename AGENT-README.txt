@@ -112,6 +112,8 @@ KEY NAMESPACES / USINGS
     using CodeBrix.Platform.GameEngine.Drawing.Sprites; // Sprite, CompositeSprite, SpriteManager
     using CodeBrix.Platform.GameEngine.Drawing.Direct;  // DirectImage, TextBlock, particles,
                                                         //   lighting, SplashOverlay, HealthBar
+    using CodeBrix.Platform.GameEngine.Drawing.Direct.DrawLists; // DrawList, DrawListDrawing,
+                                                        //   DrawCommand, DrawImageLibrary
     using CodeBrix.Platform.GameEngine.Drawing.Tilesheets;     // Tilesheet, TilesheetRegistry
     using CodeBrix.Platform.GameEngine.Drawing.Tilesheets.GTS; // TilesheetDefinition (.gts)
     using CodeBrix.Platform.GameEngine.Drawing.Animation;      // Cycle, FrameSequence, Animator
@@ -134,6 +136,8 @@ KEY NAMESPACES / USINGS
     using CodeBrix.Platform.GameEngine.Input.Touch;     // TouchEventPoller, TouchPoint
     using CodeBrix.Platform.GameEngine.Input.Touch.Gestures;   // Tap/Swipe/Pinch recognizers
     using CodeBrix.Platform.GameEngine.Input.Gamepad;   // IGamepadAdapter, GamepadStickState
+    using CodeBrix.Platform.GameEngine.Input.Actions;   // InputActionMap, InputBindingProfile,
+                                                        //   InputBinding, InputRepeat
     using CodeBrix.Platform.GameEngine.Timers;          // Timer, HighResTimer, FixedRateGameLoop
     using CodeBrix.Platform.GameEngine.Extensibility;   // IEnginePlugin, EnginePluginRegistry
     using CodeBrix.Platform.GameEngine.Logging;         // EngineLogger, EngineLoggingMode
@@ -233,6 +237,39 @@ the simulation clock is frozen while the engine is paused, so nothing replays
 the paused interval on the first resumed tick. Start(uiContext) (the background
 thread) is unchanged: it stays wall-clock driven.
 
+THE FIXED-STEP UPDATE HOOK (opt-in, both loop modes). The engine cycle runs as
+often as its thread spins, so its per-cycle events have variable deltas. For
+deterministic game logic (rules, movement, reading input into the simulation)
+set a fixed rate and handle the fixed steps instead:
+    Configuration.FixedUpdateRate      -- fixed steps/second; 0 = OFF (default)
+    Configuration.MaxFixedUpdateSteps  -- most steps per cycle (5); the rest of
+                                          a stall is discarded, never replayed
+    event Action<FixedUpdateStep> FixedUpdate      -- once per step
+    event Action<int> AfterFixedUpdates            -- once per cycle that ran
+                                                      steps (build the frame here)
+    readonly record struct FixedUpdateStep(long StepNumber, double DeltaSeconds,
+        long Tick, int IndexInCycle, int StepsInCycle); bool IsLastInCycle
+  * Both events run on the engine thread, after the background tasks (input
+    pollers included, so a step sees this cycle's input) and before the render.
+  * Set the rate in OnEngineInitialized (the configuration is replaced before
+    that). A rate change, or switching the hook on, restarts the step clock from
+    the current cycle: no backlog is carried over.
+  * Frozen across Engine.Pause(): no steps while paused, the paused interval is
+    not replayed after Resume(). A handler that pauses or stops the engine ends
+    the cycle's remaining steps (AfterFixedUpdates reports how many ran).
+  * StepNumber counts every step ever raised, from 1, and never resets.
+  * In timer-driven mode the steps ride the fixed SIMULATION clock, so the same
+    FixedUpdateRate gives the same steps per simulated second.
+  * With the rate at 0 nothing is raised and the cycle is exactly what it was
+    before the hook existed. The hook does not change how often the engine
+    cycles or renders.
+  * GameHostBase surfaces both events as overridables: OnFixedUpdate(step) and
+    OnAfterFixedUpdates(stepCount):
+
+    protected override void OnEngineInitialized() => Engine.Configuration.FixedUpdateRate = 60;
+    protected override void OnFixedUpdate(FixedUpdateStep step) => _game.Step(step.DeltaSeconds);
+    protected override void OnAfterFixedUpdates(int stepCount) => _renderer.Publish(_game);
+
 SHUTDOWN CONTRACT. Stop() halts the loop and returns; StopAndWait() stops the
 engine and BLOCKS until the background cycle has actually finished, so a host
 can release native drawing resources without racing a frame in flight. It
@@ -253,8 +290,9 @@ Engine.Logger (an ILogger<Engine>).
 Engine events (all Action unless noted): PreInitialization, PostInitialization,
 InitializationComplete, BeforeBackgroundTasksExecute, AfterBackgroundTasksExecute,
 BeforeFrameRender, AfterFrameRender, CPSCalculated
-(Action<CyclesPerSecondCalculatedEventArgs>), Paused, Resumed, Disposing,
-Disposed.
+(Action<CyclesPerSecondCalculatedEventArgs>), FixedUpdate
+(Action<FixedUpdateStep>), AfterFixedUpdates (Action<int>), Paused, Resumed,
+Disposing, Disposed.
 
 One cycle executes, in order (engine plugins get OnPreCycle / OnPreFrameRender /
 OnPostFrameRender / OnPostCycle hooks around the same points — see PLUGINS):
@@ -268,6 +306,9 @@ OnPostFrameRender / OnPostCycle hooks around the same points — see PLUGINS):
    7. Collision resolution              -- per scene layer
    8. Camera updates                    -- per render surface ViewManager
    9. AfterBackgroundTasksExecute event
+  9a. Fixed steps -- ONLY while Configuration.FixedUpdateRate > 0: zero or more
+      FixedUpdate events, then AfterFixedUpdates once if any ran (see THE
+      FIXED-STEP UPDATE HOOK below)
   10. THROTTLE CHECK: if TargetFPS interval has not elapsed, skip 11-15
   11. BeforeFrameRender event
   12. DirectDrawingManager.UpdateAll    -- immediate-mode drawable state updates
@@ -325,6 +366,53 @@ replaces the engine thread — OnTic/OnRenderFrame and all poller events raised
 by InputPump.PollNow run there — and the same UI-thread and audio-thread rules
 apply. IKeyboardAdapter.IsDown(keyCode) is the one deliberate exception: it is
 lock-free and valid from ANY thread at any time.
+
+RETAINED OBJECTS AND THE GPU TIER — WHAT IS AND IS NOT SAFE
+  CpuRendering (the default): the scene is rendered ON the engine thread, as
+  a step of the cycle. Sprites, tiles, layers and direct drawings changed on the
+  engine thread are always seen whole; nothing below applies.
+
+  GpuRendering: the UI thread renders the scene while the engine thread is
+  already running the next cycle, and there is NO scene lock between them.
+  What IS guaranteed there:
+    * The collections the renderer walks are copied first: the sprite list
+      under SpriteManager's lock, the direct drawings from a concurrent
+      registry. Creating, moving or disposing sprites, and creating or
+      moving direct drawings, on the engine thread never makes the renderer
+      throw.
+    * ImageInstanceLayer and ParticleSurface paint a copy. Each Update (and
+      ImageInstanceLayer.InitializeInstances) copies what is to be painted
+      under a lock, and the UI thread paints its own copy of the last one, so
+      adding, removing or recycling instances, and emitting, moving and
+      compacting particles, never makes the GPU frame throw, skip or repeat
+      an item, or mix two steps. What the GPU tier shows is the state at the
+      end of the last Update: an instance added between updates appears with
+      the next one, and a ParticleSurface draws no particles on its very
+      first GPU frame (copying starts once the UI thread has painted it). The
+      CpuRendering tier still paints their live state, exactly as before.
+  What is NOT guaranteed:
+    * A consistent frame. One GPU frame can show some sprites after this
+      cycle's movement and others before it, or one sprite's position, frame
+      or rotation from two different steps. It lasts one frame and corrects
+      itself, but it is not the frame the game logic saw.
+    * A custom DirectDrawingBase whose OnDraw reads collections or state the
+      engine thread writes. Iterating a List<T> the engine thread changes
+      throws "Collection was modified" inside the GPU frame; the adapter logs
+      "GPU rendering frame failed." and that frame is dropped. Check
+      backbuffer.IsGlThreadRendered in OnDraw and paint a copy published by
+      Update (as ImageInstanceLayer does), or build the drawing on a draw
+      list.
+    * Adding or removing scene layers during play: the UI thread may rebuild
+      the visible-layer list while the engine thread changes the layer list.
+    * Disposing native resources the UI thread may be drawing at that
+      moment: a picture, tilesheet or font, or a direct drawing (most free
+      their SKPaints in Dispose, DrawListDrawing included). Dispose them
+      after Engine.Stop(), or stop using them first (hide the drawing with
+      Visible = false, drop the picture from the list) and dispose them a
+      rendered frame or more later.
+  Safe BY CONSTRUCTION on both tiers: a draw list (DRAW LISTS below). The game
+  builds it on the engine thread and publishes an immutable copy; the render
+  side only reads published copies.
 
 THE GLOBAL PAUSE SYSTEM
 --------------------------------------------------------------------------------
@@ -413,7 +501,8 @@ The one rule games must respect:
   KeyDown, or a UI-level PointerPressed (the ParticleTest sample's campfire
   toggle, OnCanvasPointerPressed, is the worked example — see WORKING EXAMPLES
   ON GITHUB). The obvious application wiring: minimize ->
-  Engine.Instance.Pause(), restore -> Engine.Instance.Resume().
+  Engine.Instance.Pause(), restore -> Engine.Instance.Resume() - which is what
+  GameWindowLifecycle.Attach(window) does in one call (see WINDOW LIFECYCLE).
 
 Also of note:
   * Pausing BEFORE Start() is valid: the loop starts parked (minimized-at-
@@ -424,6 +513,55 @@ Also of note:
     loop.PauseWithEngine = true (SoftwareRenderedGameHostBase does this for
     its loop automatically). loop.Pause()/Resume() remain independent: a loop
     the game paused itself stays paused across a global Resume().
+
+WINDOW LIFECYCLE: GameWindowLifecycle (Host, opt-in, both modes)
+--------------------------------------------------------------------------------
+One call where the application creates its window wires the window to the game:
+pause while minimized, resume when shown, and keyboard focus back to the game
+canvas whenever the window is activated.
+
+    // App.OnLaunched, after creating MainWindow and navigating to the game page:
+    GameWindowLifecycle.Attach(MainWindow);   // namespace ...Host.Hosting
+    MainWindow.Activate();
+
+    static GameWindowLifecycle Attach(Window window, bool pauseWhenHidden = true,
+                                      bool refocusOnActivate = true)
+    Window; PauseWhenHidden; RefocusOnActivate; IsWindowHidden; Dispose() (detach)
+
+  * The game host need not exist yet. Every live CodeBrixGameHost and
+    SoftwareRenderedGameHostBase whose canvas is in that window (a canvas not
+    yet in a window counts as in every window) hears about the window through
+    protected virtual hooks, all on the UI thread:
+        OnWindowHidden()      -- runs BEFORE the engine pauses, while the game
+                                 is live: latch the game's own pause menu here
+                                 so it is up when the player returns
+        OnWindowShown()       -- after the engine resumed
+        OnWindowActivated()   -- after the canvas got keyboard focus back
+        OnWindowDeactivated() -- another window has input focus
+  * Hidden -> Engine.Pause() unless the engine is already paused; shown ->
+    Engine.Resume() ONLY if this helper made the pause (a pause the game made
+    itself stays). pauseWhenHidden: false keeps the hooks but never pauses.
+    Workspace switches are not visibility changes and do not pause.
+  * Activated -> the canvas takes focus through its dispatcher (after whatever
+    moved focus finishes). Without this, alt-tab away and back leaves the
+    keyboard silently dead until the canvas is clicked. Keys held while focus
+    leaves the canvas are released by CodeBrixKeyboardAdapter itself (see INPUT).
+  * Replaces the hand-wired Window.VisibilityChanged / Window.Activated
+    handlers, and the page and view-model plumbing that carried them to the
+    host.
+
+OPENING LINKS: ExternalLinks (Host)
+--------------------------------------------------------------------------------
+    static Task<bool> ExternalLinks.OpenAsync(Uri uri)     // ...Host.Links
+    static Task<bool> ExternalLinks.OpenAsync(string url)
+
+Opens a web page (or a mailto: address, ...) through the CodeBrix.Platform
+launcher, from ANY thread: on the UI thread it launches directly; elsewhere (the
+engine thread, say) it posts the launch through Engine.Instance.UiDispatcher. The
+task completes with false - it never faults - when the URI is relative (or the
+string is not an absolute URI), there is no UI dispatcher, or the launcher
+refuses or fails; show a "No browser was available." line on false. A null Uri
+throws ArgumentNullException. Never block the UI thread waiting on the task.
 
 GETTING ON SCREEN: GameSurfaceCanvas (both modes)
 --------------------------------------------------------------------------------
@@ -521,7 +659,10 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     frame in a view-mode drawable are safe under either backbuffer.
   * RenderBackbufferPostScene and custom DirectDrawingBase.OnDraw run on the
     UI thread with the GRContext current under GpuRendering — never marshal that
-    canvas elsewhere; keep OnDraw a pure function of engine time/game state.
+    canvas elsewhere; keep OnDraw a pure function of engine time/game state, or
+    paint a published draw list (DRAW LISTS), which is safe there by
+    construction. See "RETAINED OBJECTS AND THE GPU TIER" under THE THREADING
+    MODEL for what retained sprites and drawings do and do not guarantee.
   * Pause: fully supported — rendering parks, LastFrameBeforePause is captured
     (from the adapter's latest presented frame), and one paused-overlay frame
     is rendered after the Paused handlers run, same as CpuRendering.
@@ -683,7 +824,10 @@ the scene are unaffected and stay where they are.
 
 Members you get: Engine (=> Engine.Instance), Scene, RenderSurface (the
 GameSurfaceCanvas), OnRenderSurfaceResized(int width, int height),
-OnEnginePaused() / OnEngineResumed(), OnDisposing() / OnDisposed(), Dispose().
+OnEnginePaused() / OnEngineResumed(), OnFixedUpdate(FixedUpdateStep) /
+OnAfterFixedUpdates(int) (see THE FIXED-STEP UPDATE HOOK), OnWindowHidden() /
+OnWindowShown() / OnWindowActivated() / OnWindowDeactivated() (see WINDOW
+LIFECYCLE), OnDisposing() / OnDisposed(), Dispose().
 
 ConfigureTouch is sealed. To make desktop mouse input ALSO arrive as touch
 contact 0 (it does not by default), override the protected virtual property:
@@ -788,8 +932,9 @@ at 70 Hz with raw-PCM audio):
 
 Members you get: RenderSurface (GameSurfaceCanvas), Presenter
 (PixelFramePresenter), GameLoop (FixedRateGameLoop), ConfigureInput() (virtual;
-wires the keyboard adapter), Dispose() (stops and disposes the loop, calls
-OnShutdown, disposes the keyboard adapter and presenter — it does NOT dispose
+wires the keyboard adapter), OnWindowHidden() / OnWindowShown() /
+OnWindowActivated() / OnWindowDeactivated() (see WINDOW LIFECYCLE), Dispose()
+(stops and disposes the loop, calls OnShutdown, disposes the keyboard adapter and presenter — it does NOT dispose
 the Engine singleton).
 
 Per tic, on the dedicated game-loop thread, the base runs:
@@ -860,6 +1005,8 @@ inside the cycle:
 Choosing an event hook:
     BeforeBackgroundTasksExecute -- per-cycle pre-input logic (CHEAP ONLY)
     AfterBackgroundTasksExecute  -- per-cycle post-movement logic (CHEAP ONLY)
+    FixedUpdate / AfterFixedUpdates -- deterministic logic at a fixed rate
+                                    (opt-in: Configuration.FixedUpdateRate)
     BeforeFrameRender            -- per-FRAME setup (throttled to TargetFPS)
     AfterFrameRender             -- per-FRAME post-render (profiling, etc.)
     CPSCalculated                -- periodic metrics snapshot, ON THE UI THREAD
@@ -905,7 +1052,31 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   doc comments saying milliseconds) throttle repeat delivery; per-key
   overrides via the StartMonitoring* timeBetweenEvents parameter.
   Start/StopMonitoring* registrations are queued and applied at the next
-  poll — not instantaneous.
+  poll — not instantaneous. KeyboardEventPoller.IsMonitoringKey(keyCode) is
+  the exception: it reflects a Start/Stop call at once and is safe from any
+  thread.
+
+  KEYS THE GAME USES ARE MARKED HANDLED. While the game surface has keyboard
+  focus, CodeBrixKeyboardAdapter sets KeyRoutedEventArgs.Handled on KeyDown
+  and KeyUp for every key the game uses, so those keys stay with the game:
+  they do not also fire an application keyboard accelerator (a menu item's
+  Ctrl+S, say) or Tab focus navigation, which would move focus off the
+  surface. A key is "used" when it is registered with the KeyboardEventPoller
+  (StartMonitoringKey / StartMonitoringKeys / StartMonitoringAllKeys) or
+  claimed on the adapter. Every other key is left unhandled and reaches the
+  application as before. A game that only POLLS IsDown and registers nothing
+  declares its keys by claiming them, typically in OnKeyboardAdapterInitialized:
+      if (KeyboardEventPoller.Adapter is CodeBrixKeyboardAdapter kbd)
+          kbd.ClaimKeys([(int)VirtualKey.Left, (int)VirtualKey.Right,
+                         (int)VirtualKey.Space]);
+  CodeBrixKeyboardAdapter: ClaimKey(int) / ClaimKeys(IEnumerable<int>) /
+  UnclaimKey(int) / UnclaimAllKeys() / IsKeyUsed(int) (any thread), and
+  MarkUsedKeysHandled (bool, default true; false leaves every key unhandled,
+  the behaviour before this feature). StartMonitoringAllKeys therefore keeps
+  EVERY key (1-255) with a focused game, Tab and F-keys included.
+  When the game surface loses keyboard focus the adapter releases every held
+  key (a KeyUp that happens while focus is elsewhere never reaches it), so
+  IsDown never reports a key stuck down after a menu, dialog or alt-tab.
 
   THE MOUSE THROTTLE IS REAL (it silently did nothing in earlier versions).
   With the 0.03 s default, at most one mouse event per 30 ms reaches the game.
@@ -932,6 +1103,89 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   by Configuration.TimeBetweenGamepadStateUpdates. A game that calls it too gets
   unthrottled native device polling on top of the engine's. A gamepad BACKEND
   is a separate package — see the Sdl2 AGENT-README named in OVERVIEW.
+
+  INPUT ACTIONS (the layer most games want over the raw paths above):
+  InputActionMap in CodeBrix.Platform.GameEngine.Input.Actions turns keys,
+  gamepad buttons, D-pad and stick directions into NAMED ACTIONS, for menu
+  games and action games alike. It needs no gamepad backend of its own (it
+  reads IGamepadAdapter) and leaves the raw pollers untouched.
+      var classic = new InputBindingProfile("Classic")
+          .Bind("Left",  InputBinding.Key((int)VirtualKey.Left),
+                         InputBinding.DPad(StickDirection.Left))
+          .Bind("Right", InputBinding.Key((int)VirtualKey.Right),
+                         InputBinding.DPad(StickDirection.Right))
+          .Bind("Fire",  InputBinding.Key((int)VirtualKey.Space, "Space"),
+                         InputBinding.GamepadButton(SdlGamepadButtons.A))
+          .Bind("MenuUp", InputBinding.Key((int)VirtualKey.Up),
+                         InputBinding.DPad(StickDirection.Up),
+                         InputBinding.StickPush(GamepadStick.Left, StickDirection.Up))
+          .Bind("Confirm", InputBinding.Key((int)VirtualKey.Enter, "Enter"),
+                         InputBinding.GamepadButton(SdlGamepadButtons.A));
+      var shoulder = classic.Copy("Shoulder")
+          .Rebind("Fire", InputBinding.Key((int)VirtualKey.Space),
+                          InputBinding.GamepadButton(SdlGamepadButtons.RightShoulder));
+      var input = new InputActionMap(classic);          // reads the engine's devices
+      input.SetRepeat("MenuUp", new InputRepeat(0.35, 0.1));
+      input.Attach(Engine.Instance);                    // polled every engine cycle
+      Engine.Instance.Configuration.FixedUpdateRate = 60;
+      Engine.Instance.FixedUpdate += step =>
+      {
+          input.Update(step.DeltaSeconds);              // FIRST, once per step
+          var move = input.GetAxis("Left", "Right", GamepadStick.Left);
+          if (input.WasPressed("Fire")) Shoot();
+          if (input.IsTriggered("MenuUp")) MoveCursorUp(); // press + repeats
+      };
+      input.Profile = shoulder;                         // swap the controls
+  Reads (all per STEP, i.e. since the previous Update): IsHeld, WasPressed,
+  WasReleased, IsTriggered (press, or a hold-to-repeat step when the action has
+  SetRepeat timing; otherwise the same as WasPressed), AnyPressed,
+  PressedBindings (for an input log: "key Enter", "button A", "stick Left Up"),
+  GetAxis(negative, positive, stick?, vertical) and GetStick(stick). An action
+  name the profile does not bind reads as idle.
+  What it guarantees:
+  * EDGES ARE LATCHED. Attach makes the engine Poll the map on every cycle
+    (after the engine's own input polling, before the fixed steps); presses and
+    releases are kept until the next Update. A key or button tap shorter than
+    one fixed step is never lost: the step after it sees WasPressed AND IsHeld.
+    Gamepads are sampled at most once per TimeBetweenGamepadStateUpdates (their
+    refresh rate). Without an engine loop (Mode B, tests) call Update alone (it
+    polls first), or Poll(elapsedSeconds) as often as you can plus Update.
+  * One press per action, however many bindings drive it: holding Left on the
+    keyboard and then on the D-pad is still one press (LastDevice does follow
+    the second device).
+  * HELD AT START DOES NOT COUNT until released: whatever is held at the map's
+    first poll gives no press, no hold and no repeat. SuppressHeld() does the
+    same when a screen starts; ClearLatched() drops pending edges. After a
+    profile swap, inputs the new profile newly binds that are already held wait
+    for their release too.
+  * HOLD-TO-REPEAT: SetRepeat(action, new InputRepeat(delay, interval)) - the
+    press acts at once, the first repeat after delay, then one per interval at a
+    constant rate (a long stall gives one repeat, never a burst); releasing
+    resets it. Change it any time (a slower interval on a name-entry screen).
+  * STICK AS A DIRECTION: a StickPush binding turns on past
+    StickPressThreshold (0.5), off only inside StickReleaseThreshold (0.3), and
+    after turning off that axis cannot turn on again, either way, for
+    StickSettleSeconds (0.08) - a released stick springs back PAST centre and
+    the overshoot would otherwise read as a push the other way. GetAxis applies
+    StickDeadZone (0.15) per axis to the analog value; do not also bind the same
+    stick's directions to the two actions you pass it.
+  * ALL GAMEPADS: buttons count on ANY connected pad; each stick reads the pad
+    pushed furthest. Plugging and unplugging is safe (an unplugged pad releases
+    what it held; a list that changes while read keeps the last state).
+  * LAST DEVICE: LastDevice (InputDeviceKind.KeyboardMouse / Gamepad) follows
+    the most recent press, for on-screen prompts; settable (restore a saved
+    value); NoteDeviceUsed(kind) records a mouse click or touch.
+  * KEY CLAIMS: the map claims the keys of its ACTIVE profile on a keyboard
+    adapter that implements IKeyClaimingAdapter (CodeBrixKeyboardAdapter does),
+    through ClaimKeys - so they are marked handled while the surface has focus.
+    Keys already claimed or monitored by the game are left alone; the map
+    withdraws only its own claims (profile swap, ClaimKeys = false, Detach).
+  * SimulatePress(action) latches a press that no binding made (the window
+    being hidden asking for a pause, a scripted demo).
+  Thread-safe; normally used on the engine thread only (Attach polls there,
+  and FixedUpdate runs there). The constructor with (profile, keyboard func,
+  gamepads func) reads your own adapters instead of the engine's, for a game
+  that owns its loop and for tests with fake adapters.
 
   TOUCH AND GESTURES: Engine.Instance.Input.TouchEventPoller (TouchEventPoller,
   which implements ITouchInput):
@@ -1023,7 +1277,8 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
                                   bool emulateMouse = false);
   CodeBrixGameHost and SoftwareRenderedGameHostBase do this for you. The
   adapter classes themselves are public if you need them directly:
-      CodeBrixKeyboardAdapter(UIElement element) : IKeyboardAdapter, IDisposable
+      CodeBrixKeyboardAdapter(UIElement element) : IKeyboardAdapter,
+                                  IKeyClaimingAdapter, IDisposable
           IsDown(int keyCode); CurrentKeyboardModifiers;
           static int? GetKeyCodeFromString(string keyName)
       CodeBrixMouseAdapter(UIElement element) : IMouseAdapter, IDisposable
@@ -1251,6 +1506,33 @@ place the policy lives, so a game does not reimplement fade timing and
   its OWN voice on the music bus. Deliberately NOT through SfxVoicePool: the
   pool has a polyphony cap, and a level-complete fanfare culled by a busy
   combat scene is exactly the wrong outcome.
+  Because PlayStinger rides the MUSIC bus, the player's music slider turns it
+  down with the music, and a duck (its own included) attenuates it too. For a
+  cue that must be heard whatever the music slider says - a boss warning, a
+  game-over sting - pick the bus:
+      MusicManager.Instance.PlayStingerOnBus("sfx.warning", AudioBus.Sfx,
+          volume: 1f, duckMusic: true, duckDepth: 0.3f);   // duck ends with it
+  or hold the duck until YOU release it (the music stays down on the game-over
+  screen until the player leaves it):
+      _gameOverDuck = MusicManager.Instance.PlayStingerWithHeldDuck(
+          "sfx.game-over", duckDepth: 0.2f,
+          attack: TimeSpan.FromSeconds(2), release: TimeSpan.FromSeconds(1.5));
+      ...
+      _gameOverDuck.Dispose();                     // on leaving the screen
+  PlayStingerWithHeldDuck plays on AudioBus.Sfx by default and returns a
+  PushDuck handle (reference-counted with every other duck, deepest wins). The
+  duck is held even when the key is not loaded (a warning is logged), because
+  the moment still wants the music quiet. PlayStinger itself is unchanged.
+
+  TESTING A MUSIC POLICY: IMusicManager is the duck/stinger/volume surface of
+  MusicManager (MusicVolume - the player's slider, AudioMixer.MusicVolume -
+  DuckMultiplier, PushDuck, Duck, ClearDucks, PlayStinger, PlayStingerOnBus,
+  PlayStingerWithHeldDuck). MusicManager implements it; write the game's music
+  code against IMusicManager, hand it MusicManager.Instance in the game and a
+  recording fake in tests - no audio device, no adapter class of your own.
+  Transport (Play, CrossfadeTo, playlists) is deliberately not on it. For
+  generated music the GeneratedMusic add-in adds the matching session seams
+  (IGeneratedMusicSession, IGeneratedMusicStarter) - see its AGENT-README.
 
   PLAYLISTS: MusicPlaylist with MusicRepeatMode None/One/All, seeded shuffle,
   Add/Remove/Clear/Reset/MoveNext/MovePrevious. MusicManager.Play(playlist,
@@ -1531,6 +1813,26 @@ The scene graph is Scene -> SceneLayer (a 2D tile grid) -> SceneLayerTile:
                         int height = 32, int zOrder = 0, float parallax = 1f,
                         CoordinateSystemTypes coordinateSystem = Orthogonal)
     SceneLayer AddLayer(SceneLayer sceneLayer);   void RemoveAllLayers()
+
+PIXEL LAYERS — a layer with NO tile grid, for a game that has no tile map:
+
+    var world = scene.AddPixelLayer(1280, 720);   // world-pixel size
+    SceneLayer AddPixelLayer(int widthPx, int heightPx, int zOrder = 0,
+                             float parallax = 1f)
+    bool SceneLayer.IsPixelLayer
+
+  * It carries scene-layer direct drawings (a game's own DirectDrawingBase
+    subclasses, ParticleSurface, HealthBar, DirectRectangle, ...), sprites and
+    colliders like any layer, with the same ZOrder, Parallax, Visible, camera
+    and effects behavior, but draws no tiles. GetLayerBoundsPx() is its size.
+  * Internally it is one grid cell the size of the layer, so grid APIs keep
+    working and TileWidth/TileHeight report the size. Direct drawings take
+    world pixels already. A sprite's position is in grid units and it aligns
+    inside its cell (bottom-centre by default) - on a pixel layer the cell is
+    the whole layer, so give a sprite HorizAlign Left + VertAlign Top and
+    position it with layer.WorldPxToGrid(worldPx) to place it by pixel.
+  * Survives save/load as a pixel layer. Replaces the "empty tile map as a
+    carrier" workaround (a grid of blank cells just to host drawings).
 
   * Layers: ZOrder (lower renders behind), Parallax (1 = moves with camera,
     <1 background, >1 foreground), Visible, WrapHorizontally/WrapVertically
@@ -1931,7 +2233,30 @@ ANIMATION CYCLES:
   * Cycle keys are a GLOBAL registry; constructing a Cycle with an existing
     key replaces it, and SetCurrentCycle/StartAnimation(key) fetch a CLONE.
   * Cycles can chain (NextCycle) and hide the tile at cycle end
-    (hideTileOnCycleEnd). A throttle of 0 auto-stops the animation.
+    (hideTileOnCycleEnd, which applies when NextCycle is null - a new Cycle
+    chains to itself). A throttle of 0 or below auto-stops the animation.
+  * PER-FRAME DURATIONS (optional): a frame may carry its own display time,
+    for art whose frames hold for different lengths (exported sprite-sheet
+    animations, animated map tiles):
+        seq.AddFrame(frame, 0.08);            // this frame shows for 0.08 s
+        seq.SetDurationSeconds(3, 0.4);       // frame 3 holds 0.4 s
+        seq.SetDurationSeconds(3, null);      // back to the cycle's throttle
+        seq.GetDurationSeconds(i); seq.HasFrameDurations; seq.ClearFrameDurations()
+    A frame without one shows for the Cycle's ThrottleTime, so a sequence
+    with no durations behaves exactly as before. Durations must be positive
+    and finite (ArgumentOutOfRangeException otherwise); RemoveFrame keeps the
+    other frames' durations on their frames. Cycle.CurrentFrameDurationSeconds
+    reads the showing frame's time; TotalCycleTime sums each frame's own time
+    in the same pattern as the uniform total (simple: all but the last frame;
+    repeating: every frame; ping-pong: end frames once, middle frames twice).
+    FrameSequence is a struct: edit the one inside the cycle
+    (cycle.Sequence.SetDurationSeconds(...)), or set durations before
+    constructing the Cycle. A cloned cycle (StartAnimation(key) fetches a
+    clone) keeps its own timing: retiming the clone leaves the registered
+    cycle alone. Durations are saved with the cycle (see SAVE / LOAD).
+  * SpriteManager.SpriteCreated: if a handler throws, CreateSprite/CloneSprite
+    remove and dispose the new sprite before the exception reaches the caller,
+    so no half-announced sprite stays registered.
   * Animator events: Started, Stopped, Cycled (per frame advance;
     AnimatorEventArgs). Never call Animator.Dispose directly — the owning Tile
     does.
@@ -2225,6 +2550,100 @@ space), each with a plain form and a callbacks form:
     rather than using absolute screen coordinates; with matching origins and
     equal sizes (the ordinary case) the output is identical, and a letterboxed
     or scaled destination now renders correctly.
+  * Change Instances on the engine thread only. With GpuRendering the layer
+    paints a copy of the instances taken at the end of its last Update (or
+    InitializeInstances), so an instance added in between shows from the
+    next update on; CpuRendering paints the live list.
+
+DRAW LISTS (Mode A, immediate-mode, safe on the GPU tier)
+--------------------------------------------------------------------------------
+For games that draw many short-lived things (shots, HUD text, menus, a whole
+screen from game state) without creating a retained object for each: build a
+list of draw commands every frame, publish it, and let one drawing paint the
+last published copy. Namespace CodeBrix.Platform.GameEngine.Drawing.Direct.DrawLists.
+
+    var images = new DrawImageLibrary();            // shared by several lists
+    var world = new DrawList(images);               // one list per drawing
+    var hud = new DrawList(images);
+
+    // once, after the scene exists (a pixel layer is the natural home):
+    var layer = scene.AddPixelLayer(1280, 720);
+    new DrawListDrawing(host, layer, new Rectangle(0, 0, 1280, 720), world) { ZOrder = 0 };
+    new DrawListDrawing(host, host.ViewManager.Views[0],
+                        new Rectangle(0, 0, 1280, 720), hud) { ZOrder = 100 };
+
+    // every frame, on the engine thread (AfterBackgroundTasksExecute or
+    // GameHostBase.OnAfterFixedUpdates):
+    world.Clear();
+    world.Image("kenney-space:sheet", "playerShip1_blue.png", x, y, 64, 64,
+                rotation: 0, alpha: 1);             // asset key + frame name
+    world.Image(frame, x, y, 32, 32);               // a tilesheet Frame
+    world.Image(skImage, x, y, 32, 32, fit: DrawImageFit.Stretch);
+    world.Circle(x, y, 3, SKColors.White);
+    world.Publish();
+    hud.Clear();
+    hud.Rectangle(640, 40, 400, 48, 0xC0101830, SKColors.Cyan,
+                  strokeWidth: 2, cornerRadius: 8);  // uint ARGB works too
+    hud.Text($"SCORE {score}", 640, 40, "ui-font", 28, SKColors.White,
+             SKTextAlign.Center);                   // FontManager key
+    hud.HitRegion(640, 40, 400, 48, "pause-button");
+    hud.Publish();
+
+    // pointer input, in the same coordinates:
+    var hit = hud.Published.HitTest(pointerX, pointerY);   // DrawHitRegion?
+    if (hit?.Id == "pause-button") { ... }
+
+  * Commands: Image (SKImage, Frame, or asset key + frame name), Rectangle
+    (fill, outline, corner radius; centre + size, or an SKRect), Circle (fill
+    and/or outline), Text (one line; FontManager key or SKTypeface; size,
+    color, SKTextAlign Left/Center/Right at X, Y = the middle of the line).
+    Every command takes alpha (0..1) and, except circles, a clockwise rotation
+    in degrees about its point. Images fit their box keeping their aspect
+    (DrawImageFit.Contain, the default) or stretch to it. Commands are drawn
+    back to front in the order added. DrawCommand.ForImage/ForRectangle/
+    ForCircle/ForText + DrawList.Add(command) build the same thing by value.
+  * Coordinates: world pixels for a scene-layer drawing, screen pixels for a
+    view drawing (as ParticleSurface). Painting is clipped to the drawing's
+    bounds and scales with the camera zoom.
+  * Publish() copies the list into an immutable DrawListSnapshot (numbered
+    1, 2, 3, ...) and makes it DrawList.Published (latest wins). The builder
+    keeps its contents until Clear(). Published is safe to read from any
+    thread; every other DrawList member belongs to the building thread.
+  * Pictures and typefaces are resolved when the command is ADDED, on the
+    building thread: an asset key goes through DrawImageLibrary (a sheet in
+    TilesheetRegistry of that name, else GameAssetProviderRegistry.
+    LoadTilesheet; the frame name is a region, its first tile is the picture;
+    no frame name = the default region, a whole loose picture), a typeface
+    key through FontManager.Instance.Get (an unknown key throws
+    KeyNotFoundException). The published commands carry the SKImage and
+    SKTypeface themselves.
+  * DrawImageLibrary remembers every lookup. A key or frame it cannot find
+    draws nothing, is listed in Missing ("key" or "key / frame") and is
+    logged ONCE as a warning with the closest real names; it never throws
+    mid-frame. Preload(assetKey, frameNames) at load time finds spelling
+    mistakes before the first frame; AddTilesheet(key, sheet) and
+    AddImage(key, frameName, image) register pictures the game loaded itself.
+  * DrawListDrawing(host, SceneLayer|View, bounds, DrawList list) or
+    (..., Func<DrawListSnapshot?> source) — the second form paints whatever
+    snapshot the function returns (a game that publishes world and HUD lists
+    together in one record of its own passes two selectors). Update (engine
+    thread) takes the latest snapshot as Current and marks the drawing dirty
+    when it changed, so the CPU tier's dirty-rectangle path repaints it while
+    the game keeps publishing and leaves it alone when it stops. The CPU tier
+    paints Current; the GPU tier paints the latest published snapshot on the
+    UI thread. FilterQuality defaults to ImageFilterQuality.Low (linear, no
+    mipmaps). It is an ordinary direct drawing: ZOrder, Visible, Opacity,
+    FadeTo, Dispose.
+  * Keep every picture, tilesheet and font a published list uses alive while
+    it is published (they stay caller-owned; nothing here disposes them).
+  * Two lists are published one after the other, so on the GPU tier a frame
+    can pair one list's frame N with the other's frame N+1. When that matters,
+    publish both in one object and use the Func source form.
+  * Unit tests that build draw lists (a game's painter tests) need the native
+    Skia library, because image and text commands carry real SKImage and
+    SKTypeface objects: on Linux a test project references
+    SkiaSharp.NativeAssets.Linux, since only an application head brings the
+    native library with it.
 
 LIGHTING (Mode A)
 --------------------------------------------------------------------------------
@@ -2411,9 +2830,16 @@ HEALTHBAR — a world-space bar that tracks a sprite:
     Target, Value, MaxValue, Fraction, BarSize, OffsetPx,
     FillColor / WarningColor / CriticalColor, WarningFraction / CriticalFraction,
     UseThresholdColors, TrackBoundsWorld, FillBoundsWorld
+    HealthBar(RenderSurfaceHostBase host, SceneLayer sceneLayer, PointF anchorPx,
+              float maxValue, Size? size = null, Point? offsetPx = null,
+              string? nickname = null)
+    HealthBar(RenderSurfaceHostBase host, SceneLayer sceneLayer,
+              Func<PointF> anchorProvider, float maxValue, Size? size = null,
+              Point? offsetPx = null, string? nickname = null)
     fluent SetValue(v), SetFillColor(c), SetTrackColors(background, border),
            SetThresholdColors(warning, critical), SetThresholds(warningFraction,
-           criticalFraction), Show(), Hide(); RefreshPosition()
+           criticalFraction), Show(), Hide(), SetAnchor(PointF); RefreshPosition()
+    AnchorPx, HasAnchorProvider; Target is null for an anchored bar
 
   * It is a SceneLayer-mode composite of two DirectRectangles (track + fill,
     StrokeAlign.Inside on the track), centred above its target with OffsetPx,
@@ -2423,6 +2849,14 @@ HEALTHBAR — a world-space bar that tracks a sprite:
   * It disposes itself with its target sprite. maxValue must be greater than
     zero and the bar big enough to draw, or the constructor throws
     ArgumentOutOfRangeException.
+  * No sprite to follow (a game that draws its own entities)? Anchor the bar
+    to a WORLD-PIXEL point on any layer, a pixel layer included: it is centred
+    horizontally on the anchor and sits DefaultGapPx (6) above it, so the
+    anchor is the top-centre of whatever the bar labels. Move a fixed anchor
+    with SetAnchor(point) (throws InvalidOperationException on a sprite bar),
+    or pass a Func<PointF> provider: the bar reads it once at construction and
+    then once per RENDERED frame on the engine thread (keep it cheap), and
+    repositions only when the point moved. SetAnchor drops a provider.
 
 SAVE / LOAD: EngineState (Mode A)
 --------------------------------------------------------------------------------
@@ -2464,6 +2898,12 @@ MECHANICS AND RULES:
     MergeFromFile merges (scenes matched by ID, sprites by Nickname, cycles/
     audio by key). Audio specs whose resource came from an asset pack apply
     their saved settings to the pack-loaded resource.
+  * An ID that appears twice in a save: the last copy wins, for that ID only;
+    with overwriteExisting:false a live scene/sprite of the same ID is still
+    kept. A sprite the merge skips, and a live sprite it replaces, are
+    disposed (their colliders leave the layer's collider registry).
+  * Scene.Empty (the shared placeholder) is never listed by GetAllScenes and
+    never written to a save.
   * Loading is STAGED internally: asset packs and tilesheets are registered
     FIRST, then the object graph deserializes (tile/sprite Frames resolve
     tilesheets BY NAME against the live registry during that read — this is
@@ -2491,6 +2931,14 @@ MECHANICS AND RULES:
     breaks. Do NOT add the CodeBrix.Json.Extensions polymorphism fallback
     converter factory to these options — it would take precedence over
     reference handling.
+  * Per-frame animation durations are saved as a "frameDurations" array on
+    the cycle's sequence, and ONLY for a sequence that has at least one
+    (untimed cycles save exactly as before). Saves written before per-frame
+    durations existed load unchanged, as untimed cycles; a saved duration
+    that is not positive fails the load with a JsonException.
+  * A bundle read with AssetsFile.Load(Stream) has no file path, so a save
+    leaves it out; a load that includes the AssetsFiles part clears it with
+    the rest of the registry - load it again afterwards if still needed.
   * Custom Sprite/Tile SUBCLASSES are not round-trip-aware out of the box:
     the save contracts cover the engine's own types. A game that must persist
     a subclass should keep its persistent data in engine-visible members and
@@ -2510,7 +2958,28 @@ immediately.
     pack.Save();                                    // rewrites the zip
 
   * AssetTypes: Image, Audio, Video, Cursor, Font, Misc, Svg,
-    TilesheetDefinition.
+    TilesheetDefinition, and the reserved definition types SceneDefinition,
+    AnimationDefinition, AudioDefinition, SpriteDefinition. The engine does
+    not read the reserved types: such entries load and are reachable by type
+    (Get/GetAllEntries), nothing interprets them. The numeric values are part
+    of the bundle format and never move.
+  * LoadOrCreate registers the pack in AssetsFile.AllAssetsFiles only when
+    the load succeeds; a wrong password or a damaged archive throws and
+    leaves nothing registered.
+  * FROM A STREAM (embedded resources, packaged app assets on mobile, a
+    download) - no file path needed:
+        using (var stream = typeof(MyGame).Assembly
+                   .GetManifestResourceStream("MyGame.Assets.game.pack")!)
+            pack = AssetsFile.Load(stream);            // password: null, register: true
+    static AssetsFile Load(Stream stream, string? password = null,
+    bool register = true). The CALLER owns the stream: Load never closes or
+    disposes it, reads it from its current position, copies every entry into
+    memory before returning (so dispose the stream right away), and needs no
+    seeking (a forward-only stream is buffered first). register:false keeps
+    the bundle out of AllAssetsFiles. A failed load throws and registers
+    nothing, as with LoadOrCreate. The result has an empty FilePath, so
+    Save() throws InvalidOperationException, and an engine save leaves it out
+    (see SAVE / LOAD). Dispose the bundle to release its entries.
   * Get returns a fresh read-only MemoryStream per call; exact-name match
     first, then base-name match ignoring extension.
   * AssetsFileIdentifier(pack, type, name) is a serializable pointer to one
@@ -2563,6 +3032,16 @@ in the engine.
     engine cannot represent, or whose provider does not implement the matching
     capability, raises UnsupportedGameAssetException ("This type of asset is not
     supported at this time."); a key no provider owns raises KeyNotFoundException.
+  * A MISSING KEY NAMES ITS CLOSEST REAL KEYS. The KeyNotFoundException message
+    (unknown provider prefix, or a key the provider does not hold) ends with
+    "Did you mean: 'k1', 'k2'?" - up to three keys taken from the providers'
+    own Describe(), matched case-insensitively on the whole key or on its last
+    path segment, so a misspelled name and a right name in the wrong folder are
+    both found. Nothing is suggested when nothing is close. It is computed only
+    when the lookup fails, and a provider whose Describe() throws just leaves
+    the message without suggestions. The same goes for sheet["name"] on a
+    Tilesheet that has no region of that name: its ArgumentException names the
+    closest region names (atlas frame names). Message text only - never parse it.
   * TILE MAPS: TiledMapImport carries the Scene, the Layers in the map's own
     order, the Tilesheets (one per tile set the map REFERENCES, so the list does
     not vary with a layer filter), MapSizePx, TileSize, Warnings, and the
@@ -3137,9 +3616,16 @@ THREADS
      the first await inside the posted action you are no longer on it.
   [] MusicManager Ended/playlist events arrive on a background or audio
      thread — marshal before touching game state.
+  [] GpuRendering renders on the UI thread with no scene lock: retained
+     sprites can show a mixed frame there. ImageInstanceLayer and
+     ParticleSurface paint the copy their last Update published; a custom
+     drawing's OnDraw must not iterate lists the engine thread changes. A
+     published DrawList is safe on both tiers.
+  [] Build a DrawList on one thread; read only DrawList.Published elsewhere.
 
 PAUSE CORRECTNESS
-  [] Wire the hosting app: minimize -> Pause(), restore -> Resume().
+  [] Wire the hosting app: minimize -> Pause(), restore -> Resume()
+     (GameWindowLifecycle.Attach(window) does it, plus refocus on activate).
   [] Register save-game / pause-screen logic on Paused (or OnEnginePaused);
      tear down on Resumed. Never poll IsPaused from game logic to "stop
      yourself" — the engine already stopped you.
@@ -3242,6 +3728,9 @@ API TRAPS
   [] MusicDuckMultiplier is owned by MusicManager — duck through PushDuck/
      Duck, never by writing AudioMixer.MusicVolume. ClearDucks() rescues a
      leaked duck handle.
+  [] PlayStinger rides the music bus: the music slider and any duck turn it
+     down. A warning cue the player must hear goes on AudioBus.Sfx through
+     PlayStingerOnBus or PlayStingerWithHeldDuck.
   [] AN INSTRUMENT FROM AN ASSET PACK MUST REACH THE DISK, EXCEPT .sf2. A .sfz
      and a .dspreset REFERENCE sample files beside them; a .dslibrary or
      .dsbundle IS one file, but it is read IN PLACE BY PATH and nothing is
@@ -3293,6 +3782,10 @@ WHAT THIS PACKAGE DOES NOT DO
     SkiaSharp.NativeAssets.Linux.
   * No Windows OpenGL driver: GpuRendering on a machine without an ICD falls
     back to CPU rendering and logs a warning.
+  * No lock between the engine thread and the GPU tier's UI-thread render:
+    retained sprites and custom drawings are not frame-consistent there (see
+    RETAINED OBJECTS AND THE GPU TIER). Draw lists, ImageInstanceLayer and
+    ParticleSurface are.
 
 WORKING EXAMPLES ON GITHUB
 ==========================
@@ -3403,6 +3896,10 @@ suite, a gamepad suite and a host suite:
           references, cycles, loose-file and asset-pack audio, compression,
           merge semantics), plus a legacy-save regression that strips the newer
           collision members from a real save file and reloads it
+      EngineStateMergeTests.cs — IDs repeated inside a save, and the disposal
+          of sprites a merge skips or replaces
+      AnimatorTests.cs — throttles of zero or below, and a cycle that ends
+          with no next cycle
       SpriteRotationRoundTripTests.cs, CollisionProfileRoundTripTests.cs — the
           rotation and collision-profile/type members through save and load
       EnginePauseTests.cs — park/resume semantics, no-burst time shifting,
@@ -3410,6 +3907,10 @@ suite, a gamepad suite and a host suite:
       EngineInitializationTests.cs, FixedStepAccumulatorTests.cs — the bounded
           start-up wait, retry after a failed Initialize, StopAndWait, dispose
           from inside a cycle, and the timer-driven fixed-step accumulator
+      EngineFixedUpdateTests.cs — the fixed-step update hook: step counts per
+          cycle, the stall cap, pause freezing, timer-driven mode, rate 0 = off
+      SceneTests.cs — pixel layers (and their save/load), and Scene.Empty
+          staying out of the scene list
       SceneLayerWrappingTests.cs, LayerPeriodTests.cs, WrappedCameraTests.cs,
           WrappedCollisionTests.cs, WrappedRenderingTests.cs,
           WrappedSpriteTests.cs — layer wrapping end to end: period vectors per
@@ -3428,6 +3929,8 @@ suite, a gamepad suite and a host suite:
       TilesheetCollisionAdjustTests.cs, TilesheetCollisionTypeTests.cs,
           TilesheetFactoryTests.cs, TilesheetDefinitionSerializerTests.cs,
           CollisionProfileTests.cs — the collision metadata and .gts round trip
+      KeyboardEventPollerTests.cs — IsMonitoringKey answering at once after
+          each StartMonitoring* / StopMonitoring* call
       MouseEventPollerTests.cs, TouchEventPollerTests.cs,
           TapGestureRecognizerTests.cs, SwipeGestureRecognizerTests.cs,
           PinchGestureRecognizerTests.cs — throttling, touch lifecycle, gestures
@@ -3437,10 +3940,23 @@ suite, a gamepad suite and a host suite:
           DirectSceneLayerDarknessOverlayTests.cs — lighting, sampled from a
           rendered backbuffer
       SplashOverlayTests.cs, HealthBarTests.cs — the two ready-made components
+      InputActionMapTests.cs, InputBindingProfileTests.cs, InputBindingTests.cs,
+          InputRepeatTests.cs — the input-action layer over fake keyboards and
+          gamepads: latched taps between steps, held-at-start and profile-swap
+          suppression, hold-to-repeat timing, stick hysteresis and the
+          spring-back settle window, every pad aggregated through hot-plug,
+          last device, key claims, and a tap caught by an attached map
+      DrawListTests.cs, DrawListSnapshotTests.cs, DrawCommandTests.cs,
+          DrawImageLibraryTests.cs, DrawListDrawingTests.cs — building and
+          publishing draw lists (including a reader thread that only ever
+          sees whole frames), hit tests, picture lookup and missing-key
+          reports, and the pixels each command kind paints on both tiers
       DirectRectangleTests.cs, DirectImageTests.cs, ImageInstanceLayerTests.cs,
           DirectDrawingMovableBaseTests.cs, ParticleSurfaceTests.cs,
           MovementControllerTests.cs, RefreshQueueTests.cs,
-          RenderSurfaceHostTests.cs
+          RenderSurfaceHostTests.cs (the image-layer and particle tests
+          include the GPU tier's published copy and a paint thread racing
+          the engine thread)
       CachedSoundTests.cs / SfxVoicePoolTests.cs — decode-once preload and the
           pool's cull-policy selection (nothing opens the audio device)
       AudioMixerTests.cs, MusicManagerTests.cs, MusicStemSetTests.cs,
@@ -3450,6 +3966,9 @@ suite, a gamepad suite and a host suite:
           advanced by hand and every instrument, MIDI file and stems export
           built in code (SyntheticInstrumentAssets.cs), so no binary fixture is
           needed to run them
+      MusicManagerStingerTests.cs, IMusicManagerTests.cs — stingers on a chosen
+          bus and with a held duck (voices go to an internal hook, not an audio
+          device), and a music policy tested against a recording IMusicManager
       FixedRateGameLoopTests.cs, PixelFramePresenterTests.cs — Mode B
       InputPumpGamepadTests.cs — the Mode-B gamepad refresh path
       EngineConfigurationTests.cs, ServiceCollectionExtensionsTests.cs,
@@ -3458,14 +3977,25 @@ suite, a gamepad suite and a host suite:
           ImageFilterQualityTests.cs, SpacingTests.cs, VariableRateSampleProviderTests.cs,
           AudioResourceTests.cs, AudioResourceDisposalTests.cs,
           AudioResourceManagerPcmTests.cs, SoundChannelTests.cs
+      FrameSequenceTests.cs, CycleTests.cs — per-frame animation durations
+          (the save-format side is in EngineStateRoundTripTests.cs, including
+          a save written before the feature)
       TilesheetDefinitionValidatorTests.cs, TilesheetTests.cs, AssetsFileTests.cs,
           GameAssetProviderRegistryTests.cs, FontManagerTests.cs,
           SvgResourceTests.cs, SvgResourceManagerTests.cs — authoring-time
           validation, the asset-provider contract and the loading unlocks
+      KeySuggestionsTests.cs — the "Did you mean" suggestions on a missing
+          asset key or region name
   https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Host.Tests
       CodeBrixPlatformUiDispatcherTests.cs — the Host UI dispatcher
       GameHostBaseTests.cs — the host shutdown order (cleanup hooks must not run
-          until the cycle has finished)
+          until the cycle has finished) and the fixed-update hooks
+      KeyClaimsTests.cs — claiming keys on CodeBrixKeyboardAdapter, which
+          keys count as used, and the adapter as an IKeyClaimingAdapter
+      WindowLifecycleCoordinatorTests.cs, WindowLifecycleParticipantsTests.cs —
+          GameWindowLifecycle's pause/resume/refocus decisions
+      ExternalLinkOpenerTests.cs — ExternalLinks' answers for relative links,
+          no dispatcher, and a launcher that refuses or fails
       PointerCoordinateMapperTests.cs — pointer normalization across the
           letterbox bars
 
@@ -3507,6 +4037,8 @@ HOST (CodeBrix.Platform.GameEngine.Host.*)
                    OnEngineInitialized, OnEngineStarted, OnEnginePaused, OnEngineResumed,
                    OnConfigureGamepads, OnKeyboardAdapterInitialized, OnMouseAdapterInitialized,
                    OnTouchAdapterInitialized, OnRenderSurfaceResized(int, int), OnDisposing,
+                   OnFixedUpdate(FixedUpdateStep), OnAfterFixedUpdates(int),
+                   OnWindowHidden, OnWindowShown, OnWindowActivated, OnWindowDeactivated,
                    bool EmulateMouseAsTouch (default false)
     abstract class SoftwareRenderedGameHostBase
         ctor(GameSurfaceCanvas renderSurface, int ticsPerSecond)
@@ -3514,7 +4046,10 @@ HOST (CodeBrix.Platform.GameEngine.Host.*)
         PixelFramePresenter Presenter;  FixedRateGameLoop GameLoop;  GameSurfaceCanvas RenderSurface
         abstract OnLoadContent(), OnTic(), OnRenderFrame(Span<byte> frameBuffer)
         virtual ConfigureInput(), ConfigureGamepads(), ConfigureAudio(), OnShutdown(),
-                OnEnginePaused(), OnEngineResumed(), bool EmulateMouseAsTouch (default false)
+                OnEnginePaused(), OnEngineResumed(), OnWindowHidden(), OnWindowShown(),
+                OnWindowActivated(), OnWindowDeactivated(), bool EmulateMouseAsTouch (default false)
+    GameWindowLifecycle.Attach(Window, bool pauseWhenHidden = true, bool refocusOnActivate = true)
+    static Task<bool> ExternalLinks.OpenAsync(Uri) / OpenAsync(string)
     static class EngineExtensions
         InitializeCodeBrixKeyboardAdapter(this Engine, UIElement element)
         InitializeCodeBrixMouseAdapter(this Engine, UIElement element,
@@ -3523,6 +4058,8 @@ HOST (CodeBrix.Platform.GameEngine.Host.*)
     CodeBrixKeyboardAdapter(UIElement) / CodeBrixMouseAdapter(UIElement) /
     CodeBrixTouchInputAdapter(UIElement, bool emulateMouse = false);
     static int? CodeBrixKeyboardAdapter.GetKeyCodeFromString(string)
+    CodeBrixKeyboardAdapter key claims: ClaimKey(int); ClaimKeys(IEnumerable<int>); UnclaimKey(int);
+        UnclaimAllKeys(); IsKeyUsed(int) (any thread); MarkUsedKeysHandled (default true)
     RelativeMouseSession(GameSurfaceCanvas): Begin(), End(), (int DeltaX, int DeltaY) ConsumeDelta()
     CodeBrixPlatformUiDispatcher(DispatcherQueue);  static CodeBrixPlatformUiDispatcher? ForCurrentThread()
 
@@ -3539,7 +4076,8 @@ INPUT
     KeyboardEventPoller: StartMonitoringKey(int keyCode, string? displayName = null,
         double timeBetweenEvents = -1, bool isPaused = false); StartMonitoringKeys(IEnumerable<int>,
         double = -1); StartMonitoringAllKeys(double = -1); StopMonitoringKey(int|string);
-        StopMonitoringAllKeys(); event Action<KeyDownEventArgs> KeyDown; IKeyboardAdapter? Adapter
+        StopMonitoringAllKeys(); IsMonitoringKey(int) (at once, any thread);
+        event Action<KeyDownEventArgs> KeyDown; IKeyboardAdapter? Adapter
     KeyDownEventArgs: KeyCode, KeyAction (Pressed/Released/Repeated), Modifiers, KeyConfig
     MouseEventPoller: StartMonitoringMouse(bool trackMouseMovement = true,
         double timeBetweenEvents = -1, bool isPaused = false); StopMonitoringMouse();
@@ -3562,6 +4100,19 @@ INPUT
     IGamepadAdapter: GamepadId, PressedButtons, LeftStick/RightStick (GamepadStickState?),
         LeftTrigger/RightTrigger;  GamepadStickState: X, Y, Magnitude, Angle,
         IsEngaged(float threshold = 0.15f), Direction(float = 0.15f), WithDeadzone(float = 0.15f)
+    InputBindingProfile(string name): Bind/Rebind(string action, params InputBinding[]);
+        Unbind(action); GetBindings(action); Copy(string name); Actions; KeyCodes
+    InputBinding: Key(int keyCode, string? displayName = null); GamepadButton(string);
+        DPad(StickDirection); StickPush(GamepadStick, StickDirection); Kind; Device
+    InputActionMap(InputBindingProfile) | (profile, Func<IKeyboardAdapter?>,
+        Func<IEnumerable<IGamepadAdapter>?>): Profile (swappable); Attach(Engine); Detach();
+        Poll(double); Update(double stepSeconds); IsHeld/WasPressed/WasReleased/IsTriggered(action);
+        AnyPressed; PressedBindings; GetAxis(neg, pos, GamepadStick? = null, bool vertical = false);
+        GetStick(GamepadStick); SetRepeat(action, InputRepeat(delay, interval)); ClearRepeat;
+        SuppressHeld(); ClearLatched(); SimulatePress(action); LastDevice; NoteDeviceUsed;
+        StickPressThreshold 0.5 / StickReleaseThreshold 0.3 / StickSettleSeconds 0.08 /
+        StickDeadZone 0.15; ClaimKeys (true)
+    IKeyClaimingAdapter: ClaimKeys(IEnumerable<int>); UnclaimKey(int); IsKeyUsed(int)
 
 TIMERS
     static Timer Timer.Add(string timerID, TimerType type, TimerCycles cycles, double length)
@@ -3570,16 +4121,20 @@ TIMERS
          of ticks, or ArgumentOutOfRangeException)
     static void Timer.Remove(string timerID);  static void Timer.ClearAll();  static bool Timer.PausedAll
     Timer: event Tick; Paused; Dispose()
+    Fixed-step hook: Configuration.FixedUpdateRate (0 = off), MaxFixedUpdateSteps (5);
+        Engine events FixedUpdate (Action<FixedUpdateStep>), AfterFixedUpdates (Action<int>);
+        FixedUpdateStep: StepNumber, DeltaSeconds, Tick, IndexInCycle, StepsInCycle, IsLastInCycle
 
 SCENE GRAPH
     Scene: SceneLayer AddLayer(int columnCount, int rowCount, int width = 32, int height = 32,
         int zOrder = 0, float parallax = 1f, CoordinateSystemTypes coordinateSystem = Orthogonal);
-        AddLayer(SceneLayer); RemoveAllLayers(); FullRefreshNeeded; CollisionProfiles;
+        AddLayer(SceneLayer); AddPixelLayer(int widthPx, int heightPx, int zOrder = 0,
+        float parallax = 1f); RemoveAllLayers(); FullRefreshNeeded; CollisionProfiles;
         CollisionGroups; ValueBag; Dispose()
     CoordinateSystemTypes: Orthogonal 0, IsometricRhombic 1, IsometricAxial 2,
         HexAxialFlatTop 3, HexAxialPointedTop 4, ObliqueRight 5, ObliqueLeft 6
     SceneLayer: this[x, y] (SceneLayerTile?, bounds-checked, never wraps),
-        SetTileSize(w, h), ZOrder, Parallax, Visible,
+        SetTileSize(w, h), ZOrder, Parallax, Visible, IsPixelLayer,
         WrapHorizontally/WrapVertically, OriginPx, ShowGridLines, ShowCollisionBoxes,
         DefaultTileCollisionProfile ("World"),
         GridToWorldPx / WorldPxToGrid / GetAdjacentTile(tile, CardinalDirections),
@@ -3652,8 +4207,12 @@ TILESHEETS / SPRITES / ANIMATION
         applied in Sprite.Draw); VisualBoundsWorld; GetVisualBoundsScreen(View);
         event Action<Sprite>? VisualBoundsChanged; Movement; TileAnimator;
         ResizeTo / ScaleBy / PulseTo / PulseBy / StopPulse / CancelResize; StartJiggle / JiggleOnce / StopJiggle
-    FrameSequence: AddFrame(sheet, x, y); SequenceCycleType (CycleType Simple/Repeating/PingPong)
-    Cycle(FrameSequence seq, double throttleSeconds, string key); NextCycle
+    FrameSequence: AddFrame(sheet, x, y); AddFrame(Frame, double durationSeconds);
+        SequenceCycleType (CycleType Simple/Repeating/PingPong); per-frame durations:
+        double? GetDurationSeconds(int); SetDurationSeconds(int, double?); HasFrameDurations;
+        ClearFrameDurations()
+    Cycle(FrameSequence seq, double throttleSeconds, string key); NextCycle;
+        CurrentFrameDurationSeconds; TotalCycleTime
     Animator: CurrentCycle; StartAnimation(); events Started, Stopped, Cycled
 
 MOVEMENT / COLLISION
@@ -3699,8 +4258,27 @@ EFFECTS / LIGHTING / COMPONENTS
     SplashOverlay.TryCreate(string|Stream image, host, View, fadeIn 0.45f, hold 3f,
         fadeOut 0.45f, onHolding, onHoldingAsync, onSplashCompleted, nickname) -> null on failure
     HealthBar(host, Sprite target, float maxValue, Size? size = null, Point? offsetPx = null,
-        string? nickname = null): SetValue / SetFillColor / SetTrackColors /
-        SetThresholdColors / SetThresholds / Show / Hide
+        string? nickname = null); HealthBar(host, SceneLayer, PointF anchorPx | Func<PointF>
+        anchorProvider, float maxValue, ...): SetValue / SetFillColor / SetTrackColors /
+        SetThresholdColors / SetThresholds / Show / Hide / SetAnchor; AnchorPx;
+        HasAnchorProvider; Target (null for an anchored bar)
+
+DRAW LISTS (Drawing.Direct.DrawLists)
+    DrawList(DrawImageLibrary? images = null, int capacity = 256): Clear(); Publish() ->
+        DrawListSnapshot; Published; Count; Commands; HitRegions; Images; Add(in DrawCommand)
+        bool Image(SKImage?|Frame|string assetKey, string? frameName, x, y, width, height,
+            rotation = 0, alpha = 1, DrawImageFit fit = Contain)
+        Rectangle(x, y, width, height, SKColor fill, SKColor stroke = default, strokeWidth = 0,
+            cornerRadius = 0, alpha = 1, rotation = 0);  Rectangle(SKRect, fill, ...)
+        Circle(x, y, radius, fill, stroke = default, strokeWidth = 0, alpha = 1)
+        Text(text, x, y, string typefaceKey|SKTypeface, size, SKColor color,
+            SKTextAlign align = Center, alpha = 1, rotation = 0)
+        HitRegion(x, y, width, height, string id)
+    DrawListSnapshot: Empty; Commands; HitRegions; Number; HitTest(x, y) -> DrawHitRegion?
+    DrawListDrawing(host, SceneLayer|View, Rectangle bounds, DrawList | Func<DrawListSnapshot?>,
+        nickname = null): Current; FilterQuality
+    DrawImageLibrary: Get(assetKey, frameName = null); Preload(assetKey, frameNames);
+        AddTilesheet(key, Tilesheet); AddImage(key, frameName, SKImage); Missing; Count
 
 AUDIO / MUSIC
     AudioResourceManager.Instance: LoadFromFile / LoadFromStream / LoadFromPcm(key, data, rate,
@@ -3716,9 +4294,13 @@ AUDIO / MUSIC
     MusicManager.Instance: Play(track, fadeIn[, MusicTransitionQuantize]); CrossfadeTo(track,
         TimeSpan duration[, MusicTransitionQuantize]); Stop(fadeOut[, quantize]); Pause(); Resume();
         Seek(); PushDuck(depth, attack, release) -> IDisposable; Duck(depth, attack, hold, release);
-        ClearDucks(); PlayStinger(key, volume, duckMusic); Play(playlist, crossfade); Next(crossfade);
+        ClearDucks(); PlayStinger(key, volume, duckMusic); PlayStingerOnBus(key, bus, volume, duckMusic,
+        duckDepth) -> bool; PlayStingerWithHeldDuck(key, duckDepth, attack, release, bus = Sfx, volume)
+        -> IDisposable; MusicVolume (the music slider); Play(playlist, crossfade); Next(crossfade);
         JumpToMarker(name); HasPendingTransition; CancelPendingTransition(); NowPlaying; IsPlaying;
         PlayStreaming(fadeIn) -> StreamingMusicTrack (plays the registered provider; idempotent)
+    IMusicManager (MusicManager implements it; the test seam): MusicVolume; DuckMultiplier; PushDuck;
+        Duck; ClearDucks; PlayStinger; PlayStingerOnBus; PlayStingerWithHeldDuck
     Engine.Instance.Managers.StreamingMusic (StreamingMusicRegistry): Provider; HasProvider;
         Register(IStreamingMusicProvider); Unregister(); CreateTrack()
     IStreamingMusicProvider: Name; Description; State; Fault; StateChanged; Start(sampleRate,
@@ -3744,6 +4326,8 @@ SAVE / LOAD / ASSETS / CONFIG
     EngineState: SaveToFile(path, compress); static LoadFromFile(path, compressed[, parts]);
         static MergeFromFile(path, overwriteExisting, parts); SerializerOptions; ValueBag
     AssetsFile.LoadOrCreate(path); Get(AssetTypes, name); this[AssetTypes, name]; Add(AssetTypes, path); Save()
+        static AssetsFile Load(Stream stream, string? password = null, bool register = true)
+            (caller owns the stream; empty FilePath, so no Save and not in engine saves)
         static void Validate(string path, string? password = null, bool testData = true)
     Engine.Managers.AssetProviders (GameAssetProviderRegistry): Register(IGameAssetProvider);
         Unregister(id, dispose = true); Providers; TryFind(key, out provider);
@@ -3758,7 +4342,8 @@ SAVE / LOAD / ASSETS / CONFIG
          region per animation, sheet["walk", frame, direction])
     EngineConfiguration: TargetFPS, RenderScale, RenderScalingFilter, VSync, MsaaSampleCount,
         TimeBetween*Events, TimeBetweenGamepadStateUpdates, StartInitializationWaitTimeout,
-        TimerDrivenSimulationRate, MaxTimerDrivenSimulationSteps, LoggingMode,
+        TimerDrivenSimulationRate, MaxTimerDrivenSimulationSteps, FixedUpdateRate (0 = off),
+        MaxFixedUpdateSteps (5), LoggingMode,
         LoggingQueueCapacity, FlushAsyncLogsOnShutdown, PauseSuspendsAudio,
         PauseShortSoundEffectSeconds, StateFiles, ConfigurationSections
     EngineConfigurationFile: static CreateNew/Load(string? configFileName = null,

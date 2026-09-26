@@ -27,6 +27,12 @@ public struct FrameSequence : IEnumerable<Frame>
     [JsonInclude]
     private List<Frame> frameList;
 
+    // Optional per-frame display times in seconds, index-aligned with frameList (shorter is fine:
+    // a missing or null entry means "use the cycle's ThrottleTime"). Null when no frame is timed,
+    // which keeps saves of untimed sequences in their earlier shape. Replaced, never edited in
+    // place, because copies of this struct (cloned cycles) share the list reference.
+    private List<double?>? frameDurations;
+
     private int currentFrameIdx;
     private int curFrameIncrement;
     private bool cycleFinished;
@@ -123,6 +129,17 @@ public struct FrameSequence : IEnumerable<Frame>
         get { return frameList.AsReadOnly(); }
     }
 
+    /// <summary>
+    /// Gets a value indicating whether at least one frame carries its own display duration
+    /// (see <see cref="SetDurationSeconds"/>). When <see langword="false"/> every frame shows for
+    /// the owning <see cref="Cycle.ThrottleTime"/>.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasFrameDurations
+    {
+        get { return frameDurations is not null; }
+    }
+
     #endregion properties
 
     #region public methods
@@ -167,13 +184,96 @@ public struct FrameSequence : IEnumerable<Frame>
     }
 
     /// <summary>
-    /// Removes the frame at the specified index from the sequence
+    /// Adds an existing frame to the sequence with its own display duration
+    /// </summary>
+    /// <param name="frame">The frame to add to the sequence</param>
+    /// <param name="durationSeconds">How long the frame shows, in seconds; must be positive and finite</param>
+    /// <returns>The added <see cref="Frame"/></returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="durationSeconds"/> is not positive and finite; the frame is not added.
+    /// </exception>
+    public Frame AddFrame(Frame frame, double durationSeconds)
+    {
+        ValidateDuration(durationSeconds, nameof(durationSeconds));
+
+        AddFrame(frame);
+        SetDurationSeconds(FrameCount - 1, durationSeconds);
+        return frame;
+    }
+
+    /// <summary>
+    /// Removes the frame at the specified index from the sequence; the other frames keep their durations
     /// </summary>
     /// <param name="idx">The zero-based index of the frame to remove</param>
     public void RemoveFrame(int idx)
     {
         if (idx < frameList.Count)
+        {
             frameList.RemoveAt(idx);
+
+            if (frameDurations is not null && idx >= 0 && idx < frameDurations.Count)
+            {
+                var durations = new List<double?>(frameDurations);
+                durations.RemoveAt(idx);
+                frameDurations = NullWhenUntimed(durations);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the display duration of the frame at the specified index, when it carries one
+    /// </summary>
+    /// <param name="index">The zero-based index of the frame</param>
+    /// <returns>
+    /// The frame's duration in seconds, or <see langword="null"/> when the frame shows for the
+    /// owning <see cref="Cycle.ThrottleTime"/> (also for an index outside the sequence)
+    /// </returns>
+    public double? GetDurationSeconds(int index)
+    {
+        if (frameDurations is null || index < 0 || index >= frameDurations.Count)
+            return null;
+
+        return frameDurations[index];
+    }
+
+    /// <summary>
+    /// Sets how long the frame at the specified index shows, or clears it back to the cycle default
+    /// </summary>
+    /// <param name="index">The zero-based index of the frame</param>
+    /// <param name="seconds">
+    /// The frame's duration in seconds (positive and finite), or <see langword="null"/> to show the
+    /// frame for the owning <see cref="Cycle.ThrottleTime"/>
+    /// </param>
+    /// <remarks>
+    /// A copy of this sequence (for example the one inside a cloned <see cref="Cycle"/>) keeps its
+    /// own timing: changing a duration here never changes the copy's, and the reverse.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="index"/> is outside the sequence, or when
+    /// <paramref name="seconds"/> is not positive and finite.
+    /// </exception>
+    public void SetDurationSeconds(int index, double? seconds)
+    {
+        if (index < 0 || index >= FrameCount)
+            throw new ArgumentOutOfRangeException(nameof(index), index, "The index is outside the sequence.");
+
+        if (seconds is { } duration)
+            ValidateDuration(duration, nameof(seconds));
+
+        var durations = frameDurations is null ? new List<double?>() : new List<double?>(frameDurations);
+        while (durations.Count < FrameCount)
+            durations.Add(null);
+
+        durations[index] = seconds;
+        frameDurations = NullWhenUntimed(durations);
+    }
+
+    /// <summary>
+    /// Removes every per-frame duration, so all frames show for the owning <see cref="Cycle.ThrottleTime"/>
+    /// </summary>
+    public void ClearFrameDurations()
+    {
+        frameDurations = null;
     }
 
     /// <summary>
@@ -188,6 +288,39 @@ public struct FrameSequence : IEnumerable<Frame>
     #endregion public methods
 
     #region internal methods
+
+    /// <summary>
+    /// The durations as saved: one entry per frame (null = the cycle default), or null when no frame is timed.
+    /// </summary>
+    internal IReadOnlyList<double?>? GetDurationsForSave()
+    {
+        if (frameDurations is null)
+            return null;
+
+        var durations = new List<double?>(FrameCount);
+        for (var i = 0; i < FrameCount; i++)
+            durations.Add(GetDurationSeconds(i));
+
+        return durations;
+    }
+
+    /// <summary>
+    /// Restores saved durations; entries beyond the frame count are ignored.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when a duration is not positive and finite.</exception>
+    internal void SetDurationsFromSave(IReadOnlyList<double?> durations)
+    {
+        var restored = new List<double?>(FrameCount);
+        for (var i = 0; i < FrameCount && i < durations.Count; i++)
+        {
+            if (durations[i] is { } duration)
+                ValidateDuration(duration, nameof(durations));
+
+            restored.Add(durations[i]);
+        }
+
+        frameDurations = NullWhenUntimed(restored);
+    }
 
     internal void StopCycle()
     {
@@ -240,9 +373,27 @@ public struct FrameSequence : IEnumerable<Frame>
 
     #region private methods
 
+    private static void ValidateDuration(double seconds, string paramName)
+    {
+        if (!double.IsFinite(seconds) || seconds <= 0)
+            throw new ArgumentOutOfRangeException(paramName, seconds, "A frame duration must be positive and finite.");
+    }
+
+    private static List<double?>? NullWhenUntimed(List<double?> durations)
+    {
+        foreach (var duration in durations)
+        {
+            if (duration.HasValue)
+                return durations;
+        }
+
+        return null;
+    }
+
     private void SetDefaults()
     {
         frameList = new List<Frame>();
+        frameDurations = null;
         SequenceCycleType = CycleType.Simple;
         currentFrameIdx = 0;
         curFrameIncrement = 1;

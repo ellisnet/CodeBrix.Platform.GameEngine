@@ -134,6 +134,119 @@ public static class EngineKenneyAssetsExtensions
         return provider;
     }
 
+    /// <summary>
+    /// Registers Kenney asset bundles with the engine, leaving out any the provider already holds, and
+    /// reports what happened to each one.
+    /// </summary>
+    /// <param name="engine">The engine to register the assets with.</param>
+    /// <param name="zipFilesOrFolders">
+    /// The paths of the Kenney bundles (.zip files) and extracted bundle folders to register.
+    /// </param>
+    /// <returns>
+    /// The provider serving <see cref="KenneyGameAssetProvider.DefaultProviderId"/>, and one result per
+    /// path: read, already registered, missing or unreadable, with the packs it stands for.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="engine"/> or <paramref name="zipFilesOrFolders"/> is null.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when another kind of asset provider is already registered under that identifier.
+    /// </exception>
+    /// <remarks>
+    /// The short form of <see cref="RegisterKenneyAssets(Engine, KenneyAssetsOptions)"/>, with the
+    /// defaults <see cref="UseKenneyAssets(Engine, string[])"/> takes.
+    /// </remarks>
+    public static KenneyAssetsRegistration RegisterKenneyAssets(
+        this Engine engine, params string[] zipFilesOrFolders)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(zipFilesOrFolders);
+
+        return engine.RegisterKenneyAssets(new KenneyAssetsOptions { Sources = zipFilesOrFolders });
+    }
+
+    /// <summary>
+    /// Registers Kenney asset bundles with the engine, with the settings the options carry, leaving out
+    /// any the provider already holds, and reports what happened to each one.
+    /// </summary>
+    /// <param name="engine">The engine to register the assets with.</param>
+    /// <param name="options">
+    /// The sources to register, the identifier to namespace their keys with, whether a source folder
+    /// holding pack folders is searched, and whether an unreadable source is a warning or an error.
+    /// </param>
+    /// <returns>
+    /// The provider serving <see cref="KenneyAssetsOptions.ProviderId"/>, and one result per path, in
+    /// the order given.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="engine"/> or <paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="KenneyAssetsOptions.ProviderId"/> is null, empty, whitespace or contains
+    /// a colon; and, when <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off, when
+    /// a source path is blank.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when another kind of asset provider is already registered under that identifier.
+    /// </exception>
+    /// <exception cref="System.IO.FileNotFoundException">
+    /// Thrown when <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off and no file
+    /// or folder exists at a source path.
+    /// </exception>
+    /// <exception cref="System.IO.IOException">
+    /// Thrown when <see cref="KenneyAssetsOptions.IgnoreUnreadableSources"/> is turned off and a source
+    /// zip file cannot be read.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// This is <see cref="UseKenneyAssets(Engine, KenneyAssetsOptions)"/> made safe to call more than
+    /// once with the same paths - from a loading screen that can run twice, or a game and its tests
+    /// sharing one engine: a path the provider already read is reported as
+    /// <see cref="KenneySourceStatus.AlreadyRegistered"/> instead of being added again under a
+    /// <c>-2</c> slug. Registering a path once gives exactly what <c>UseKenneyAssets</c> gives, and the
+    /// same lines are written to the engine log.
+    /// </para>
+    /// <para>
+    /// The result says per path what arrived, so a game logs one line per pack, warns about a bundle
+    /// that did not ship (<see cref="KenneyAssetsRegistration.Unavailable"/>) and refuses to start
+    /// when <see cref="KenneyAssetsRegistration.Packs"/> is empty - without comparing paths itself.
+    /// </para>
+    /// </remarks>
+    public static KenneyAssetsRegistration RegisterKenneyAssets(this Engine engine, KenneyAssetsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(options);
+
+        GameAssetProviderRegistry registry = engine.Managers.AssetProviders;
+        KenneyGameAssetProvider? existing = FindExisting(registry, options.ProviderId);
+        KenneyAssetsRegistration registration;
+
+        if (existing is null)
+        {
+            //An empty provider first (which validates the identifier), then the sources, so every path
+            //  is reported the same way on the first call as on a later one
+            KenneyGameAssetProvider provider = new(options with { Sources = [] });
+
+            try
+            {
+                registration = provider.AddNewSources(options);
+                registry.Register(provider);
+            }
+            catch
+            {
+                //Nothing is registered, so the archives this provider opened have to be closed again
+                provider.Dispose();
+                throw;
+            }
+        }
+        else
+        {
+            registration = existing.AddNewSources(options with { ProviderId = existing.ProviderId });
+        }
+
+        LogRegistration(registration.Provider, registration.Warnings);
+
+        return registration;
+    }
+
     //The provider already serving an identifier, or null. Another kind of provider under that
     //  identifier is a mistake worth stopping for: registering over it would dispose it, and whatever
     //  put it there is still holding its keys.

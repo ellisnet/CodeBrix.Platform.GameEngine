@@ -492,6 +492,52 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         }
     }
 
+    [JsonPropertyName("IsPixelLayer")]
+    private bool _isPixelLayer;
+
+    /// <summary>
+    /// Gets a value indicating whether this is a pixel layer: a layer with no tile grid of its
+    /// own, sized in world pixels, created by <see cref="Scene.AddPixelLayer"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A pixel layer carries sprites, scene-layer direct drawings (particles, health bars, custom
+    /// <see cref="Drawing.Direct.DirectDrawingBase"/> drawings) and colliders exactly like any
+    /// other layer, positioned in world pixels, with the same z-order, parallax, visibility,
+    /// camera and effects behavior. It simply has no tiles: nothing is drawn for a grid, and
+    /// <see cref="GetLayerBoundsPx"/> is the pixel size it was created with.
+    /// </para>
+    /// <para>
+    /// Internally the layer keeps a single grid cell covering its whole size, so every API that
+    /// takes grid coordinates still works and <see cref="TileWidth"/>/<see cref="TileHeight"/>
+    /// report the layer's size. Direct drawings are placed in world pixels already. A sprite's
+    /// position is in grid units and it aligns within its cell (<see cref="Sprite.HorizAlign"/>,
+    /// <see cref="Sprite.VertAlign"/>, bottom-centre by default), and here the cell is the whole
+    /// layer: give a sprite <see cref="Drawing.Sprites.HorizontalAlignment.Left"/> and
+    /// <see cref="Drawing.Sprites.VerticalAlignment.Top"/> alignment and position it with
+    /// <see cref="WorldPxToGrid"/> to place it by world pixels.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public bool IsPixelLayer => _isPixelLayer;
+
+    /// <summary>
+    /// Creates a pixel layer (see <see cref="IsPixelLayer"/>) of the given world-pixel size.
+    /// </summary>
+    /// <param name="widthPx">The layer width in world pixels. Must be greater than zero.</param>
+    /// <param name="heightPx">The layer height in world pixels. Must be greater than zero.</param>
+    /// <param name="parallax">The layer's parallax factor.</param>
+    /// <returns>The new, unattached layer.</returns>
+    internal static SceneLayer CreatePixelLayer(int widthPx, int heightPx, float parallax)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(widthPx);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(heightPx);
+
+        var layer = new SceneLayer(1, 1, widthPx, heightPx, parallax, CoordinateSystemTypes.Orthogonal);
+        layer._isPixelLayer = true;
+        return layer;
+    }
+
     [JsonPropertyName("SceneLayerTileArray")]
     private SceneLayerTile[,] _sceneLayerTileArray;    // array of points; 2 dimensions (X, Y)
 
@@ -996,11 +1042,13 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         // Gather into a list so we can sort it.
         var list = new List<IDrawable>(64);
 
-        // 1) Grid tiles
-        var sceneLayerTiles = CoordinateSystem.GetSceneLayerTilesInPixelRange(
-            this,
-            worldRect,
-            includeOverhang: includeOverhang);
+        // 1) Grid tiles (a pixel layer has none to draw)
+        var sceneLayerTiles = _isPixelLayer
+            ? null
+            : CoordinateSystem.GetSceneLayerTilesInPixelRange(
+                this,
+                worldRect,
+                includeOverhang: includeOverhang);
 
         if (sceneLayerTiles != null)
         {
@@ -1081,8 +1129,9 @@ public class SceneLayer : IEnumerable<SceneLayerTile>, IDisposable
         }
         // Inspect actual artwork bounds, including overhang, rather than assuming
         // a tile-sized margin can enclose all content.
-        foreach (var tile in _sceneLayerTileArray)
-            if (tile is not null) Add(tile, tile.DrawLocationWorld);
+        if (!_isPixelLayer)
+            foreach (var tile in _sceneLayerTileArray)
+                if (tile is not null) Add(tile, tile.DrawLocationWorld);
         foreach (var sprite in SpriteManager.Instance.AllSprites)
             if (ReferenceEquals(sprite.SceneLayer, this)) Add(sprite, sprite.VisualBoundsWorld);
         foreach (var drawing in DirectDrawingManager.Instance.GetDrawingsForLayer(this))

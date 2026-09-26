@@ -7,6 +7,7 @@ using CodeBrix.Platform.GameEngine.Drawing.Direct;
 using CodeBrix.Platform.GameEngine.Drawing.Sprites;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using CodeBrix.Platform.GameEngine.Scenes;
+using CodeBrix.Platform.GameEngine.Timers;
 using SilverAssertions;
 using SkiaSharp;
 using Xunit;
@@ -340,6 +341,141 @@ public class HealthBarTests : IDisposable
         //Assert
         bar.BarSize.Should().Be(new Size(40, 9));
         bar.TrackBoundsWorld.Should().Be(new Rectangle(20, 31, 40, 9));
+    }
+
+    [Fact]
+    public void an_anchored_bar_sits_centered_above_its_world_pixel_anchor()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = host.Scene.AddPixelLayer(320, 200);
+
+        //Act
+        var bar = new HealthBar(host, layer, new PointF(100f, 80f), 50f, new Size(40, 9), nickname: "anchored");
+        _created.Add(bar);
+
+        //Assert - centred on x 100, bottom edge six pixels above y 80
+        bar.Target.Should().BeNull();
+        bar.HasAnchorProvider.Should().BeFalse();
+        bar.AnchorPx.Should().Be(new PointF(100f, 80f));
+        bar.TrackBoundsWorld.Should().Be(new Rectangle(80, 65, 40, 9));
+        bar.FillBoundsWorld.Location.Should().Be(new Point(82, 67));
+        bar.Mode.Should().Be(DirectDrawingMode.SceneLayer);
+    }
+
+    [Fact]
+    public void SetAnchor_moves_an_anchored_bar_and_keeps_its_offset()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = host.Scene.AddPixelLayer(320, 200);
+        var bar = new HealthBar(host, layer, new PointF(100f, 80f), 50f, new Size(40, 9), offsetPx: new Point(3, -1),
+            nickname: "moved");
+        _created.Add(bar);
+
+        //Act
+        HealthBar returned = bar.SetAnchor(new PointF(200f, 150f));
+
+        //Assert
+        returned.Should().BeSameAs(bar);
+        bar.TrackBoundsWorld.Should().Be(new Rectangle(183, 134, 40, 9));
+    }
+
+    [Fact]
+    public void a_provider_bar_follows_the_provider_on_each_update()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = NewLayer(host);
+        var anchor = new PointF(50f, 50f);
+        int reads = 0;
+        var bar = new HealthBar(host, layer, () => { reads++; return anchor; }, 10f, new Size(20, 9),
+            nickname: "provided");
+        _created.Add(bar);
+        Rectangle before = bar.TrackBoundsWorld;
+
+        //Act
+        anchor = new PointF(90f, 70f);
+        bar.Update(HighResTimer.GetCurrentTick());
+
+        //Assert
+        bar.HasAnchorProvider.Should().BeTrue();
+        reads.Should().Be(2);
+        before.Should().Be(new Rectangle(40, 35, 20, 9));
+        bar.TrackBoundsWorld.Should().Be(new Rectangle(80, 55, 20, 9));
+        bar.AnchorPx.Should().Be(new PointF(90f, 70f));
+    }
+
+    [Fact]
+    public void SetAnchor_drops_the_provider()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = NewLayer(host);
+        var bar = new HealthBar(host, layer, () => new PointF(50f, 50f), 10f, new Size(20, 9), nickname: "dropped");
+        _created.Add(bar);
+
+        //Act
+        bar.SetAnchor(new PointF(10f, 30f));
+        bar.Update(HighResTimer.GetCurrentTick());
+
+        //Assert
+        bar.HasAnchorProvider.Should().BeFalse();
+        bar.TrackBoundsWorld.Should().Be(new Rectangle(0, 15, 20, 9));
+    }
+
+    [Fact]
+    public void SetAnchor_is_refused_for_a_bar_that_follows_a_sprite()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = NewLayer(host);
+        HealthBar bar = NewBar(host, NewSprite(layer, new Vector2(2, 3), "sprite-bar"));
+
+        //Act
+        Action act = () => bar.SetAnchor(new PointF(1f, 1f));
+
+        //Assert
+        act.Should().Throw<InvalidOperationException>();
+        bar.AnchorPx.Should().Be(new PointF(40f, 48f));
+    }
+
+    [Fact]
+    public void the_anchor_constructors_validate_their_arguments()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = NewLayer(host);
+
+        //Act
+        Action noLayer = () => new HealthBar(host, null!, new PointF(1f, 1f), 10f);
+        Action noProvider = () => new HealthBar(host, layer, (Func<PointF>)null!, 10f);
+        Action badMax = () => new HealthBar(host, layer, new PointF(1f, 1f), 0f);
+        Action tooSmall = () => new HealthBar(host, layer, new PointF(1f, 1f), 10f, new Size(3, 3));
+
+        //Assert
+        noLayer.Should().Throw<ArgumentNullException>();
+        noProvider.Should().Throw<ArgumentNullException>();
+        badMax.Should().Throw<ArgumentOutOfRangeException>();
+        tooSmall.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Dispose_stops_reading_the_provider()
+    {
+        //Arrange
+        var host = NewHost();
+        SceneLayer layer = NewLayer(host);
+        int reads = 0;
+        var bar = new HealthBar(host, layer, () => { reads++; return new PointF(reads, 50f); }, 10f,
+            nickname: "disposed-provider");
+
+        //Act
+        bar.Dispose();
+        bar.Update(HighResTimer.GetCurrentTick());
+
+        //Assert
+        reads.Should().Be(1);
     }
 
     private static SKColor DrawFillAndSampleCenter(HealthBar bar, BitmapBackbuffer backbuffer)

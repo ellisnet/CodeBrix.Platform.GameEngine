@@ -42,6 +42,58 @@ public class EngineConfigurationTests
         => new EngineConfiguration().TargetFPS.Should().BeGreaterThan(0);
 
     [Fact]
+    public void the_fixed_update_hook_is_off_by_default_with_a_cap_of_five_steps()
+    {
+        //Arrange
+        var config = new EngineConfiguration();
+
+        //Act
+        int rate = config.FixedUpdateRate;
+        int maxSteps = config.MaxFixedUpdateSteps;
+
+        //Assert
+        rate.Should().Be(0);
+        maxSteps.Should().Be(5);
+    }
+
+    [Fact]
+    public void FixedUpdateRate_and_MaxFixedUpdateSteps_clamp_out_of_range_values()
+    {
+        //Arrange
+        var config = new EngineConfiguration();
+
+        //Act
+        config.FixedUpdateRate = -30;
+        config.MaxFixedUpdateSteps = 0;
+
+        //Assert
+        config.FixedUpdateRate.Should().Be(0);
+        config.MaxFixedUpdateSteps.Should().Be(1);
+    }
+
+    [Fact]
+    public void Load_reads_the_fixed_update_settings()
+    {
+        //Arrange
+        var path = Path.Combine(Path.GetTempPath(), $"gameengine-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{ \"EngineConfig\": { \"FixedUpdateRate\": 60, \"MaxFixedUpdateSteps\": 3 } }");
+
+        try
+        {
+            //Act
+            var file = EngineConfigurationFile.Load(path);
+
+            //Assert
+            file.EngineConfig.FixedUpdateRate.Should().Be(60);
+            file.EngineConfig.MaxFixedUpdateSteps.Should().Be(3);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Load_reads_the_shipped_default_file()
     {
         //Arrange

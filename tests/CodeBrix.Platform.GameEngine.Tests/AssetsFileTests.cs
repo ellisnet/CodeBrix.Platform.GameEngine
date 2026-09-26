@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CodeBrix.Platform.GameEngine.Assets;
 using SilverAssertions;
@@ -11,7 +12,9 @@ namespace CodeBrix.Platform.GameEngine.Tests;
 /// Covers <see cref="AssetsFile.Validate"/>, the strict bundle check used by authoring tools: a
 /// bundle written by the engine passes, an entry key that cannot be parsed (or names an unknown
 /// asset type, or an empty asset name) is rejected, two entries that resolve to the same key are
-/// rejected, and a damaged payload is only reported when payload verification is requested.
+/// rejected, and a damaged payload is only reported when payload verification is requested. Also
+/// covers loading a bundle from a <see cref="Stream"/>: the caller keeps the stream, a failed load
+/// registers nothing, and a stream-loaded bundle has no file path to save to.
 /// </summary>
 /// <remarks>
 /// Run-time loading stays permissive — it logs and skips an entry it does not recognise — so these
@@ -244,5 +247,370 @@ public class AssetsFileTests : IDisposable
 
         //Assert
         AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadOrCreate_does_not_register_a_bundle_whose_password_is_wrong()
+    {
+        //Arrange
+        var path = Path.Combine(_workDirectory, "locked.gaf");
+
+        using (var bundle = AssetsFile.LoadOrCreate(path, "open sesame", encrypt: true))
+        {
+            bundle.Add(AssetTypes.Image, "tiles/terrain.png", new MemoryStream(CreatePayload(seed: 7, length: 2048)));
+            bundle.Save();
+        }
+
+        //Act
+        var act = () => AssetsFile.LoadOrCreate(path, "wrong password");
+
+        //Assert
+        act.Should().Throw<Exception>();
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadOrCreate_does_not_register_a_bundle_that_is_not_an_archive()
+    {
+        //Arrange
+        var path = Path.Combine(_workDirectory, "not-an-archive.gaf");
+        File.WriteAllBytes(path, CreatePayload(seed: 11, length: 512));
+
+        //Act
+        var act = () => AssetsFile.LoadOrCreate(path);
+
+        //Assert
+        act.Should().Throw<Exception>();
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadOrCreate_registers_a_bundle_that_loads()
+    {
+        //Arrange
+        var path = CreateEngineBundle("registered.gaf");
+        AssetsFile.ClearAll();
+
+        //Act
+        var bundle = AssetsFile.LoadOrCreate(path);
+
+        //Assert
+        AssetsFile.AllAssetsFiles.Should().ContainSingle().Which.Should().BeSameAs(bundle);
+    }
+
+    [Fact]
+    public void a_bundle_holding_definition_entries_loads_and_keeps_them_by_type()
+    {
+        //Arrange - definition formats the engine does not read yet, beside an ordinary image.
+        var path = CreateRawZip(
+            "definitions.gaf",
+            "SceneDefinition_level1.gscn",
+            "AnimationDefinition_hero.gani",
+            "AudioDefinition_sounds.gsnd",
+            "SpriteDefinition_actors.gspr",
+            "Image_logo.png");
+
+        //Act
+        var bundle = AssetsFile.LoadOrCreate(path);
+
+        //Assert
+        bundle.GetAllEntries().Select(entry => entry.AssetType).Should().BeEquivalentTo(new[]
+        {
+            AssetTypes.SceneDefinition,
+            AssetTypes.AnimationDefinition,
+            AssetTypes.AudioDefinition,
+            AssetTypes.SpriteDefinition,
+            AssetTypes.Image
+        });
+        bundle.Get(AssetTypes.SceneDefinition, "level1.gscn").Should().NotBeNull();
+        bundle.Get(AssetTypes.SpriteDefinition, "actors").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Validate_accepts_definition_entries()
+    {
+        //Arrange
+        var path = CreateRawZip("definitions-valid.gaf", "SceneDefinition_level1.gscn", "AudioDefinition_sounds.gsnd");
+
+        //Act
+        var act = () => AssetsFile.Validate(path);
+
+        //Assert
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void the_definition_asset_types_keep_their_numbers()
+    {
+        //Assert - the numbers are part of the bundle format and must not move.
+        ((int)AssetTypes.TilesheetDefinition).Should().Be(7);
+        ((int)AssetTypes.SceneDefinition).Should().Be(8);
+        ((int)AssetTypes.AnimationDefinition).Should().Be(9);
+        ((int)AssetTypes.AudioDefinition).Should().Be(10);
+        ((int)AssetTypes.SpriteDefinition).Should().Be(11);
+    }
+
+    private byte[] CreateEngineBundleBytes(string fileName, string? password = null)
+    {
+        var path = Path.Combine(_workDirectory, fileName);
+
+        using (var bundle = AssetsFile.LoadOrCreate(path, password, encrypt: password is not null))
+        {
+            bundle.Add(AssetTypes.Image, "tiles/terrain.png", new MemoryStream(CreatePayload(seed: 1234, length: 4096)));
+            bundle.Add(AssetTypes.Audio, "music/theme.raw", new MemoryStream(CreatePayload(seed: 5678, length: 4096)));
+            bundle.Save();
+        }
+
+        AssetsFile.ClearAll();
+
+        return File.ReadAllBytes(path);
+    }
+
+    private static byte[] ReadAll(Stream? stream)
+    {
+        stream.Should().NotBeNull();
+        using var copy = new MemoryStream();
+        stream!.CopyTo(copy);
+
+        return copy.ToArray();
+    }
+
+    [Fact]
+    public void Load_reads_a_bundle_from_a_stream()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("from-stream.gaf"));
+
+        //Act
+        using var bundle = AssetsFile.Load(source);
+
+        //Assert
+        bundle.GetAllEntries().Should().HaveCount(2);
+        ReadAll(bundle.Get(AssetTypes.Image, "tiles/terrain.png")).Should().Equal(CreatePayload(seed: 1234, length: 4096));
+        bundle.FilePath.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Load_leaves_the_stream_open_and_needs_it_no_longer()
+    {
+        //Arrange
+        var source = new MemoryStream(CreateEngineBundleBytes("caller-owned.gaf"));
+
+        //Act
+        using var bundle = AssetsFile.Load(source);
+        var stillOpen = source.CanRead;
+        source.Dispose();
+
+        //Assert
+        stillOpen.Should().BeTrue();
+        ReadAll(bundle.Get(AssetTypes.Audio, "music/theme.raw")).Should().Equal(CreatePayload(seed: 5678, length: 4096));
+    }
+
+    [Fact]
+    public void Load_reads_a_stream_that_cannot_seek()
+    {
+        //Arrange
+        using var source = new ForwardOnlyStream(CreateEngineBundleBytes("forward-only.gaf"));
+
+        //Act
+        using var bundle = AssetsFile.Load(source);
+
+        //Assert
+        bundle.GetAllEntries().Should().HaveCount(2);
+        source.IsDisposed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Load_reads_a_bundle_that_starts_partway_through_a_stream()
+    {
+        //Arrange - a 100 byte header in front of the bundle, the stream positioned past it.
+        var bundleBytes = CreateEngineBundleBytes("embedded.gaf");
+        var combined = new byte[100 + bundleBytes.Length];
+        bundleBytes.CopyTo(combined, 100);
+        using var source = new MemoryStream(combined) { Position = 100 };
+
+        //Act
+        using var bundle = AssetsFile.Load(source);
+
+        //Assert
+        bundle.GetAllEntries().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Load_reads_an_encrypted_bundle_with_its_password()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("encrypted-stream.gaf", "open sesame"));
+
+        //Act
+        using var bundle = AssetsFile.Load(source, "open sesame");
+
+        //Assert
+        ReadAll(bundle.Get(AssetTypes.Image, "tiles/terrain.png")).Should().Equal(CreatePayload(seed: 1234, length: 4096));
+    }
+
+    [Fact]
+    public void Load_registers_the_bundle_by_default()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("registered-stream.gaf"));
+
+        //Act
+        var bundle = AssetsFile.Load(source);
+
+        //Assert
+        AssetsFile.AllAssetsFiles.Should().ContainSingle().Which.Should().BeSameAs(bundle);
+    }
+
+    [Fact]
+    public void Load_without_registering_leaves_the_registry_alone()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("detached-stream.gaf"));
+
+        //Act
+        using var bundle = AssetsFile.Load(source, register: false);
+
+        //Assert
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+        bundle.GetAllEntries().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Load_of_a_stream_that_is_not_an_archive_throws_and_registers_nothing()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreatePayload(seed: 11, length: 512));
+
+        //Act
+        var act = () => AssetsFile.Load(source);
+
+        //Assert
+        act.Should().Throw<Exception>();
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void a_failed_Load_leaves_the_stream_open()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreatePayload(seed: 12, length: 512));
+
+        //Act
+        var act = () => AssetsFile.Load(source);
+
+        //Assert
+        act.Should().Throw<Exception>();
+        source.CanRead.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_with_a_wrong_password_throws_and_registers_nothing()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("locked-stream.gaf", "open sesame"));
+
+        //Act
+        var act = () => AssetsFile.Load(source, "wrong password");
+
+        //Assert
+        act.Should().Throw<Exception>();
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Load_rejects_a_null_stream()
+    {
+        //Act
+        var act = () => AssetsFile.Load(null!);
+
+        //Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Load_rejects_a_stream_that_cannot_be_read()
+    {
+        //Arrange
+        var source = new MemoryStream();
+        source.Dispose();
+
+        //Act
+        var act = () => AssetsFile.Load(source);
+
+        //Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void a_stream_loaded_bundle_cannot_be_saved()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("no-path.gaf"));
+        using var bundle = AssetsFile.Load(source);
+
+        //Act
+        var act = () => bundle.Save();
+
+        //Assert
+        act.Should().Throw<InvalidOperationException>();
+        bundle.GetAllEntries().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void disposing_a_stream_loaded_bundle_unregisters_it()
+    {
+        //Arrange
+        using var source = new MemoryStream(CreateEngineBundleBytes("dispose-stream.gaf"));
+        var bundle = AssetsFile.Load(source);
+
+        //Act
+        bundle.Dispose();
+
+        //Assert
+        AssetsFile.AllAssetsFiles.Should().BeEmpty();
+    }
+
+    /// <summary>A read-only stream that cannot seek, like a network or compressed stream.</summary>
+    private sealed class ForwardOnlyStream : Stream
+    {
+        private readonly MemoryStream _inner;
+
+        public ForwardOnlyStream(byte[] bytes) => _inner = new MemoryStream(bytes);
+
+        public bool IsDisposed { get; private set; }
+
+        public override bool CanRead => !IsDisposed;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }

@@ -127,9 +127,25 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
 
     private long _instanceLastTick;
 
+    //The GPU tier paints on the UI thread while the engine thread updates and edits Instances, so every
+    //  Update (and InitializeInstances) copies what is to be painted into _published under _publishLock; the
+    //  UI thread copies that into _painting under the same lock and paints its own copy. Both buffers only
+    //  grow, so steady play allocates nothing. The CPU tier paints on the engine thread from the live list.
+    private readonly object _publishLock = new();
+    private InstancePaint[] _published = Array.Empty<InstancePaint>();
+    private int _publishedCount;
+    private InstancePaint[] _painting = Array.Empty<InstancePaint>();
+    private int _paintingCount;
+
     /// <summary>
     /// Gets the collection of image instances managed by this layer.
     /// </summary>
+    /// <remarks>
+    /// Change the collection and its instances on the engine thread only. When the render surface paints on the
+    /// UI thread (the GPU tier), the layer paints a copy of the instances taken at the end of its last
+    /// <see cref="Update"/> or <see cref="InitializeInstances"/>, so a change made in between shows from the next
+    /// update on; the CPU tier paints the live collection, as before.
+    /// </remarks>
     public List<ImageInstance> Instances { get; } = new();
 
     /// <summary>
@@ -355,6 +371,7 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
         if (Initializer is not null)
             Instances.AddRange(Initializer(bounds, _rng));
 
+        PublishForUiThreadPainting();
         ForceRefresh();
     }
 
@@ -377,6 +394,7 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
 
         if (dt <= 0f)
         {
+            PublishForUiThreadPainting();
             base.Update(tick);
             return;
         }
@@ -417,11 +435,13 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
             }
         }
 
+        PublishForUiThreadPainting();
         base.Update(tick);
     }
 
     /// <summary>
-    /// Renders all image instances to the backbuffer.
+    /// Renders all image instances to the backbuffer: the live <see cref="Instances"/> on the CPU tier (engine
+    /// thread), the copy published by the last update on the GPU tier (UI thread).
     /// </summary>
     protected override void OnDraw(BackbufferBase backbuffer, RectangleF destRectScreen)
     {
@@ -442,34 +462,98 @@ public sealed class ImageInstanceLayer : DirectDrawingMovableBase
         canvas.Save();
         canvas.ClipRect(destRectScreen.ToSKRect());
 
-        foreach (var instance in Instances)
+        if (backbuffer.IsGlThreadRendered)
         {
-            _paint.Color = instance.Tint;
+            int count = TakePublishedForPainting();
 
-            var dst = new SKRect(
-                destRectScreen.Left + ((instance.Bounds.Left - srcBounds.Left) * sx),
-                destRectScreen.Top + ((instance.Bounds.Top - srcBounds.Top) * sy),
-                destRectScreen.Left + ((instance.Bounds.Right - srcBounds.Left) * sx),
-                destRectScreen.Top + ((instance.Bounds.Bottom - srcBounds.Top) * sy));
-
-            if (instance.Rotation != 0f)
+            for (int i = 0; i < count; i++)
             {
-                float cx = (dst.Left + dst.Right) * 0.5f;
-                float cy = (dst.Top + dst.Bottom) * 0.5f;
-
-                canvas.Save();
-                canvas.RotateDegrees(instance.Rotation, cx, cy);
-                canvas.DrawBitmap(instance.Bitmap, dst, SKSamplingOptions.Default, _paint);
-                canvas.Restore();
+                ref readonly var item = ref _painting[i];
+                DrawInstance(canvas, item.Bitmap, item.Bounds, item.Rotation, item.Tint, srcBounds, destRectScreen, sx, sy);
             }
-            else
-            {
-                canvas.DrawBitmap(instance.Bitmap, dst, SKSamplingOptions.Default, _paint);
-            }
+        }
+        else
+        {
+            foreach (var instance in Instances)
+                DrawInstance(canvas, instance.Bitmap, instance.Bounds, instance.Rotation, instance.Tint, srcBounds, destRectScreen, sx, sy);
         }
 
         canvas.Restore();
     }
+
+    private void DrawInstance(SKCanvas canvas, SKBitmap bitmap, RectangleF bounds, float rotation, SKColor tint,
+                              Rectangle srcBounds, RectangleF destRectScreen, float sx, float sy)
+    {
+        _paint.Color = tint;
+
+        var dst = new SKRect(
+            destRectScreen.Left + ((bounds.Left - srcBounds.Left) * sx),
+            destRectScreen.Top + ((bounds.Top - srcBounds.Top) * sy),
+            destRectScreen.Left + ((bounds.Right - srcBounds.Left) * sx),
+            destRectScreen.Top + ((bounds.Bottom - srcBounds.Top) * sy));
+
+        if (rotation != 0f)
+        {
+            float cx = (dst.Left + dst.Right) * 0.5f;
+            float cy = (dst.Top + dst.Bottom) * 0.5f;
+
+            canvas.Save();
+            canvas.RotateDegrees(rotation, cx, cy);
+            canvas.DrawBitmap(bitmap, dst, SKSamplingOptions.Default, _paint);
+            canvas.Restore();
+        }
+        else
+        {
+            canvas.DrawBitmap(bitmap, dst, SKSamplingOptions.Default, _paint);
+        }
+    }
+
+    //Engine thread: copies what each instance paints with, so the UI thread never reads the live list or a
+    //  half-updated instance
+    private void PublishForUiThreadPainting()
+    {
+        lock (_publishLock)
+        {
+            int count = Instances.Count;
+
+            if (_published.Length < count)
+                _published = new InstancePaint[Math.Max(count, _published.Length * 2)];
+
+            for (int i = 0; i < count; i++)
+            {
+                var instance = Instances[i];
+                _published[i] = new InstancePaint(instance.Bitmap, instance.Bounds, instance.Rotation, instance.Tint);
+            }
+
+            if (_publishedCount > count)
+                Array.Clear(_published, count, _publishedCount - count);
+
+            _publishedCount = count;
+        }
+    }
+
+    //UI thread: takes a private copy of the last published instances and returns how many there are
+    private int TakePublishedForPainting()
+    {
+        lock (_publishLock)
+        {
+            int count = _publishedCount;
+
+            if (_painting.Length < count)
+                _painting = new InstancePaint[Math.Max(count, _painting.Length * 2)];
+
+            Array.Copy(_published, _painting, count);
+
+            if (_paintingCount > count)
+                Array.Clear(_painting, count, _paintingCount - count);
+
+            _paintingCount = count;
+            return count;
+        }
+    }
+
+    //What one instance paints with, copied at publish time
+    private readonly record struct InstancePaint(SKBitmap Bitmap, RectangleF Bounds, float Rotation, SKColor Tint);
 
     /// <summary>
     /// Disposes managed resources.

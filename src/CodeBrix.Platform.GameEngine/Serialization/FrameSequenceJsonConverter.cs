@@ -12,7 +12,10 @@ namespace CodeBrix.Platform.GameEngine.Serialization; //CodeBrix (not from Gondw
 /// Needed because the struct implements <c>IEnumerable&lt;Frame&gt;</c> (so stock
 /// System.Text.Json would classify it as a collection and lose <see cref="FrameSequence.SequenceCycleType"/>)
 /// and keeps its frame list in a non-public field. Frames themselves go through
-/// <see cref="FrameJsonConverter"/>.
+/// <see cref="FrameJsonConverter"/>. A sequence whose frames carry their own durations also writes
+/// <c>"frameDurations": [ seconds | null, ... ]</c> (one entry per frame, null = the cycle's
+/// ThrottleTime); an untimed sequence omits it, so its save keeps the earlier shape, and a save
+/// without it loads as an untimed sequence.
 /// </summary>
 internal sealed class FrameSequenceJsonConverter : JsonConverter<FrameSequence>
 {
@@ -28,6 +31,27 @@ internal sealed class FrameSequenceJsonConverter : JsonConverter<FrameSequence>
         }
 
         writer.WriteEndArray();
+
+        var durations = value.GetDurationsForSave();
+        if (durations is not null)
+        {
+            writer.WritePropertyName("frameDurations");
+            writer.WriteStartArray();
+            foreach (var duration in durations)
+            {
+                if (duration is { } seconds)
+                {
+                    writer.WriteNumberValue(seconds);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
         writer.WriteEndObject();
     }
 
@@ -40,6 +64,7 @@ internal sealed class FrameSequenceJsonConverter : JsonConverter<FrameSequence>
 
         var cycleType = CycleType.Simple;
         var frames = new List<Frame>();
+        List<double?>? durations = null;
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
@@ -70,12 +95,40 @@ internal sealed class FrameSequenceJsonConverter : JsonConverter<FrameSequence>
 
                     break;
 
+                case "frameDurations":
+                    if (reader.TokenType != JsonTokenType.StartArray)
+                    {
+                        throw new JsonException("FrameSequence 'frameDurations' must be an array.");
+                    }
+
+                    durations = new List<double?>();
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    {
+                        durations.Add(reader.TokenType == JsonTokenType.Null ? null : reader.GetDouble());
+                    }
+
+                    break;
+
                 default:
                     reader.Skip();
                     break;
             }
         }
 
-        return new FrameSequence(frames) { SequenceCycleType = cycleType };
+        var sequence = new FrameSequence(frames) { SequenceCycleType = cycleType };
+
+        if (durations is not null)
+        {
+            try
+            {
+                sequence.SetDurationsFromSave(durations);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new JsonException("FrameSequence 'frameDurations' holds a duration that is not positive.", ex);
+            }
+        }
+
+        return sequence;
     }
 }

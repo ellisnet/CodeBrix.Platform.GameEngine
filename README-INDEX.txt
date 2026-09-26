@@ -54,13 +54,6 @@ NESTED READMEs (samples and tools)
   EXTRAS-README.txt describes every sample and tool; those two tool READMEs are
   the authoritative detail for the tools.
 
-RELEASE NOTES
--------------
-  RELEASE-NOTES-<yyyy-MM-dd>.md
-      Dated, per-release notes at the repository root — breaking changes first,
-      then features, fixes and repository changes. Repository content only; it
-      ships in no NuGet package.
-
 GENERAL
 -------
   README.md

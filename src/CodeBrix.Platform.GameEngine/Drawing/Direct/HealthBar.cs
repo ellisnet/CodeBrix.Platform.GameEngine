@@ -8,7 +8,8 @@ using CodeBrix.Platform.GameEngine.Scenes;
 namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //CodeBrix (not from Gondwana)
 
 /// <summary>
-/// A world-space health bar that floats above a <see cref="Sprite"/> and follows it automatically.
+/// A world-space health bar that floats above a <see cref="Sprite"/> and follows it automatically, or
+/// floats above a world-pixel point: a fixed anchor, or one read from a provider every frame.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -31,6 +32,14 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //CodeBrix (not from Gond
 /// The bar is drawn in world pixels on the target's own scene layer, so it scales and scrolls with the
 /// camera exactly like the sprite does.
 /// </para>
+/// <para>
+/// A game that draws its own entities (no sprite to follow) uses the anchor constructors instead: the
+/// bar is centred horizontally on the anchor and sits <see cref="DefaultGapPx"/> above it, so the anchor
+/// is the top-centre of whatever the bar labels. Move a fixed anchor with <see cref="SetAnchor"/>, or pass
+/// a provider (<see cref="Func{TResult}"/> of <see cref="PointF"/>) that the bar reads once per rendered
+/// frame, on the engine thread. The layer may be any scene layer, including a pixel layer
+/// (<see cref="Scene.AddPixelLayer"/>).
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -43,6 +52,10 @@ namespace CodeBrix.Platform.GameEngine.Drawing.Direct; //CodeBrix (not from Gond
 ///
 /// // Later, when the player is hit:
 /// bar.Value = playerHealth;
+///
+/// // A boss the game draws itself: the bar follows the boss's top-centre, read every frame.
+/// var bossBar = new HealthBar(renderSurfaceHost, worldLayer, () => boss.TopCenterPx, maxValue: boss.MaxHealth,
+///                             size: new Size(240, 12), nickname: "boss-health").Show();
 /// </code>
 /// </example>
 public sealed class HealthBar : DirectComposite
@@ -70,6 +83,8 @@ public sealed class HealthBar : DirectComposite
     private bool _useThresholdColors;
     private Size _barSize;
     private Point _offsetPx;
+    private PointF _anchorPx;
+    private Func<PointF>? _anchorProvider;
     private bool _disposed;
 
     #region Construction
@@ -96,23 +111,113 @@ public sealed class HealthBar : DirectComposite
                      Size? size = null,
                      Point? offsetPx = null,
                      string? nickname = null)
-        : base(renderSurfaceHost,
-               DirectDrawingMode.SceneLayer,
+        : this(renderSurfaceHost,
+               target?.SceneLayer!,
+               target,
+               null,
                PointF.Empty,
-               ValidateAndResolveNickname(renderSurfaceHost, target, maxValue, size ?? DefaultSize, nickname))
+               maxValue,
+               size ?? DefaultSize,
+               offsetPx ?? Point.Empty,
+               ValidateAndResolveNickname(renderSurfaceHost, target!, maxValue, size ?? DefaultSize, nickname))
+    {
+    }
+
+    /// <summary>
+    /// Creates a health bar that floats above a fixed world-pixel anchor on <paramref name="sceneLayer"/>;
+    /// move it later with <see cref="SetAnchor"/>.
+    /// </summary>
+    /// <param name="renderSurfaceHost">The render surface host that owns the layer's scene.</param>
+    /// <param name="sceneLayer">The scene layer the bar is drawn on (any layer, including a pixel layer).</param>
+    /// <param name="anchorPx">
+    /// The world-pixel anchor: the bar is centred horizontally on it and sits <see cref="DefaultGapPx"/>
+    /// above it (the top-centre of whatever the bar labels).
+    /// </param>
+    /// <param name="maxValue">The value that fills the bar completely. Must be greater than zero.</param>
+    /// <param name="size">The outer bar size in world pixels. Defaults to 64 x 9.</param>
+    /// <param name="offsetPx">An extra world-pixel offset applied to the anchored position. Defaults to none.</param>
+    /// <param name="nickname">An optional diagnostic nickname; a unique one is generated when omitted.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="renderSurfaceHost"/> or <paramref name="sceneLayer"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxValue"/> is not greater than zero, or the size is too small to draw.</exception>
+    public HealthBar(RenderSurfaceHostBase renderSurfaceHost,
+                     SceneLayer sceneLayer,
+                     PointF anchorPx,
+                     float maxValue,
+                     Size? size = null,
+                     Point? offsetPx = null,
+                     string? nickname = null)
+        : this(renderSurfaceHost,
+               sceneLayer,
+               null,
+               null,
+               anchorPx,
+               maxValue,
+               size ?? DefaultSize,
+               offsetPx ?? Point.Empty,
+               ValidateAndResolveAnchoredNickname(renderSurfaceHost, sceneLayer, maxValue, size ?? DefaultSize, nickname))
+    {
+    }
+
+    /// <summary>
+    /// Creates a health bar that follows a world-pixel anchor read from <paramref name="anchorProvider"/>:
+    /// once now, then once per rendered frame on the engine thread.
+    /// </summary>
+    /// <param name="renderSurfaceHost">The render surface host that owns the layer's scene.</param>
+    /// <param name="sceneLayer">The scene layer the bar is drawn on (any layer, including a pixel layer).</param>
+    /// <param name="anchorProvider">
+    /// Returns the current world-pixel anchor (see the <see cref="PointF"/> constructor). It runs on the
+    /// engine thread while frames render, so it must be cheap and safe to call from there.
+    /// </param>
+    /// <param name="maxValue">The value that fills the bar completely. Must be greater than zero.</param>
+    /// <param name="size">The outer bar size in world pixels. Defaults to 64 x 9.</param>
+    /// <param name="offsetPx">An extra world-pixel offset applied to the anchored position. Defaults to none.</param>
+    /// <param name="nickname">An optional diagnostic nickname; a unique one is generated when omitted.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxValue"/> is not greater than zero, or the size is too small to draw.</exception>
+    public HealthBar(RenderSurfaceHostBase renderSurfaceHost,
+                     SceneLayer sceneLayer,
+                     Func<PointF> anchorProvider,
+                     float maxValue,
+                     Size? size = null,
+                     Point? offsetPx = null,
+                     string? nickname = null)
+        : this(renderSurfaceHost,
+               sceneLayer,
+               null,
+               anchorProvider ?? throw new ArgumentNullException(nameof(anchorProvider)),
+               anchorProvider(),
+               maxValue,
+               size ?? DefaultSize,
+               offsetPx ?? Point.Empty,
+               ValidateAndResolveAnchoredNickname(renderSurfaceHost, sceneLayer, maxValue, size ?? DefaultSize, nickname))
+    {
+    }
+
+    private HealthBar(RenderSurfaceHostBase renderSurfaceHost,
+                      SceneLayer sceneLayer,
+                      Sprite? target,
+                      Func<PointF>? anchorProvider,
+                      PointF anchorPx,
+                      float maxValue,
+                      Size size,
+                      Point offsetPx,
+                      string nickname)
+        : base(renderSurfaceHost, DirectDrawingMode.SceneLayer, PointF.Empty, nickname)
     {
         Target = target;
 
+        _anchorProvider = anchorProvider;
+        _anchorPx = anchorPx;
         _maxValue = maxValue;
         _value = maxValue;
-        _barSize = size ?? DefaultSize;
-        _offsetPx = offsetPx ?? Point.Empty;
+        _barSize = size;
+        _offsetPx = offsetPx;
         _appliedFillColor = _fillColor;
 
         _track = new DirectRectangle(
                 Color.FromArgb(220, 20, 24, 31),
                 renderSurfaceHost,
-                target.SceneLayer,
+                sceneLayer,
                 new Rectangle(Point.Empty, _barSize),
                 $"{Nickname}-track")
             .SetFilled(true)
@@ -124,7 +229,7 @@ public sealed class HealthBar : DirectComposite
         _fill = new DirectRectangle(
                 _fillColor,
                 renderSurfaceHost,
-                target.SceneLayer,
+                sceneLayer,
                 GetFillBounds(Point.Empty),
                 $"{Nickname}-fill")
             .SetFilled(true)
@@ -134,8 +239,11 @@ public sealed class HealthBar : DirectComposite
         Add(_track, keepCurrentOffset: false, explicitLocalOffsetPx: Vector2.Zero);
         Add(_fill, keepCurrentOffset: false, explicitLocalOffsetPx: new Vector2(InnerPadding, InnerPadding));
 
-        Target.SpriteMoved += OnTargetMoved;
-        Target.Disposing += OnTargetDisposing;
+        if (Target is not null)
+        {
+            Target.SpriteMoved += OnTargetMoved;
+            Target.Disposing += OnTargetDisposing;
+        }
 
         RefreshPosition();
         UpdateFill();
@@ -215,6 +323,30 @@ public sealed class HealthBar : DirectComposite
             : nickname!;
     }
 
+    private static string ValidateAndResolveAnchoredNickname(RenderSurfaceHostBase renderSurfaceHost,
+                                                             SceneLayer sceneLayer,
+                                                             float maxValue,
+                                                             Size size,
+                                                             string? nickname)
+    {
+        ArgumentNullException.ThrowIfNull(renderSurfaceHost);
+        ArgumentNullException.ThrowIfNull(sceneLayer);
+
+        if (maxValue <= 0f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxValue),
+                maxValue,
+                "The maximum health-bar value must be greater than zero.");
+        }
+
+        ValidateSize(size, nameof(size));
+
+        return string.IsNullOrWhiteSpace(nickname)
+            ? $"health-{Guid.NewGuid():N}"
+            : nickname!;
+    }
+
     private static void ValidateSize(Size size, string parameterName)
     {
         int minimum = (InnerPadding * 2) + 1;
@@ -241,9 +373,23 @@ public sealed class HealthBar : DirectComposite
     #region Properties
 
     /// <summary>
-    /// Gets the sprite this bar follows.
+    /// Gets the sprite this bar follows, or <see langword="null"/> for a bar created with a world-pixel
+    /// anchor (see <see cref="AnchorPx"/>).
     /// </summary>
-    public Sprite Target { get; }
+    public Sprite? Target { get; }
+
+    /// <summary>
+    /// Gets the world-pixel anchor the bar is placed above: for an anchored bar, the fixed anchor or the
+    /// value its provider last returned; for a sprite bar, the top-centre of the sprite's draw location.
+    /// </summary>
+    public PointF AnchorPx => Target is null
+        ? _anchorPx
+        : new PointF(Target.DrawLocationWorld.Left + (Target.DrawLocationWorld.Width / 2f), Target.DrawLocationWorld.Top);
+
+    /// <summary>
+    /// Gets a value indicating whether the bar reads its anchor from a provider every frame.
+    /// </summary>
+    public bool HasAnchorProvider => _anchorProvider is not null;
 
     /// <summary>
     /// Gets or sets the value that fills the bar completely. Setting it re-clamps <see cref="Value"/>.
@@ -532,17 +678,70 @@ public sealed class HealthBar : DirectComposite
     }
 
     /// <summary>
-    /// Re-centres the bar above the target's current draw location. It is called automatically whenever
-    /// the target moves; call it after changing the target's size or alignment.
+    /// Moves an anchored bar to a new fixed world-pixel anchor (see the anchor constructors). A provider
+    /// the bar was created with is dropped: the bar stays at this anchor until the next call.
+    /// </summary>
+    /// <param name="anchorPx">The new world-pixel anchor: the top-centre of whatever the bar labels.</param>
+    /// <returns>This health bar, for chaining.</returns>
+    /// <exception cref="InvalidOperationException">The bar follows a sprite (<see cref="Target"/> is set).</exception>
+    public HealthBar SetAnchor(PointF anchorPx)
+    {
+        if (Target is not null)
+            throw new InvalidOperationException("A health bar that follows a sprite takes its position from the sprite.");
+
+        _anchorProvider = null;
+        _anchorPx = anchorPx;
+
+        RefreshPosition();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Re-centres the bar above its anchor: the target's current draw location, or the anchor point. It is
+    /// called automatically whenever the target moves, when <see cref="SetAnchor"/> is called, and every
+    /// rendered frame for a bar with an anchor provider; call it after changing the target's size or
+    /// alignment.
     /// </summary>
     public void RefreshPosition()
     {
-        Rectangle targetBounds = Target.DrawLocationWorld;
+        int x;
+        int y;
 
-        int x = targetBounds.Left + ((targetBounds.Width - _barSize.Width) / 2) + _offsetPx.X;
-        int y = targetBounds.Top - _barSize.Height - DefaultGapPx + _offsetPx.Y;
+        if (Target is not null)
+        {
+            Rectangle targetBounds = Target.DrawLocationWorld;
+
+            x = targetBounds.Left + ((targetBounds.Width - _barSize.Width) / 2) + _offsetPx.X;
+            y = targetBounds.Top - _barSize.Height - DefaultGapPx + _offsetPx.Y;
+        }
+        else
+        {
+            x = (int)MathF.Round(_anchorPx.X) - (_barSize.Width / 2) + _offsetPx.X;
+            y = (int)MathF.Round(_anchorPx.Y) - _barSize.Height - DefaultGapPx + _offsetPx.Y;
+        }
 
         SetPosition(x, y);
+    }
+
+    /// <summary>
+    /// Advances the bar's movement and, for a bar with an anchor provider, reads the provider and follows
+    /// the anchor when it has moved. Called by the engine once per rendered frame.
+    /// </summary>
+    /// <param name="tick">The current high-resolution tick value.</param>
+    public override void Update(long tick)
+    {
+        base.Update(tick);
+
+        if (_disposed || _anchorProvider is null)
+            return;
+
+        PointF anchor = _anchorProvider();
+        if (anchor == _anchorPx)
+            return;
+
+        _anchorPx = anchor;
+        RefreshPosition();
     }
 
     #endregion Visibility and position
@@ -618,8 +817,13 @@ public sealed class HealthBar : DirectComposite
 
         _disposed = true;
 
-        Target.SpriteMoved -= OnTargetMoved;
-        Target.Disposing -= OnTargetDisposing;
+        if (Target is not null)
+        {
+            Target.SpriteMoved -= OnTargetMoved;
+            Target.Disposing -= OnTargetDisposing;
+        }
+
+        _anchorProvider = null;
 
         base.Dispose();
     }

@@ -33,6 +33,11 @@ public sealed class KeyboardEventPoller
     }
 
     /// <summary>
+    /// Clears <see cref="Instance"/>. Only for tests, which share one process.
+    /// </summary>
+    internal static void ResetForTests() => Instance = null;
+
+    /// <summary>
     /// Occurs when a monitored keyboard key is pressed, released, or repeated based on its configuration
     /// and throttling settings. Subscribe to this event to handle keyboard input in your application.
     /// The event provides information about the key action (pressed, released, or repeated) and current
@@ -46,6 +51,11 @@ public sealed class KeyboardEventPoller
 
     // Apply monitoring changes on the engine thread to avoid ToList() allocations.
     private readonly ConcurrentQueue<Action> _pendingOps = new();
+
+    // The key codes currently registered for monitoring. Unlike the configurations above (changed on the
+    // engine thread at the next poll), this set changes at once, on the calling thread, and is safe to
+    // read from any thread - a host keyboard adapter asks it, on the UI thread, which keys the game uses.
+    private readonly ConcurrentDictionary<int, byte> _monitoredKeyCodes = new();
 
     private KeyboardEventPoller() { }
 
@@ -130,6 +140,7 @@ public sealed class KeyboardEventPoller
     /// </summary>
     public void StartMonitoringKey(int keyCode, string? displayName = null, double timeBetweenEvents = -1, bool isPaused = false)
     {
+        _monitoredKeyCodes[keyCode] = 0;
         _pendingOps.Enqueue(() =>
         {
             if (timeBetweenEvents < 0)
@@ -191,6 +202,7 @@ public sealed class KeyboardEventPoller
     /// </param>
     public void StopMonitoringKey(int keyCode)
     {
+        _monitoredKeyCodes.TryRemove(keyCode, out _);
         _pendingOps.Enqueue(() =>
         {
             _keyConfigs.Remove(keyCode);
@@ -221,12 +233,23 @@ public sealed class KeyboardEventPoller
     /// </summary>
     public void StopMonitoringAllKeys()
     {
+        _monitoredKeyCodes.Clear();
         _pendingOps.Enqueue(() =>
         {
             _keyConfigs.Clear();
             _previousPressed.Clear();
         });
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="keyCode"/> is registered for monitoring - that is,
+    /// the game uses the key. Unlike <see cref="AllKeyConfigs"/>, this reflects a
+    /// <see cref="StartMonitoringKey"/> / <see cref="StopMonitoringKey(int)"/> call at once (not at the next
+    /// poll) and is safe to call from any thread.
+    /// </summary>
+    /// <param name="keyCode">The platform-agnostic key code.</param>
+    /// <returns><see langword="true"/> if the key is registered for monitoring; otherwise <see langword="false"/>.</returns>
+    public bool IsMonitoringKey(int keyCode) => _monitoredKeyCodes.ContainsKey(keyCode);
 
     /// <summary>
     /// Exposes monitored key configurations. Treat as engine-thread-only unless you add external synchronization.

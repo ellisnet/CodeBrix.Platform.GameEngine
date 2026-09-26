@@ -66,6 +66,29 @@ public class EngineStateRoundTripTests : IDisposable
     }
 
     [Fact]
+    public void a_pixel_layer_stays_a_pixel_layer_through_a_save_and_load()
+    {
+        //Arrange
+        var savePath = Path.Combine(_workDirectory, "pixel-layer.json");
+        var scene = new Scene { ID = "scene-pixel" };
+        scene.AddPixelLayer(640, 360, zOrder: 1);
+        scene.AddLayer(columnCount: 2, rowCount: 2, width: 16, height: 16, zOrder: 0);
+
+        //Act
+        Engine.Instance.State.SaveToFile(savePath);
+        EngineState.LoadFromFile(savePath);
+
+        //Assert
+        var loaded = Scene.GetSceneByID("scene-pixel");
+        loaded.Should().NotBeNull();
+        var pixel = loaded!.First(layer => layer.ZOrder == 1);
+        var tiled = loaded!.First(layer => layer.ZOrder == 0);
+        pixel.IsPixelLayer.Should().BeTrue();
+        pixel.GetLayerBoundsPx().Should().Be(new RectangleF(0, 0, 640, 360));
+        tiled.IsPixelLayer.Should().BeFalse();
+    }
+
+    [Fact]
     public void Populated_graph_roundtrips_scenes_layers_tiles_sprites_cycles_and_audio()
     {
         //Arrange - a small but representative world.
@@ -313,6 +336,163 @@ public class EngineStateRoundTripTests : IDisposable
         var loadedLayer = Scene.GetSceneByID("scene-legacy")!.First();
         loadedLayer[0, 0]!.AdjustCollisionArea.Should().Be(new CollisionAdjust(1, 2, 3, 4));
         loadedLayer[0, 0]!.AdjustCollisionAreaByFrame.Should().BeFalse();
+    }
+
+    // A cycles-only save exactly as the engine wrote it before frames could carry their own
+    // durations (captured from a real save). It must keep loading unchanged.
+    private const string SaveWrittenBeforeFrameDurations = """
+        {
+          "schema": 1,
+          "state": {
+            "AssetsFiles": null,
+            "Tilesheets": null,
+            "Cycles": {
+              "old_cycle": {
+                "$id": "1",
+                "ThrottleTime": 0.25,
+                "NextCycle": {
+                  "$ref": "1"
+                },
+                "Sequence": {
+                  "cycleType": "Repeating",
+                  "frames": [
+                    { "tilesheet": "timing_sheet", "regionName": "default", "xTile": 0, "yTile": 0 },
+                    { "tilesheet": "timing_sheet", "regionName": "default", "xTile": 1, "yTile": 0 }
+                  ]
+                },
+                "CycleKey": "old_cycle",
+                "HideTileOnCycleEnd": false
+              }
+            },
+            "Scenes": null,
+            "Sprites": null,
+            "SoundResources": null
+          }
+        }
+        """;
+
+    private Tilesheet LoadTimingSheet()
+    {
+        var imagePath = WriteTilesheetPng("timing_sheet.png", tileSize: 16, columns: 3, rows: 1);
+        var sheet = TilesheetRegistry.Instance.LoadFromImageFile("timing_sheet", imagePath);
+        sheet.DefaultRegion.TileSize = new Size(16, 16);
+
+        return sheet;
+    }
+
+    [Fact]
+    public void a_save_written_before_frame_durations_loads_unchanged()
+    {
+        //Arrange
+        LoadTimingSheet();
+        var savePath = Path.Combine(_workDirectory, "save_before_durations.json");
+        File.WriteAllText(savePath, SaveWrittenBeforeFrameDurations);
+
+        //Act
+        EngineState.LoadFromFile(savePath, parts: EngineStateParts.Cycles);
+
+        //Assert
+        var loaded = Cycle.GetAnimationCycle("old_cycle");
+        loaded.Should().NotBeNull();
+        loaded.Sequence.FrameCount.Should().Be(2);
+        loaded.Sequence.SequenceCycleType.Should().Be(CycleType.Repeating);
+        loaded.Sequence[1].XTile.Should().Be(1);
+        loaded.ThrottleTime.Should().Be(0.25);
+        loaded.Sequence.HasFrameDurations.Should().BeFalse();
+        loaded.CurrentFrameDurationSeconds.Should().Be(0.25);
+        loaded.CurrentFrameThrottle.Should().Be(loaded._throttle);
+        (Math.Abs(loaded.TotalCycleTime - 0.5) < 1e-9).Should().BeTrue();
+    }
+
+    [Fact]
+    public void a_cycle_without_frame_durations_saves_in_the_earlier_shape()
+    {
+        //Arrange
+        var sheet = LoadTimingSheet();
+        var savePath = Path.Combine(_workDirectory, "save_without_durations.json");
+        var sequence = new FrameSequence(new List<Frame> { new(sheet, 0, 0), new(sheet, 1, 0) })
+        {
+            SequenceCycleType = CycleType.Repeating
+        };
+        _ = new Cycle(sequence, 0.25, "old_cycle");
+
+        //Act
+        Engine.Instance.State.SaveToFile(savePath, parts: EngineStateParts.Cycles);
+
+        //Assert - member for member the same document as a save from before the feature.
+        var written = JsonNode.Parse(File.ReadAllText(savePath))!;
+        var earlier = JsonNode.Parse(SaveWrittenBeforeFrameDurations)!;
+        JsonNode.DeepEquals(written, earlier).Should().BeTrue();
+    }
+
+    [Fact]
+    public void frame_durations_roundtrip_through_a_save()
+    {
+        //Arrange - frame 1 keeps the cycle default, so the saved list carries a gap.
+        var sheet = LoadTimingSheet();
+        var savePath = Path.Combine(_workDirectory, "save_with_durations.json");
+        var sequence = new FrameSequence(new List<Frame> { new(sheet, 0, 0), new(sheet, 1, 0), new(sheet, 2, 0) })
+        {
+            SequenceCycleType = CycleType.PingPong
+        };
+        sequence.SetDurationSeconds(0, 0.1);
+        sequence.SetDurationSeconds(2, 0.4);
+        _ = new Cycle(sequence, 0.25, "timed_cycle");
+
+        //Act
+        Engine.Instance.State.SaveToFile(savePath, parts: EngineStateParts.Cycles);
+        EngineState.LoadFromFile(savePath, parts: EngineStateParts.Cycles);
+
+        //Assert
+        var loaded = Cycle.GetAnimationCycle("timed_cycle");
+        loaded.Sequence.GetDurationSeconds(0).Should().Be(0.1);
+        loaded.Sequence.GetDurationSeconds(1).Should().BeNull();
+        loaded.Sequence.GetDurationSeconds(2).Should().Be(0.4);
+        loaded.Sequence.SequenceCycleType.Should().Be(CycleType.PingPong);
+        loaded.ThrottleTime.Should().Be(0.25);
+        File.ReadAllText(savePath).Should().Contain("\"frameDurations\"");
+    }
+
+    [Fact]
+    public void a_saved_duration_that_is_not_positive_is_rejected_on_load()
+    {
+        //Arrange
+        LoadTimingSheet();
+        var savePath = Path.Combine(_workDirectory, "save_bad_duration.json");
+        var document = JsonNode.Parse(SaveWrittenBeforeFrameDurations)!;
+        document["state"]!["Cycles"]!["old_cycle"]!["Sequence"]!["frameDurations"] = new JsonArray(0.1, -0.5);
+        File.WriteAllText(savePath, document.ToJsonString());
+
+        //Act
+        var act = () => EngineState.LoadFromFile(savePath, parts: EngineStateParts.Cycles);
+
+        //Assert
+        act.Should().Throw<System.Text.Json.JsonException>();
+    }
+
+    [Fact]
+    public void a_save_leaves_out_a_bundle_loaded_from_a_stream_and_still_loads()
+    {
+        //Arrange - one bundle on disk, one read from a stream (it has no path to reopen).
+        var wavPath = WriteWav("stream_blip.wav");
+        var diskPath = Path.Combine(_workDirectory, "disk.pack");
+        var savePath = Path.Combine(_workDirectory, "save_stream_bundle.json");
+
+        var disk = Assets.AssetsFile.LoadOrCreate(diskPath);
+        disk.Add(Assets.AssetTypes.Audio, wavPath);
+        disk.Save();
+
+        using var source = new MemoryStream(File.ReadAllBytes(diskPath));
+        var fromStream = Assets.AssetsFile.Load(source);
+
+        //Act
+        Engine.Instance.State.SaveToFile(savePath, parts: EngineStateParts.AssetsFiles);
+        EngineState.LoadFromFile(savePath, parts: EngineStateParts.AssetsFiles);
+
+        //Assert
+        Assets.AssetsFile.AllAssetsFiles.Should().ContainSingle();
+        Assets.AssetsFile.AllAssetsFiles[0].FilePath.Should().Be(diskPath);
+        fromStream.FilePath.Should().BeEmpty();
     }
 
     private static void RemoveMember(JsonNode node, string memberName)

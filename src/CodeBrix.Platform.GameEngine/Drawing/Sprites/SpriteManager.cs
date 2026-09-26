@@ -93,7 +93,7 @@ public sealed class SpriteManager : IDisposable
 
         var sprite = new Sprite(sceneLayer, frame, profileName);
         sprite.Nickname = id;
-        SpriteCreated?.Invoke(sprite);
+        PublishCreatedSprite(sprite);
         return sprite;
     }
 
@@ -114,7 +114,7 @@ public sealed class SpriteManager : IDisposable
     {
         Sprite newSprite = new Sprite(sprite, sceneLayer);
 
-        SpriteCreated?.Invoke(newSprite);
+        PublishCreatedSprite(newSprite);
         return newSprite;
     }
 
@@ -319,6 +319,28 @@ public sealed class SpriteManager : IDisposable
     #endregion public methods
 
     #region internal methods
+
+    /// <summary>
+    /// Raises <see cref="SpriteCreated"/> for a sprite that has just registered itself. When a handler
+    /// throws, the caller never receives the sprite and cannot remove it, so it is taken out of the
+    /// registry and disposed before the exception continues.
+    /// </summary>
+    /// <param name="sprite">The newly created sprite.</param>
+    private void PublishCreatedSprite(Sprite sprite)
+    {
+        try
+        {
+            SpriteCreated?.Invoke(sprite);
+        }
+        catch
+        {
+            lock (_spriteListLock)
+                _spriteList.Remove(sprite);
+
+            sprite.DisposeImmediate();
+            throw;
+        }
+    }
 
     internal void AddSprite(Sprite sprite)
     {

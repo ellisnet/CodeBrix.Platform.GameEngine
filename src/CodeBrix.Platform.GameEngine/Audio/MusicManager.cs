@@ -26,14 +26,14 @@ namespace CodeBrix.Platform.GameEngine.Audio; //CodeBrix (not from Gondwana)
 /// <c>Engine.Instance.EngineDispatcher.Post</c> before touching game state.
 /// </para>
 /// </remarks>
-public sealed class MusicManager : IDisposable
+public sealed class MusicManager : IMusicManager, IDisposable
 {
     private static readonly Lazy<MusicManager> _instance = new(() => new MusicManager());
 
     private readonly object _gate = new();
     private readonly MusicFadeTicker _ticker = new();
     private readonly List<DuckHandle> _ducks = new();
-    private readonly List<AudioResource> _stingers = new();
+    private readonly Dictionary<AudioResource, Action> _stingers = new();
 
     private MusicTrack? _current;
     private MusicTrack? _outgoing;
@@ -55,6 +55,17 @@ public sealed class MusicManager : IDisposable
     /// middle.
     /// </summary>
     public MusicFadeCurve CrossfadeCurve { get; set; } = MusicFadeCurve.EqualPower;
+
+    /// <summary>
+    /// The player's music slider: <see cref="AudioMixer.MusicVolume"/>, 0.0 to 1.0. Ducking is a
+    /// separate multiplier on the same bus, so setting this never undoes a duck and a duck never
+    /// overwrites it.
+    /// </summary>
+    public float MusicVolume
+    {
+        get => AudioMixer.MusicVolume;
+        set => AudioMixer.MusicVolume = value;
+    }
 
     /// <summary>The track currently playing, or <see langword="null"/> when the music is stopped.</summary>
     public MusicTrack? NowPlaying
@@ -630,12 +641,100 @@ public sealed class MusicManager : IDisposable
     /// <param name="duckDepth">The level to duck the music to while the stinger plays.</param>
     /// <returns><see langword="true"/> if the stinger started; <see langword="false"/> if the key was not loaded.</returns>
     /// <remarks>
+    /// <para>
     /// A stinger deliberately does NOT go through <see cref="SfxVoicePool"/>: the pool has a
     /// polyphony cap and will steal a voice when it is full, and a level-complete fanfare being
     /// culled by a busy combat scene is exactly the wrong outcome. It plays on its own voice, on the
     /// music bus, and is cleaned up when it finishes.
+    /// </para>
+    /// <para>
+    /// Because it rides the music bus, the player's music slider turns it down with the music, and a
+    /// duck (its own included) attenuates it too. For a cue that must be heard whatever the music
+    /// slider says - a warning, a game-over sting - use <see cref="PlayStingerOnBus"/> with
+    /// <see cref="AudioBus.Sfx"/>, or <see cref="PlayStingerWithHeldDuck"/>.
+    /// </para>
     /// </remarks>
-    public bool PlayStinger(string resourceKey, float volume = 1.0f, bool duckMusic = false, float duckDepth = 0.3f)
+    public bool PlayStinger(string resourceKey, float volume = 1.0f, bool duckMusic = false, float duckDepth = 0.3f) =>
+        PlayStingerOnBus(resourceKey, AudioBus.Music, volume, duckMusic, duckDepth);
+
+    /// <summary>
+    /// Plays a one-shot stinger on a chosen mixer bus, optionally ducking the music for its length.
+    /// </summary>
+    /// <param name="resourceKey">The key of a loaded <see cref="AudioResource"/> (see <see cref="AudioResourceManager"/>).</param>
+    /// <param name="bus">
+    /// The bus the stinger plays on. <see cref="AudioBus.Sfx"/> puts it under the effects slider, so
+    /// the music slider (and any duck of the music) leaves it alone; <see cref="AudioBus.Music"/> is
+    /// exactly <see cref="PlayStinger"/>.
+    /// </param>
+    /// <param name="volume">The stinger's volume, 0.0 to 1.0.</param>
+    /// <param name="duckMusic">Whether to duck the music underneath it until it finishes.</param>
+    /// <param name="duckDepth">The level to duck the music to while the stinger plays.</param>
+    /// <returns><see langword="true"/> if the stinger started; <see langword="false"/> if the key was not loaded.</returns>
+    /// <remarks>
+    /// Like <see cref="PlayStinger"/>, the stinger plays on its own voice (never culled by
+    /// <see cref="SfxVoicePool"/>) and is cleaned up when it finishes; the duck, when asked for, is
+    /// released then.
+    /// </remarks>
+    public bool PlayStingerOnBus(string resourceKey, AudioBus bus, float volume = 1.0f, bool duckMusic = false, float duckDepth = 0.3f) =>
+        StartStinger(resourceKey, bus, volume, duckMusic ? duckDepth : null);
+
+    /// <summary>
+    /// Plays a one-shot stinger and ducks the music under it until the returned handle is disposed -
+    /// the shape for "a game-over sting, and the music stays down until the player leaves the
+    /// game-over screen".
+    /// </summary>
+    /// <param name="resourceKey">The key of a loaded <see cref="AudioResource"/> (see <see cref="AudioResourceManager"/>).</param>
+    /// <param name="duckDepth">The level to duck the music to, 0.0 (silent) to 1.0 (no ducking).</param>
+    /// <param name="attack">How long to fade the music down over.</param>
+    /// <param name="release">How long to fade the music back up over once the handle is disposed.</param>
+    /// <param name="bus">The bus the stinger plays on; the effects bus by default, so the music slider does not turn it down.</param>
+    /// <param name="volume">The stinger's volume, 0.0 to 1.0.</param>
+    /// <returns>
+    /// The duck: dispose it to release the music (safe to dispose more than once). It is a
+    /// <see cref="PushDuck"/> handle - reference-counted with every other duck, the deepest wins.
+    /// </returns>
+    /// <remarks>
+    /// The duck is held whether or not the stinger could play: an unloaded key is logged as a warning
+    /// (as <see cref="PlayStinger"/> logs it) and the music still goes down, because the moment the
+    /// caller is marking still wants it quiet. The stinger itself finishes and is cleaned up on its
+    /// own; the duck does not end with it.
+    /// </remarks>
+    public IDisposable PlayStingerWithHeldDuck(string resourceKey, float duckDepth, TimeSpan attack = default, TimeSpan release = default,
+                                               AudioBus bus = AudioBus.Sfx, float volume = 1.0f)
+    {
+        var duck = PushDuck(duckDepth, attack, release);
+        StartStinger(resourceKey, bus, volume, null);
+        return duck;
+    }
+
+    /// <summary>Stingers still playing (for tests).</summary>
+    internal IReadOnlyList<AudioResource> PlayingStingers
+    {
+        get { lock (_gate) { return new List<AudioResource>(_stingers.Keys); } }
+    }
+
+    /// <summary>
+    /// When set, a stinger voice is handed to this instead of being played, so tests never open an
+    /// audio device; <see cref="CompleteStingerForTests"/> then finishes it.
+    /// </summary>
+    internal Action<AudioResource>? StingerPlaybackForTests { get; set; }
+
+    /// <summary>Finishes a stinger as if it had played to its end (for tests).</summary>
+    /// <param name="voice">The stinger voice.</param>
+    /// <returns>Whether the voice was a playing stinger.</returns>
+    internal bool CompleteStingerForTests(AudioResource voice)
+    {
+        Action? complete;
+        lock (_gate)
+        {
+            _stingers.TryGetValue(voice, out complete);
+        }
+
+        complete?.Invoke();
+        return complete is not null;
+    }
+
+    private bool StartStinger(string resourceKey, AudioBus bus, float volume, float? duckDepth)
     {
         if (string.IsNullOrWhiteSpace(resourceKey))
         {
@@ -656,13 +755,13 @@ public sealed class MusicManager : IDisposable
             return false;
         }
 
-        voice.Bus = AudioBus.Music;
+        voice.Bus = bus;
         voice.Volume = Math.Clamp(volume, 0f, 1f);
         voice.IsLooping = false;
 
-        IDisposable? duck = duckMusic ? PushDuck(duckDepth, TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(400)) : null;
+        IDisposable? duck = duckDepth is { } depth ? PushDuck(depth, TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(400)) : null;
 
-        void OnCompleted(object? sender, EventArgs e)
+        void Complete()
         {
             voice.PlaybackCompleted -= OnCompleted;
             duck?.Dispose();
@@ -675,14 +774,25 @@ public sealed class MusicManager : IDisposable
             SafeInvoke(() => manager.Unload(voice.Key), "unload a finished stinger");
         }
 
+        void OnCompleted(object? sender, EventArgs e) => Complete();
+
         voice.PlaybackCompleted += OnCompleted;
 
         lock (_gate)
         {
-            _stingers.Add(voice);
+            _stingers[voice] = Complete;
         }
 
-        voice.Play();
+        var playForTests = StingerPlaybackForTests;
+        if (playForTests is not null)
+        {
+            playForTests(voice);
+        }
+        else
+        {
+            voice.Play();
+        }
+
         return true;
     }
 
@@ -810,7 +920,7 @@ public sealed class MusicManager : IDisposable
             _disposed = true;
             current = _current;
             outgoing = _outgoing;
-            stingers = new List<AudioResource>(_stingers);
+            stingers = new List<AudioResource>(_stingers.Keys);
 
             _current = null;
             _outgoing = null;

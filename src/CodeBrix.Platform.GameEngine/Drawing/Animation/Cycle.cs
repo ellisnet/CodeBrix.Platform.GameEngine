@@ -115,13 +115,57 @@ public class Cycle : ICloneable, IDisposable
     }
 
     /// <summary>
+    /// Gets how long the sequence's current frame shows, in seconds: the frame's own duration when
+    /// it carries one (see <see cref="FrameSequence.SetDurationSeconds"/>), otherwise <see cref="ThrottleTime"/>
+    /// </summary>
+    [JsonIgnore]
+    public double CurrentFrameDurationSeconds
+    {
+        get { return Sequence.GetDurationSeconds(Sequence.CurrentFrameIdx) ?? ThrottleTime; }
+    }
+
+    // A frame's own duration held longer than this many ticks is capped here, so the animator's
+    // "last tick + throttle" arithmetic can never overflow; the frame still holds for ages.
+    private const long MaxFrameThrottleTicks = long.MaxValue / 4;
+
+    /// <summary>
+    /// The current frame's display time in ticks, as the animator waits on it. Without a per-frame
+    /// duration this is exactly the cycle's throttle (so untimed cycles behave as before, including
+    /// stopping when the throttle is not positive). A frame's own duration shorter than one tick
+    /// maps to 0 (the animator then stops, as for a zero throttle).
+    /// </summary>
+    internal long CurrentFrameThrottle
+    {
+        get
+        {
+            if (Sequence.GetDurationSeconds(Sequence.CurrentFrameIdx) is not { } seconds)
+                return _throttle;
+
+            var ticks = seconds * HighResTimer.TicksPerSecond;
+            if (!double.IsFinite(ticks) || ticks >= MaxFrameThrottleTicks)
+                return MaxFrameThrottleTicks;
+
+            return ticks < 1 ? 0 : (long)ticks;
+        }
+    }
+
+    /// <summary>
     /// Returns the total time in seconds for the Cycle
     /// </summary>
+    /// <remarks>
+    /// When frames carry their own durations each frame counts for its own time (the others for
+    /// <see cref="ThrottleTime"/>), in the same pattern as the uniform totals: a simple cycle counts
+    /// every frame but the last, a repeating cycle every frame once, and a ping-pong cycle the end
+    /// frames once and the middle frames twice.
+    /// </remarks>
     [JsonIgnore]
     public double TotalCycleTime
     {
         get
         {
+            if (Sequence.HasFrameDurations)
+                return TotalCycleTimeWithFrameDurations();
+
             switch (Sequence.SequenceCycleType)
             {
                 case CycleType.Simple:
@@ -141,6 +185,42 @@ public class Cycle : ICloneable, IDisposable
                     return 0;
             }
         }
+    }
+
+    private double TotalCycleTimeWithFrameDurations()
+    {
+        var frameCount = Sequence.FrameCount;
+        double total = 0;
+
+        for (var i = 0; i < frameCount; i++)
+        {
+            var duration = Sequence.GetDurationSeconds(i) ?? ThrottleTime;
+
+            switch (Sequence.SequenceCycleType)
+            {
+                case CycleType.Simple:
+                    // the last frame is where the cycle ends, as in the uniform "- 1"
+                    if (i < frameCount - 1)
+                        total += duration;
+                    break;
+
+                case CycleType.Repeating:
+                    total += duration;
+                    break;
+
+                case CycleType.PingPong:
+                    // end frames once, middle frames on the way out and on the way back
+                    // (a single frame never moves, as in the uniform "* 2 - 2")
+                    if (frameCount > 1)
+                        total += (i > 0 && i < frameCount - 1) ? duration * 2 : duration;
+                    break;
+
+                default:
+                    return 0;
+            }
+        }
+
+        return total;
     }
 
     /// <summary>

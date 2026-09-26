@@ -66,21 +66,28 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 ## CodeBrix.Platform.GameEngine supports:
 
 * Tile maps, tilesheets, and layered scenes with camera/view systems — seven tile geometries (orthogonal, two isometric, two hex, oblique-right and oblique-left)
+* Pixel layers for games without a tile map: a layer sized in world pixels that carries sprites, particles, health bars and a game's own drawings, with no tile grid to fake
 * Wrapping (periodic) scene layers: an endlessly repeating world with no seam, across rendering, collision queries, camera follow and world-space drawings, on every tile geometry
 * A logical render resolution that is independent of the window: pick an exact size or a scale factor, and the finished image is fitted, centred and letterboxed — with linear or nearest-neighbour presentation filtering, and pointer input normalized into the same coordinate space
-* Sprites, composite sprites, sprite rotation, and frame-based animation cycles
+* Sprites, composite sprites, sprite rotation, and frame-based animation cycles, where any frame may hold for its own length of time
 * Direct drawing primitives (images, rectangles with pattern and image fills, SVG, text, particles, image-instance layers)
+* Draw lists: build a list of images, rectangles, circles, text and clickable regions each frame, publish it as a finished copy, and let one drawing paint it — safe with GPU rendering by construction, because the renderer only ever reads a list the game has finished
 * Radial lights and darkness/fog overlays that lights carve holes in
 * Display effects over a whole view or layer: fades, wipes, slides, zooms and an earthquake shake
-* Ready-made components: a self-disposing splash overlay and a sprite-tracking health bar
+* Ready-made components: a self-disposing splash overlay and a health bar that tracks a sprite or any world-pixel point
 * Physics: movement, easing, scripted motion, and collision detection — with named collision profiles, per-tile and per-animation-frame collision shapes and types, all authorable in a `.gts` tilesheet definition
 * Input: keyboard, mouse, gamepad, and touch (with tap, swipe and pinch gestures)
+* Input actions: named actions bound to any mix of keys, gamepad buttons, D-pad and stick directions, with swappable control profiles, presses latched so a tap shorter than a game step is never lost, hold-to-repeat, a stick that reads as a clean menu direction, every connected gamepad at once, and the last device used for on-screen prompts
 * Audio playback and mixing (via CodeBrix.Audio): master/music/sfx volume buses, a preload-to-PCM sound-effect voice pool, per-clip playback speed, and support for WAV, MP3, Ogg Vorbis and FLAC out of the box (plus any other format registered with CodeBrix.Audio, such as Opus)
 * MIDI music rendered live through a sampled instrument — SoundFont, SFZ and Decent Sampler instruments — with per-channel layering, a tempo control that does not change pitch, and MPE
-* A music system: fades and equal-power crossfades, reference-counted ducking, stingers, playlists, layered adaptive stems (including the stems of a Suno download, loaded straight from the zip or folder), and transitions quantised to the next beat or bar — exactly, through the tempo map, even where the music changes tempo
+* A music system: fades and equal-power crossfades, reference-counted ducking, stingers (on the music bus, or on the effects bus so a warning cue is heard whatever the music slider says, with a duck held until you release it), playlists, layered adaptive stems (including the stems of a Suno download, loaded straight from the zip or folder), and transitions quantised to the next beat or bar — exactly, through the tempo map, even where the music changes tempo
 * Endless streaming music: a provider contract for music that is produced as it plays (generated music, a procedural score), played with one call and handled by the music system like any other track — silence while the provider starts or falls behind is part of the contract, never an error
 * Save/load of engine state as JSON (via System.Text.Json + CodeBrix.Json.Extensions), including shared-reference object graphs
+* Asset bundles (zip-based, optionally encrypted) loaded from a file or from any readable stream, such as an embedded resource or a packaged app asset
+* An opt-in fixed-step update hook for deterministic game logic at a set rate, capped against stalls and frozen across the pause
 * A global pause that parks the whole engine at near-zero CPU and shifts every time baseline on resume, so nothing bursts or teleports
+* One-call window wiring: pause while minimized, resume when shown, and keyboard focus back to the game whenever the window is activated
+* Opening links in the player's browser from any thread, with a plain yes/no answer instead of an exception
 * A UI-agnostic core with a render-surface-adapter seam for headless unit testing
 
 ## Samples
@@ -157,6 +164,8 @@ var ball = sheet["ballBlue", 0, 0];
 
 Nothing is unpacked, renamed or repacked: the bundles are read where they lie. Images, sprite atlases, audio, fonts, SVG, Tiled maps and glTF models all become ordinary engine objects - tilesheets, audio resources, typefaces, scene layers, and models either as data or as pre-rendered sprite frames a 2D game can draw. It is the first implementation of the engine's asset-provider contract, so it is also the worked example for a provider of your own. Kenney's content is CC0 and is not part of the package.
 
+A game that registers from more than one place can call `RegisterKenneyAssets` instead, which skips a bundle already registered and reports per bundle what was read, skipped, missing or unreadable. Every pack carries a ready-made credit line (`CreditLines` for all of them), `CheckKeys` tells a game's tests which of its hand-written keys do not resolve and what kind each one is, and `GetKeyCatalog` lists every key by pack - with the frame names inside each sprite atlas - to copy exact spellings from. A key that does not resolve names its closest real keys in the error message.
+
 ## Generated music (optional)
 
 Endless, model-generated in-game music ships as a **separate** NuGet package, so that games which do not use it do not inherit the music generation stack:
@@ -180,7 +189,7 @@ var music = Engine.Instance.UseGeneratedMusic(new GeneratedMusicOptions { Preset
 music.FollowUp("FourOnTheFloor");   // new music for the next level, at a bar line
 ```
 
-The music is generated while the game runs and never ends; silence while a model loads or falls behind is part of the design, never an error. With no model registered a recorded piece plays in its place, and the engine log says so. The package registers no instruments and no model of its own: those are the game's choices, one `Register()` line each. It is the first implementation of the engine's streaming-music provider contract, so it is also the worked example for a provider of your own.
+The music is generated while the game runs and never ends; silence while a model loads or falls behind is part of the design, never an error. With no model registered a recorded piece plays in its place, and the engine log says so. The package registers no instruments and no model of its own: those are the game's choices, one `Register()` line each. It is the first implementation of the engine's streaming-music provider contract, so it is also the worked example for a provider of your own. A game's music policy can be unit-tested with no model and no audio device: the provider is an `IGeneratedMusicSession`, starting one goes through `IGeneratedMusicStarter`, and the engine's `MusicManager` is an `IMusicManager`, so a test hands the game's music code scripted fakes.
 
 ## Documentation
 

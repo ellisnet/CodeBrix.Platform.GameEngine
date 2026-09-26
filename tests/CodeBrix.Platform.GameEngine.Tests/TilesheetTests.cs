@@ -149,6 +149,22 @@ public class TilesheetTests
         tilesheet.GetRegion(RegionName(2)).Should().NotBeNull();
     }
 
+    [Fact]
+    public void Indexer_names_the_closest_regions_when_a_region_name_is_not_found()
+    {
+        //Arrange
+        using var tilesheet = CreateSheet();
+        tilesheet.AddRegion("ballBlue", new Rectangle(0, 0, TileSizePx, TileSizePx), new Size(TileSizePx, TileSizePx));
+        tilesheet.AddRegion("ballGrey", new Rectangle(TileSizePx, 0, TileSizePx, TileSizePx), new Size(TileSizePx, TileSizePx));
+
+        //Act
+        Action act = () => _ = tilesheet["ballBlu"];
+
+        //Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("No tilesheet region named 'ballBlu' exists. Did you mean: 'ballBlue'?*");
+    }
+
     private static Tilesheet CreateSheet()
     {
         var bitmap = new SKBitmap(SheetTilesPerRow * TileSizePx, SheetTilesPerRow * TileSizePx);

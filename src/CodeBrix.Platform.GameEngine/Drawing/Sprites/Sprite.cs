@@ -718,7 +718,9 @@ public partial class Sprite : Tile, IMovableOnSceneLayer, ICollisionMovableEntit
         {
             // Mark the last draw region as dirty so the background under this sprite is repainted.
             // VisualBoundsWorld is a world-space rectangle that also covers any rotation.
-            _sceneLayer.RefreshQueue.AddWorldRect(VisualBoundsWorld);
+            // A sprite on a layer that was never made live (for example one read from a save
+            // whose scenes were not merged) has no refresh queue.
+            _sceneLayer.RefreshQueue?.AddWorldRect(VisualBoundsWorld);
         }
 
         // clear the events

@@ -40,7 +40,7 @@ namespace CodeBrix.Platform.GameEngine.Host.Hosting;
 /// runs, so none of the scene-graph lifecycle applies.
 /// </para>
 /// </remarks>
-public abstract class SoftwareRenderedGameHostBase : IDisposable
+public abstract class SoftwareRenderedGameHostBase : IDisposable, IWindowLifecycleParticipant
 {
     private CodeBrixKeyboardAdapter? _keyboardAdapter;
     private byte[] _frameBuffer = [];
@@ -67,6 +67,7 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
             PauseWithEngine = true,
         };
         GameLoop.UnhandledException += OnGameLoopException;
+        WindowLifecycleParticipants.Add(this);
     }
 
     /// <summary>The canvas the game presents to.</summary>
@@ -143,6 +144,58 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
     {
     }
 
+    /// <summary>
+    /// Called on the UI thread when the window this host's canvas is in was minimized or otherwise hidden,
+    /// when the application wires the window with <see cref="GameWindowLifecycle.Attach"/>. Runs BEFORE the
+    /// engine pauses, while the game is still live: the place to latch the game's own pause menu so it is
+    /// showing when the player returns. May run before the host has initialized. The base implementation
+    /// does nothing.
+    /// </summary>
+    protected virtual void OnWindowHidden()
+    {
+    }
+
+    /// <summary>
+    /// Called on the UI thread when the window is visible again (see <see cref="OnWindowHidden"/>), after
+    /// the engine has resumed from a pause <see cref="GameWindowLifecycle"/> made. The base implementation
+    /// does nothing.
+    /// </summary>
+    protected virtual void OnWindowShown()
+    {
+    }
+
+    /// <summary>
+    /// Called on the UI thread when the window is activated, after keyboard focus has been handed back to
+    /// the canvas (when <see cref="GameWindowLifecycle.RefocusOnActivate"/> is on). Requires
+    /// <see cref="GameWindowLifecycle.Attach"/>. The base implementation does nothing.
+    /// </summary>
+    protected virtual void OnWindowActivated()
+    {
+    }
+
+    /// <summary>
+    /// Called on the UI thread when the window loses activation (another window has input focus). Requires
+    /// <see cref="GameWindowLifecycle.Attach"/>. The base implementation does nothing.
+    /// </summary>
+    protected virtual void OnWindowDeactivated()
+    {
+    }
+
+    GameSurfaceCanvas? IWindowLifecycleParticipant.LifecycleSurface => RenderSurface;
+
+    void IWindowLifecycleParticipant.NotifyWindowHidden() => OnWindowHidden();
+
+    void IWindowLifecycleParticipant.NotifyWindowShown() => OnWindowShown();
+
+    void IWindowLifecycleParticipant.NotifyWindowActivated(bool refocusSurface)
+    {
+        if (refocusSurface)
+            GameWindowLifecycle.RefocusSurface(RenderSurface);
+        OnWindowActivated();
+    }
+
+    void IWindowLifecycleParticipant.NotifyWindowDeactivated() => OnWindowDeactivated();
+
     /// <summary>Stops the game loop, calls <see cref="OnShutdown"/>, and releases the host's resources.</summary>
     public void Dispose()
     {
@@ -152,6 +205,8 @@ public abstract class SoftwareRenderedGameHostBase : IDisposable
         }
 
         _isDisposed = true;
+
+        WindowLifecycleParticipants.Remove(this);
 
         if (_enginePausedHandler is not null)
         {

@@ -113,6 +113,10 @@ public sealed class AssetsFile : IDisposable
     /// <param name="encrypt">A value indicating whether the asset file should use encryption. Defaults to <see langword="false"/>.</param>
     /// <returns>An <see cref="AssetsFile"/> instance representing the loaded or newly created asset file.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="path"/> is null, empty, or consists only of whitespace.</exception>
+    /// <remarks>
+    /// The instance joins <see cref="AllAssetsFiles"/> only when the load succeeds. When the file cannot be read
+    /// (a wrong password or a damaged archive) the exception propagates and nothing is registered.
+    /// </remarks>
     public static AssetsFile LoadOrCreate(string path, string? password = null, bool encrypt = false)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -125,12 +129,67 @@ public sealed class AssetsFile : IDisposable
             UseEncryption = encrypt
         };
 
-        _allAssetsFiles.Add(assetFile);
-
         if (File.Exists(path))
             assetFile.LoadZip();
         else
             assetFile._isLoaded = true;
+
+        // Registered only once the load succeeded: a bad password or a damaged archive throws
+        // above and leaves nothing behind in AllAssetsFiles.
+        _allAssetsFiles.Add(assetFile);
+
+        return assetFile;
+    }
+
+    /// <summary>
+    /// Loads an existing asset bundle from a readable stream, such as an embedded resource, a
+    /// packaged app asset or a download.
+    /// </summary>
+    /// <param name="stream">
+    /// The stream holding the bundle, read from its current position to its end. It must be readable;
+    /// it does not need to be seekable.
+    /// </param>
+    /// <param name="password">An optional password used to read a protected bundle. Can be null.</param>
+    /// <param name="register">
+    /// <see langword="true"/> (the default) to add the loaded instance to <see cref="AllAssetsFiles"/>,
+    /// as <see cref="LoadOrCreate"/> does; <see langword="false"/> to keep it to the caller.
+    /// </param>
+    /// <returns>The loaded <see cref="AssetsFile"/>. Dispose it to release its entries (and unregister it).</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> cannot be read.</exception>
+    /// <remarks>
+    /// <para>
+    /// The caller keeps ownership of <paramref name="stream"/>: this method never closes or disposes it,
+    /// and every entry is copied into memory before it returns, so the stream may be disposed right away.
+    /// Its position afterwards is unspecified.
+    /// </para>
+    /// <para>
+    /// As with <see cref="LoadOrCreate"/>, a failed load (a wrong password or a damaged archive)
+    /// propagates its exception and registers nothing.
+    /// </para>
+    /// <para>
+    /// A stream-loaded bundle has no <see cref="FilePath"/>: <see cref="Save"/> throws, an engine
+    /// save leaves it out (it could not be reopened on load), and a load that includes the assets
+    /// part clears it like any other registered bundle, so load it again afterwards if still needed.
+    /// </para>
+    /// </remarks>
+    public static AssetsFile Load(Stream stream, string? password = null, bool register = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        if (!stream.CanRead)
+            throw new ArgumentException("Stream must be readable.", nameof(stream));
+
+        var assetFile = new AssetsFile
+        {
+            Password = password
+        };
+
+        assetFile.LoadZip(stream);
+
+        // Registered only once the load succeeded, as in LoadOrCreate.
+        if (register)
+            _allAssetsFiles.Add(assetFile);
 
         return assetFile;
     }
@@ -138,6 +197,7 @@ public sealed class AssetsFile : IDisposable
     /// <summary>
     /// Gets the file path associated with the current instance.
     /// </summary>
+    /// <remarks>Empty for a bundle read with <see cref="Load(Stream, string?, bool)"/>.</remarks>
     [JsonInclude]
     public string FilePath { get; private set; } = string.Empty;
 
@@ -164,6 +224,28 @@ public sealed class AssetsFile : IDisposable
         if (_isLoaded)
             return;
 
+        if (string.IsNullOrEmpty(FilePath) || !File.Exists(FilePath))
+        {
+            _zipFile?.Close();
+            _zipFile = null;
+            _zipEntries.Clear();
+            _isLoaded = true;
+            return;
+        }
+
+        using var stream = File.OpenRead(FilePath);
+        LoadZip(stream);
+    }
+
+    // Reads every entry of the archive in 'stream' into memory. The stream stays the caller's:
+    // the archive reader is told not to own it, so it is never closed here.
+    private void LoadZip(Stream stream)
+    {
+        if (_isLoaded)
+            return;
+
+        MemoryStream? buffered = null;
+
         try
         {
             Engine.Logger.LogInformation("Loading assets file.");
@@ -172,13 +254,18 @@ public sealed class AssetsFile : IDisposable
             _zipFile = null;
             _zipEntries.Clear();
 
-            if (!File.Exists(FilePath))
+            // The archive reader needs a seekable stream that starts at the archive; anything else
+            // (a forward-only stream, or one positioned partway in) is copied into memory first.
+            var archiveStream = stream;
+            if (!stream.CanSeek || stream.Position != 0)
             {
-                _isLoaded = true;
-                return;
+                buffered = new MemoryStream();
+                stream.CopyTo(buffered);
+                buffered.Position = 0;
+                archiveStream = buffered;
             }
 
-            _zipFile = new ZipFile(File.OpenRead(FilePath));
+            _zipFile = new ZipFile(archiveStream, leaveOpen: true);
 
             if (!string.IsNullOrEmpty(Password))
                 _zipFile.Password = Password;
@@ -224,9 +311,10 @@ public sealed class AssetsFile : IDisposable
         }
         finally
         {
-            // Once contents are buffered, no need to keep the file handle open.
+            // Once contents are buffered, no need to keep the archive open.
             _zipFile?.Close();
             _zipFile = null;
+            buffered?.Dispose();
         }
     }
 
@@ -389,8 +477,14 @@ public sealed class AssetsFile : IDisposable
     /// <summary>
     /// Saves the current set of entries to a zip file at the specified file path.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown for a bundle read with <see cref="Load(Stream, string?, bool)"/>, which has no file path to save to.
+    /// </exception>
     public void Save()
     {
+        if (string.IsNullOrEmpty(FilePath))
+            throw new InvalidOperationException("This assets file was loaded from a stream and has no file path to save to.");
+
         EnsureLoaded();
 
         _zipFile?.Close();

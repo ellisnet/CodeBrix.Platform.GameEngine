@@ -281,6 +281,128 @@ public class ImageInstanceLayerTests : IDisposable
         sceneLayer.RefreshQueue.IsDirty.Should().BeTrue();
     }
 
+    [Fact]
+    public void the_gpu_tier_draw_survives_updates_that_recycle_add_and_remove_instances_on_another_thread()
+    {
+        //Arrange - every instance is recycled (replaced in the list) on every update, and the list grows
+        //  and shrinks, while a second thread paints the layer the way the UI thread does on the GPU tier
+        var host = NewHost();
+        using var bitmap = NewSolidBitmap(SKColors.Red);
+        var layer = new ImageInstanceLayer(
+            host,
+            host.ViewManager.Views[0],
+            new Rectangle(0, 0, 64, 64),
+            initializer: (_, _) => NewInstances(bitmap, 24),
+            shouldRecycle: (_, _) => true,
+            recycleInstance: (old, _, _) => new ImageInstance { Bitmap = old.Bitmap, Bounds = old.Bounds, Tint = old.Tint });
+        _created.Add(layer);
+
+        Exception? failure = null;
+        var stop = 0;
+        var painter = new Thread(() =>
+        {
+            using var gpu = new GpuBackbuffer(64, 64);
+            var until = DateTime.UtcNow.AddSeconds(2);
+
+            try
+            {
+                while (DateTime.UtcNow < until && failure is null)
+                    layer.Draw(gpu, new RectangleF(0, 0, 64, 64));
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+            finally
+            {
+                Volatile.Write(ref stop, 1);
+            }
+        });
+
+        //Act - this thread is the engine thread
+        var tick = HighResTimer.GetCurrentTick();
+        painter.Start();
+
+        while (Volatile.Read(ref stop) == 0)
+        {
+            tick += HighResTimer.TicksPerSecond / 60;
+            layer.Update(tick);
+
+            if (layer.Instances.Count < 40)
+                layer.Instances.Add(new ImageInstance { Bitmap = bitmap, Bounds = new RectangleF(1, 1, 4, 4) });
+            else
+                layer.Instances.RemoveRange(24, 16);
+        }
+
+        painter.Join();
+
+        //Assert - before the fix the painter hit "Collection was modified" within a few frames
+        failure.Should().BeNull();
+    }
+
+    [Fact]
+    public void the_gpu_tier_paints_the_instances_as_they_stood_at_the_last_update()
+    {
+        //Arrange
+        var host = NewHost();
+        using var bitmap = NewSolidBitmap(SKColors.Red);
+        var layer = new ImageInstanceLayer(host, host.ViewManager.Views[0], new Rectangle(0, 0, 8, 8), "gpu-layer");
+        _created.Add(layer);
+        layer.Instances.Add(new ImageInstance { Bitmap = bitmap, Bounds = new RectangleF(2, 2, 4, 4) });
+        using var gpu = new GpuBackbuffer(8, 8);
+
+        //Act - no update yet: the GPU tier has nothing published; the CPU tier reads the live list as before
+        using var gpuBeforeUpdate = DrawToBitmap(layer, gpu, new RectangleF(0, 0, 8, 8));
+        using var cpuBeforeUpdate = DrawToBitmap(layer, 8, 8, new RectangleF(0, 0, 8, 8));
+        layer.Update(HighResTimer.GetCurrentTick() + HighResTimer.TicksPerSecond);
+        using var gpuAfterUpdate = DrawToBitmap(layer, gpu, new RectangleF(0, 0, 8, 8));
+
+        //Assert
+        gpuBeforeUpdate.GetPixel(3, 3).Should().NotBe(SKColors.Red);
+        cpuBeforeUpdate.GetPixel(3, 3).Should().Be(SKColors.Red);
+        gpuAfterUpdate.GetPixel(3, 3).Should().Be(SKColors.Red);
+    }
+
+    [Fact]
+    public void InitializeInstances_publishes_the_new_instances_to_the_gpu_tier()
+    {
+        //Arrange
+        var host = NewHost();
+        using var bitmap = NewSolidBitmap(SKColors.Red);
+        var layer = new ImageInstanceLayer(
+            host,
+            host.ViewManager.Views[0],
+            new Rectangle(0, 0, 8, 8),
+            initializer: (_, _) => new[] { new ImageInstance { Bitmap = bitmap, Bounds = new RectangleF(2, 2, 4, 4) } });
+        _created.Add(layer);
+        using var gpu = new GpuBackbuffer(8, 8);
+
+        //Act
+        using var result = DrawToBitmap(layer, gpu, new RectangleF(0, 0, 8, 8));
+
+        //Assert
+        result.GetPixel(3, 3).Should().Be(SKColors.Red);
+    }
+
+    private static List<ImageInstance> NewInstances(SKBitmap bitmap, int count)
+    {
+        var instances = new List<ImageInstance>();
+
+        for (var i = 0; i < count; i++)
+            instances.Add(new ImageInstance { Bitmap = bitmap, Bounds = new RectangleF(i % 60, i % 60, 4, 4), VelocityX = 1f });
+
+        return instances;
+    }
+
+    private static SKBitmap DrawToBitmap(ImageInstanceLayer layer, BackbufferBase backbuffer, RectangleF destRectScreen)
+    {
+        backbuffer.Canvas.Clear(SKColors.Transparent);
+        layer.Draw(backbuffer, destRectScreen);
+
+        using var snapshot = backbuffer.Snapshot();
+        return SKBitmap.FromImage(snapshot);
+    }
+
     /// <summary>A render-surface adapter that presents nowhere.</summary>
     private sealed class FakeRenderSurfaceAdapter : RenderSurfaceAdapterBase, IDisposable
     {

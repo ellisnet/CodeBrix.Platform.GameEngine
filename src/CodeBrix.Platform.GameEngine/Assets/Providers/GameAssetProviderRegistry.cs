@@ -410,14 +410,18 @@ public sealed class GameAssetProviderRegistry
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
+        //The "Did you mean" suggestions are built only here, on the failure path, from the providers'
+        //  own Describe(); a hit costs nothing extra
         if (!TryFind(key, out var provider))
             throw new KeyNotFoundException(
                 $"No asset provider is registered for the key '{key}'. Asset keys are of the form "
-                + "'<providerId>:<provider-relative identifier>'.");
+                + "'<providerId>:<provider-relative identifier>'."
+                + KeySuggestions.DidYouMean(key, () => Describe().Select(described => described.Key)));
 
         if (!provider.TryDescribe(key, out var descriptor))
             throw new KeyNotFoundException(
-                $"The asset provider '{provider.ProviderId}' does not hold an asset with the key '{key}'.");
+                $"The asset provider '{provider.ProviderId}' does not hold an asset with the key '{key}'."
+                + KeySuggestions.DidYouMean(key, () => provider.Describe().Select(described => described.Key)));
 
         return (provider, descriptor);
     }

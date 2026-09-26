@@ -51,5 +51,29 @@ public enum AssetTypes
     /// <summary>
     /// Represents a tilesheet definition file (.gts) for <see cref="CodeBrix.Platform.GameEngine.Drawing.Tilesheets.GTS.TilesheetDefinition"/>.
     /// </summary>
-    TilesheetDefinition = 7
+    TilesheetDefinition = 7,
+
+    /// <summary>
+    /// A scene definition file; not currently supported. A bundle may carry such entries: they load
+    /// and can be read back by type, but the engine does not interpret them.
+    /// </summary>
+    SceneDefinition = 8,
+
+    /// <summary>
+    /// An animation definition file; not currently supported. A bundle may carry such entries: they
+    /// load and can be read back by type, but the engine does not interpret them.
+    /// </summary>
+    AnimationDefinition = 9,
+
+    /// <summary>
+    /// A sound definition file; not currently supported. A bundle may carry such entries: they load
+    /// and can be read back by type, but the engine does not interpret them.
+    /// </summary>
+    AudioDefinition = 10,
+
+    /// <summary>
+    /// A sprite definition file; not currently supported. A bundle may carry such entries: they load
+    /// and can be read back by type, but the engine does not interpret them.
+    /// </summary>
+    SpriteDefinition = 11
 }

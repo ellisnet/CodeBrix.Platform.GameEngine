@@ -1,9 +1,11 @@
 using System;
 using System.Drawing;
 using System.Reflection;
+using System.Threading;
 using CodeBrix.Platform.GameEngine.Drawing.Direct.Particles;
 using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
+using CodeBrix.Platform.GameEngine.Timers;
 using SilverAssertions;
 using SkiaSharp;
 using Xunit;
@@ -90,6 +92,110 @@ public class ParticleSurfaceTests : IDisposable
 
         //Assert
         result.Alpha.Should().Be((byte)((128 * 128 * 128) / (255 * 255)));
+    }
+
+    [Fact]
+    public void the_gpu_tier_paints_a_copy_taken_at_the_last_update_and_the_cpu_tier_the_live_particles()
+    {
+        //Arrange - one still, long-lived particle in the top-left quarter
+        _surface.Burst(StillEmitter(16, 16), 1);
+        using var gpu = new GpuBackbuffer(64, 64);
+        var tick = HighResTimer.GetCurrentTick() + HighResTimer.TicksPerSecond;
+
+        //Act - the first GPU-tier paint only starts the copying; the next update publishes the particle;
+        //  a burst after that update reaches the CPU tier at once and the GPU tier only with the next update
+        var gpuFirstFrame = AlphaAt(gpu, 16, 16);
+        var cpuFirstFrame = AlphaAt(new BitmapBackbuffer(64, 64), 16, 16);
+        _surface.Update(tick);
+        var gpuAfterUpdate = AlphaAt(gpu, 16, 16);
+        _surface.Burst(StillEmitter(48, 48), 1);
+        var gpuNewBurstBeforeUpdate = AlphaAt(gpu, 48, 48);
+        var cpuNewBurstBeforeUpdate = AlphaAt(new BitmapBackbuffer(64, 64), 48, 48);
+        _surface.Update(tick + (HighResTimer.TicksPerSecond / 60));
+        var gpuNewBurstAfterUpdate = AlphaAt(gpu, 48, 48);
+
+        //Assert
+        gpuFirstFrame.Should().Be(0);
+        cpuFirstFrame.Should().BeGreaterThan(0);
+        gpuAfterUpdate.Should().BeGreaterThan(0);
+        gpuNewBurstBeforeUpdate.Should().Be(0);
+        cpuNewBurstBeforeUpdate.Should().BeGreaterThan(0);
+        gpuNewBurstAfterUpdate.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void the_gpu_tier_draw_survives_updates_and_bursts_on_another_thread()
+    {
+        //Arrange - the engine thread bursts, integrates and compacts while a second thread paints the way the
+        //  UI thread does on the GPU tier
+        var emitter = new ParticleEmitter { Position = new PointF(32, 32), LifeRange = (0.01f, 0.2f), SizeRange = (2f, 4f) };
+        Exception? failure = null;
+        var stop = 0;
+        var painter = new Thread(() =>
+        {
+            using var gpu = new GpuBackbuffer(64, 64);
+            var until = DateTime.UtcNow.AddSeconds(1);
+
+            try
+            {
+                while (DateTime.UtcNow < until && failure is null)
+                    _surface.Draw(gpu, new RectangleF(0, 0, 64, 64));
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+            finally
+            {
+                Volatile.Write(ref stop, 1);
+            }
+        });
+
+        //Act
+        var tick = HighResTimer.GetCurrentTick();
+        painter.Start();
+
+        while (Volatile.Read(ref stop) == 0)
+        {
+            tick += HighResTimer.TicksPerSecond / 60;
+            _surface.Burst(emitter, 50);
+            _surface.Update(tick);
+        }
+
+        painter.Join();
+
+        //Assert
+        failure.Should().BeNull();
+    }
+
+    private static ParticleEmitter StillEmitter(float x, float y) => new()
+    {
+        Position = new PointF(x, y),
+        LifeRange = (100f, 100f),
+        VelocityRangeX = (0f, 0f),
+        VelocityRangeY = (0f, 0f),
+        SizeRange = (4f, 4f),
+        GravityX = 0f,
+        GravityY = 0f,
+        Color = SKColors.Red
+    };
+
+    private byte AlphaAt(BackbufferBase backbuffer, int x, int y)
+    {
+        try
+        {
+            backbuffer.Canvas.Clear(SKColors.Transparent);
+            _surface.Draw(backbuffer, new RectangleF(0, 0, 64, 64));
+
+            using var snapshot = backbuffer.Snapshot();
+            using var bitmap = SKBitmap.FromImage(snapshot);
+            return bitmap.GetPixel(x, y).Alpha;
+        }
+        finally
+        {
+            if (backbuffer is BitmapBackbuffer)
+                backbuffer.Dispose();
+        }
     }
 
     /// <summary>A render-surface adapter that presents nowhere.</summary>

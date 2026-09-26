@@ -309,6 +309,233 @@ public class KenneyGameAssetProviderTests : IDisposable
     }
 
     [Fact]
+    public void AddNewSources_skips_a_source_that_is_already_registered()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(TestFixtures.SimulatedBundleFileName);
+        int before = provider.AssetCount;
+
+        //Act
+        KenneyAssetsRegistration registration = provider.AddNewSources(
+            TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName),
+            TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName));
+
+        //Assert - no second slug with a numeric suffix, and the new pack arrived
+        provider.Packs.Select(pack => pack.Slug).Should().BeEquivalentTo([SimulatedSlug, PuzzleSlug]);
+        provider.AssetCount.Should().BeGreaterThan(before);
+        registration.Provider.Should().BeSameAs(provider);
+        registration.Sources.Select(source => source.Status).Should().BeEquivalentTo(
+            [KenneySourceStatus.AlreadyRegistered, KenneySourceStatus.Read]);
+        registration.Sources[0].Packs.Should().ContainSingle().Which.Slug.Should().Be(SimulatedSlug);
+        registration.Sources[1].Packs.Should().ContainSingle().Which.Slug.Should().Be(PuzzleSlug);
+        registration.Packs.Count.Should().Be(2);
+        registration.Unavailable.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AddNewSources_recognizes_a_path_given_twice_in_one_call_and_a_relative_spelling()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        string full = TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName);
+        string relative = Path.GetRelativePath(Environment.CurrentDirectory, full);
+
+        //Act
+        KenneyAssetsRegistration registration = provider.AddNewSources(full, relative);
+
+        //Assert
+        provider.Packs.Should().ContainSingle();
+        registration.Sources.Select(source => source.Status).Should().BeEquivalentTo(
+            [KenneySourceStatus.Read, KenneySourceStatus.AlreadyRegistered]);
+        registration.Packs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AddNewSources_reports_a_missing_and_an_unreadable_source()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        string folder = TestFixtures.CreateScratchFolder("broken");
+        _scratchFolders.Add(folder);
+        string broken = Path.Combine(folder, "kenney_broken.zip");
+        File.WriteAllText(broken, "this is not a zip file");
+        string missing = TestFixtures.BundlePath("no-such-bundle.zip");
+
+        //Act
+        KenneyAssetsRegistration registration = provider.AddNewSources(
+            missing, broken, TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName));
+
+        //Assert
+        registration.Sources.Select(source => source.Status).Should().BeEquivalentTo(
+            [KenneySourceStatus.Missing, KenneySourceStatus.Unreadable, KenneySourceStatus.Read]);
+        registration.Unavailable.Count.Should().Be(2);
+        registration.Sources[0].Message.Should().Contain("no-such-bundle.zip");
+        registration.Sources[1].Message.Should().Contain("kenney_broken.zip");
+        registration.Sources[0].Packs.Should().BeEmpty();
+        registration.Warnings.Should().Contain(warning => warning.Contains("no-such-bundle.zip"));
+        provider.Packs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AddNewSources_gives_the_same_catalog_as_AddSources_for_a_source_read_once()
+    {
+        //Arrange
+        KenneyGameAssetProvider viaAdd = Provider(new KenneyAssetsOptions());
+        KenneyGameAssetProvider viaAddNew = Provider(new KenneyAssetsOptions());
+        string[] paths =
+        [
+            TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName),
+            TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName),
+        ];
+
+        //Act
+        IReadOnlyList<string> warnings = viaAdd.AddSources(paths);
+        KenneyAssetsRegistration registration = viaAddNew.AddNewSources(paths);
+
+        //Assert
+        registration.Warnings.Should().BeEquivalentTo(warnings);
+        viaAddNew.Describe().Select(descriptor => descriptor.Key)
+            .Should().BeEquivalentTo(viaAdd.Describe().Select(descriptor => descriptor.Key));
+        viaAddNew.Packs.Should().BeEquivalentTo(viaAdd.Packs);
+    }
+
+    [Fact]
+    public void AddNewSources_refuses_options_that_name_another_provider()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+
+        //Act
+        Action act = () => provider.AddNewSources(new KenneyAssetsOptions { ProviderId = "mods" });
+
+        //Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void CreditLines_lists_one_line_per_registered_pack()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(
+            TestFixtures.SimulatedBundleFileName, TestFixtures.PuzzlePackFileName);
+
+        //Act
+        IReadOnlyList<string> lines = provider.CreditLines;
+
+        //Assert
+        lines.Should().BeEquivalentTo(
+            ["Simulated Bundle (1.0) - Kenney (CC0)", "Puzzle Pack (1.1) - Kenney (CC0)"],
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public void CheckKeys_reports_the_missing_keys_and_the_kind_of_each_found_one()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(TestFixtures.PuzzlePackFileName);
+        string atlas = $"kenney:{PuzzleSlug}/Spritesheet/spritesheet_default";
+        string image = $"{PuzzleSlug}/PNG/Double/ballBlue";
+        string missing = $"kenney:{PuzzleSlug}/PNG/Double/ballPurple";
+
+        //Act
+        KenneyKeyCheck check = provider.CheckKeys([atlas, image, missing, "other:thing"]);
+
+        //Assert
+        check.AllFound.Should().BeFalse();
+        check.MissingKeys.Should().BeEquivalentTo([missing, "other:thing"]);
+        check.Keys.Count.Should().Be(4);
+        check[atlas].Kind.Should().Be(GameAssetKind.SpriteAtlas);
+        check[atlas].AtlasFrameCount.Should().BeGreaterThan(0);
+        check[image].Kind.Should().Be(GameAssetKind.Image);
+        check[image].SizeBytes.Should().BeGreaterThan(0);
+        check[missing].Kind.Should().Be(GameAssetKind.Unknown);
+        check.CountsByKind[GameAssetKind.SpriteAtlas].Should().Be(1);
+        check.CountsByKind[GameAssetKind.Image].Should().Be(1);
+        check.CountsByKind.Should().NotContainKey(GameAssetKind.Unknown);
+    }
+
+    [Fact]
+    public void CheckKeys_of_every_described_key_finds_them_all()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(TestFixtures.SimulatedBundleFileName);
+
+        //Act
+        KenneyKeyCheck check = provider.CheckKeys(provider.Describe().Select(descriptor => descriptor.Key));
+
+        //Assert
+        check.AllFound.Should().BeTrue();
+        check.Keys.Count.Should().Be(provider.AssetCount);
+    }
+
+    [Fact]
+    public void GetKeyCatalog_lists_keys_by_pack_with_kinds_and_atlas_frame_names()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(
+            TestFixtures.SimulatedBundleFileName, TestFixtures.PuzzlePackFileName);
+
+        //Act
+        string catalog = provider.GetKeyCatalog();
+        string[] lines = catalog.Split(Environment.NewLine);
+
+        //Assert
+        lines[0].Should().Be($"Asset keys of provider 'kenney': 2 pack(s), {provider.AssetCount} key(s).");
+        lines.Should().Contain($"{SimulatedSlug} - Simulated Bundle (1.0) - {provider.Packs[0].AssetCount} key(s)");
+        lines.Should().Contain($"{PuzzleSlug} - Puzzle Pack (1.1) - {provider.Packs[1].AssetCount} key(s)");
+        lines.Should().Contain($"  kenney:{SimulatedSlug}/Audio/radar2  [Audio]");
+        lines.Should().Contain(line => line.StartsWith(
+            $"  kenney:{PuzzleSlug}/Spritesheet/spritesheet_default  [SpriteAtlas, ", StringComparison.Ordinal));
+        //Assert - frame names are the region names, extension removed, indented under the atlas
+        lines.Should().Contain("      ballBlue");
+        lines.Should().NotContain("      ballBlue.png");
+        lines.Should().Contain(line => line.EndsWith("listed only]", StringComparison.Ordinal));
+        catalog.IndexOf(SimulatedSlug + " - ", StringComparison.Ordinal)
+            .Should().BeLessThan(catalog.IndexOf(PuzzleSlug + " - ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetKeyCatalog_frame_names_are_the_ones_the_materialized_atlas_answers_to()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(TestFixtures.PuzzlePackFileName);
+        string key = $"kenney:{PuzzleSlug}/Spritesheet/spritesheet_default";
+        GameAssetDescriptor descriptor = Descriptor(provider, key);
+
+        //Act
+        string[] frames = provider
+            .GetKeyCatalog(new GameAssetQuery { Kind = GameAssetKind.SpriteAtlas, NameContains = "spritesheet_default" })
+            .Split(Environment.NewLine)
+            .Where(line => line.StartsWith("      ", StringComparison.Ordinal))
+            .Select(line => line.Trim())
+            .ToArray();
+        Tilesheet sheet = provider.MaterializeTilesheet(descriptor);
+
+        //Assert
+        frames.Should().NotBeEmpty();
+        frames.Should().AllSatisfy(frame => sheet.GetRegion(frame).Should().NotBeNull());
+    }
+
+    [Fact]
+    public void WriteKeyCatalog_applies_the_query_and_leaves_out_packs_with_no_listed_key()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(
+            TestFixtures.SimulatedBundleFileName, TestFixtures.PuzzlePackFileName);
+        using StringWriter writer = new();
+
+        //Act
+        provider.WriteKeyCatalog(writer, new GameAssetQuery { Kind = GameAssetKind.Audio });
+        string[] lines = writer.ToString().Split(Environment.NewLine);
+
+        //Assert
+        lines[0].Should().Be("Asset keys of provider 'kenney': 1 pack(s), 6 key(s) matching the query.");
+        lines.Should().NotContain(line => line.StartsWith(PuzzleSlug, StringComparison.Ordinal));
+        lines.Where(line => line.StartsWith("  kenney:", StringComparison.Ordinal))
+            .Should().AllSatisfy(line => line.Should().EndWith("[Audio]"));
+    }
+
+    [Fact]
     public void AddSources_refuses_options_that_name_another_provider()
     {
         //Arrange
