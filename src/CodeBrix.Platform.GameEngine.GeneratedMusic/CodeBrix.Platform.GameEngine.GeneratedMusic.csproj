@@ -122,8 +122,7 @@
     <ProjectReference Include="..\CodeBrix.Platform.GameEngine\CodeBrix.Platform.GameEngine.csproj" />
   </ItemGroup>
 
-  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="GenerateNuspec;Pack"
-          Condition="'$(UseLocalEngineProject)' == 'true'">
+  <Target Name="_BlockPackWithLocalEngineProject" BeforeTargets="GenerateNuspec;Pack" Condition="'$(UseLocalEngineProject)' == 'true'">
     <Error Text="UseLocalEngineProject=true is for local development only. The resulting package would have no engine dependency and no engine dll. Publish the engine first, then flip the UseLocalEngineProject default in this project to false and pin the published engine version." />
   </Target>
 
@@ -135,7 +134,7 @@
     Register() call each at start-up.
   -->
   <ItemGroup>
-    <PackageReference Include="CodeBrix.Audio.MusicGeneration.MitLicenseForever" Version="1.0.267.291" />
+    <PackageReference Include="CodeBrix.Audio.MusicGeneration.MitLicenseForever" Version="1.0.269.1362" />
   </ItemGroup>
 
 </Project>
