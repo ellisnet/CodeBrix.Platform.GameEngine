@@ -93,10 +93,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" Version="1.0.275.9000-split.1" />
+    <PackageReference Include="CodeBrix.Platform.ApacheLicenseForever" Version="1.0.279.30" />
     <PackageReference Include="CodeBrix.Platform.SkiaSharp.Views.MitLicenseForever" Version="4.153.1" />
-    <PackageReference Include="CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever" Version="1.0.275.9000-split.1" />
-    <PackageReference Include="CodeBrix.Platform.Svg.ApacheLicenseForever" Version="1.0.275.9000-split.1" />
+    <PackageReference Include="CodeBrix.Platform.Graphics3DGL.ApacheLicenseForever" Version="1.0.279.30" />
+    <PackageReference Include="CodeBrix.Platform.Svg.ApacheLicenseForever" Version="1.0.279.30" />
     <PackageReference Include="SkiaSharp" Version="4.153.1" />
   </ItemGroup>
 
@@ -115,10 +115,10 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.12" />
-    <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.252.363" />
+    <PackageReference Include="CodeBrix.SkiaSvg.MitLicenseForever" Version="1.0.278.1152" />
     <PackageReference Include="CodeBrix.Compression.MitLicenseForever" Version="1.0.248.1109" />
-    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.269.1270" />
-    <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.248.1133" />
+    <PackageReference Include="CodeBrix.Audio.MitLicenseForever" Version="1.0.271.1165" />
+    <PackageReference Include="CodeBrix.Json.Extensions.MitLicenseForever" Version="1.0.275.121" />
   </ItemGroup>
 
   <!--
