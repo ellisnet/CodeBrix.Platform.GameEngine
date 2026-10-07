@@ -500,7 +500,9 @@ The one rule games must respect:
   application's UI layer — the window's restore/visibility event, a UI-level
   KeyDown, or a UI-level PointerPressed (the ParticleTest sample's campfire
   toggle, OnCanvasPointerPressed, is the worked example — see WORKING EXAMPLES
-  ON GITHUB). The obvious application wiring: minimize ->
+  ON GITHUB; that sample wires no mouse adapter, so += is enough there - with
+  one, subscribe through AddHandler(..., handledEventsToo: true), see INPUT).
+  The obvious application wiring: minimize ->
   Engine.Instance.Pause(), restore -> Engine.Instance.Resume() - which is what
   GameWindowLifecycle.Attach(window) does in one call (see WINDOW LIFECYCLE).
 
@@ -1296,6 +1298,33 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   FOCUSED element: a handler attached to the canvas never sees keys while a
   sibling control is focused.
 
+  POINTER EVENTS ON THE SURFACE ARE THE GAME'S: every pointer event the mouse
+  adapter reads on the canvas (press, release, wheel, cancel, capture loss, and
+  a DRAG - a move while a button it tracks is held), and every event of a
+  contact the touch adapter tracks, is marked Handled. A HOVER move (no button
+  held) is read but left unhandled, so hover tracking above the canvas keeps
+  working. So an ancestor of the canvas (a ScrollViewer, a page-level click
+  handler) does not act on a game click as well, a wheel over the game does not
+  scroll the page, and a click on the focused canvas keeps its keyboard focus.
+  The refocus-on-press (keyboard adapter, EnsureFocus) still runs on every
+  press. The rule's edges:
+    - Only the canvas's own events: a click on a link or button OUTSIDE the
+      canvas is untouched and moves focus to whatever handles it, as usual.
+    - An event something INSIDE the canvas handled first (a Button placed over
+      the game) is left alone; the adapters do not read it, as before.
+    - The touch adapter leaves what it ignores unhandled (mouse input without
+      emulateMouse; moves/releases of contacts it is not tracking). The
+      keyboard adapter reads no pointer input and marks none handled.
+    - GOTCHA: Handled also hides an event from handlers on the SAME canvas that
+      were attached with += AFTER the mouse adapter (the host bases attach it
+      during initialization). Attach your own canvas pointer handlers with
+          canvas.AddHandler(UIElement.PointerPressedEvent,
+              new PointerEventHandler(OnCanvasPointerPressed),
+              handledEventsToo: true);
+      (handlers attached BEFORE the adapters, e.g. in XAML, still run). The
+      adapters themselves subscribe that way, so they all see every event
+      whichever of them marked it first.
+
   RELATIVE MOUSE (FPS mouse look): RelativeMouseSession(GameSurfaceCanvas
   renderSurface) over MouseDevice.MouseMoved — Begin() (hide + confine +
   accumulate), per-tic ConsumeDelta() -> (int DeltaX, int DeltaY), End(),
@@ -1304,7 +1333,9 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
 
   WHILE PAUSED: engine/game-loop input stops entirely. UI-level input
   (canvas.KeyDown, canvas.PointerPressed at the XAML layer) keeps flowing —
-  that is where pause-toggle input belongs.
+  that is where pause-toggle input belongs. With the mouse adapter on the
+  canvas, subscribe a pointer pause toggle with handledEventsToo: true (see
+  POINTER EVENTS ON THE SURFACE ARE THE GAME'S above).
 
 AUDIO
 --------------------------------------------------------------------------------

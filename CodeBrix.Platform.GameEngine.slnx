@@ -21,10 +21,13 @@
     <Project Path="tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/CodeBrix.Platform.GameEngine.Sdl2.Tests.csproj" />
     <Project Path="tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests.csproj" />
     <Project Path="tests/CodeBrix.Platform.GameEngine.GeneratedMusic.Tests/CodeBrix.Platform.GameEngine.GeneratedMusic.Tests.csproj" />
+    <Project Path="tests/CodeBrix.Platform.GameEngine.CardsAndDice.Tests/CodeBrix.Platform.GameEngine.CardsAndDice.Tests.csproj" />
   </Folder>
   <Project Path="src/CodeBrix.Platform.GameEngine/CodeBrix.Platform.GameEngine.csproj" />
   <Project Path="src/CodeBrix.Platform.GameEngine.Host/CodeBrix.Platform.GameEngine.Host.csproj" />
   <Project Path="src/CodeBrix.Platform.GameEngine.Sdl2/CodeBrix.Platform.GameEngine.Sdl2.csproj" />
   <Project Path="src/CodeBrix.Platform.GameEngine.KenneyAssets/CodeBrix.Platform.GameEngine.KenneyAssets.csproj" />
   <Project Path="src/CodeBrix.Platform.GameEngine.GeneratedMusic/CodeBrix.Platform.GameEngine.GeneratedMusic.csproj" />
+  <Project Path="src/CodeBrix.Platform.GameEngine.CardsAndDice/CodeBrix.Platform.GameEngine.CardsAndDice.csproj" />
+  <Project Path="src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets/CodeBrix.Platform.GameEngine.CardsAndDice.Assets.csproj" />
 </Solution>

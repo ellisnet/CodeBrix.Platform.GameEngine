@@ -5,13 +5,14 @@ Notes for people and agents MAINTAINING this repository — not for package cons
 
 If you are CONSUMING one of the NuGet packages, this is the wrong file. Read
 AGENT-README.txt (repository root) for the game engine,
-src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt for gamepads, or
+src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt for gamepads,
 src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt for Kenney asset
-bundles. See README-INDEX.txt for the map.
+bundles, or src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt for
+cards and dice. See README-INDEX.txt for the map.
 
 PURPOSE AND SCOPE
 =================
-This repository produces THREE published NuGet packages from FOUR projects.
+This repository produces these published NuGet packages.
 
   CodeBrix.Platform.GameEngine.MitLicenseForever          License: MIT
       A fully managed, cross-platform 2D / 2.5D game engine for .NET, built on
@@ -33,9 +34,22 @@ This repository produces THREE published NuGet packages from FOUR projects.
       Consumer documentation:
       src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt.
 
-The three packages are versioned and PUBLISHED INDEPENDENTLY; they do not share a
-version number. That is intentional — both add-on projects use only PUBLIC engine
-API and neither has an InternalsVisibleTo seam into the engine core.
+  CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever License: MIT
+      Generated in-game music: CodeBrix.Audio.MusicGeneration's endless,
+      model-generated music played on the engine's music bus. Packed by
+      src/CodeBrix.Platform.GameEngine.GeneratedMusic. Consumer documentation:
+      src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt.
+
+  CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever   License: MIT
+      Cards, decks, piles, dice and an animated tabletop, with embedded card,
+      dice and symbol artwork and sound effects. Packed by
+      src/CodeBrix.Platform.GameEngine.CardsAndDice, and it CARRIES BOTH
+      ASSEMBLIES — the non-packable CardsAndDice.Assets dll (the embedded
+      artwork) is injected into the package (see PACKAGING). Consumer
+      documentation: src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt.
+
+The packages are versioned and PUBLISHED INDEPENDENTLY; they do not share a
+version number. The add-ons use the public engine API.
 
 REPOSITORY LAYOUT
 =================
@@ -44,14 +58,21 @@ REPOSITORY LAYOUT
     src/CodeBrix.Platform.GameEngine.Sdl2/     gamepad add-on; packs itself
     src/CodeBrix.Platform.GameEngine.KenneyAssets/
                                                Kenney asset add-on; packs itself
+    src/CodeBrix.Platform.GameEngine.CardsAndDice/
+                                               cards and dice add-on; PACKS both
+                                               itself and the .Assets assembly
+    src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets/
+                                               embedded artwork (IsPackable=false)
     tests/CodeBrix.Platform.GameEngine.Tests/
     tests/CodeBrix.Platform.GameEngine.Host.Tests/
     tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/
     tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/
                                                + fixtures/ (CC0 Kenney bundles)
-    samples/                                   ten complete games/demos
+    tests/CodeBrix.Platform.GameEngine.CardsAndDice.Tests/
+    samples/                                   complete games/demos
     tools/padcheck/                            hand-run gamepad hardware check
     tools/sdl2_library_building/               SDL2 Windows-ARM64 build script
+    tools/cards-and-dice/                      CardsAndDice asset import/notices
     native_libraries/<rid>/                    committed SDL2 binaries + provenance
     global.json                                selects the test runner; pins no SDK
     CodeBrix.Platform.GameEngine.slnx          product projects + tests only
@@ -68,16 +89,29 @@ classifier and the atlas and Tiled document parsers), Materialize/ (tilesheet,
 audio, font and Tiled-import work) and Models/ (the glTF reader and the software
 model sprite renderer), and EngineKenneyAssetsExtensions.cs,
 KenneyGameAssetProvider.cs, KenneyAssetsOptions.cs and KenneyPackSummary.cs at
-the root.
+the root. The CardsAndDice project groups its source into Cards/ (definitions,
+cards, piles, decks, the built-in decks and the card composer), Dice/, Layout/
+(layout kinds and the pure layout calculations) and Table/ (CardsAndDiceTable,
+split into partial files by concern, and the table-side types), with
+EngineCardsAndDiceExtensions.cs at the root; like the other projects, each
+sub-folder is its own sub-namespace (CodeBrix.Platform.GameEngine.CardsAndDice
+.Cards, .Dice, .Layout, .Table) and the extension class sits in the root
+namespace. Its Assets project holds
+AssetCatalog.cs and AssetEntry.cs at the root, the embedded files under
+Resources/, catalog.json, and the provenance records (Provenance/ and
+tarot-provenance.json), which are not embedded.
 
 Neither samples/ nor tools/ is in the .slnx, deliberately: the solution holds
 only product projects and their tests. Each sample carries its own .slnx.
+The C# tool under tools/ (padcheck) follows the family's tools/<name>/<name>.csproj
+shape: an Exe with IsPackable=false that ships in no package and is built and
+run by hand.
 
 The solution's Solution Items folder carries .gitignore, AGENT-README.txt,
 EXTRAS-README.txt, global.json, icon-codebrix-128.png, LICENSE,
 MAINTAINER-README.txt, README-INDEX.txt, README.md, the current
 RELEASE-NOTES-<yyyy-MM-dd>.md and THIRD-PARTY-NOTICES.txt; the Tests folder
-carries the four test projects. The add-on packages' own AGENT-README.txt files
+carries every test project. The add-on packages' own AGENT-README.txt files
 are not listed there because each is a <None> item of its own project and is
 already visible inside it.
 
@@ -87,8 +121,11 @@ INTERNALS SEAMS
     CodeBrix.Platform.GameEngine.Host -> .Host.Tests
     CodeBrix.Platform.GameEngine.Sdl2 -> .Sdl2.Tests
     CodeBrix.Platform.GameEngine.KenneyAssets -> .KenneyAssets.Tests
+    CodeBrix.Platform.GameEngine.CardsAndDice -> .CardsAndDice.Tests
+    CodeBrix.Platform.GameEngine.CardsAndDice.Assets -> .CardsAndDice.Tests
 Every packable project ships an InternalsVisibleTo.cs to its own .Tests
-assembly. Neither add-on project has a seam into the engine core. The
+assembly (the CardsAndDice.Assets project, which ships inside the CardsAndDice
+package, does too). Neither add-on project has a seam into the engine core. The
 KenneyAssets project keeps most of its own types internal — only six are public
 — so its test suite reaches the archive readers, the parsers, the materializers
 and the model code through that seam.
@@ -97,21 +134,23 @@ BUILDING
 ========
     dotnet build CodeBrix.Platform.GameEngine.slnx
 
-All four projects are net10.0 only; never multi-target. All four set
-<Nullable>enable</Nullable> and turn on GenerateDocumentationFile. The Sdl2
+Every project is net10.0 only; never multi-target. Every product project sets
+<Nullable>enable</Nullable> and turns on GenerateDocumentationFile. The Sdl2
 project additionally sets <AllowUnsafeBlocks>true</AllowUnsafeBlocks> —
 the SDL2 bindings are function-pointer based and pass byte* strings; the unsafe
 context is confined to the Native folder. The KenneyAssets project carries NO
 NoWarn list of any kind, so an undocumented public member or a broken XML cref
 there fails the build rather than passing quietly as it would in the engine core.
+The same holds for both CardsAndDice projects.
 
 The build NEVER reaches the network for native binaries. Everything under
 native_libraries/ is committed and read straight off disk at pack time.
 
 THE ADD-ON PROJECTS BUILD AGAINST THE PUBLISHED ENGINE
 ------------------------------------------------------
-src/CodeBrix.Platform.GameEngine.Sdl2 and
-src/CodeBrix.Platform.GameEngine.KenneyAssets consume the engine as a PUBLISHED
+src/CodeBrix.Platform.GameEngine.Sdl2,
+src/CodeBrix.Platform.GameEngine.KenneyAssets and
+src/CodeBrix.Platform.GameEngine.CardsAndDice consume the engine as a PUBLISHED
 PackageReference, not a ProjectReference. They have to: the engine project is
 IsPackable=false and its dll is embedded into the Host project's package, so a
 ProjectReference would compile locally but produce a package with an unsatisfied
@@ -138,8 +177,8 @@ That swaps the engine PackageReference for a ProjectReference so a local run
 tests THIS repository's engine source, and it forces GeneratePackageOnBuild off.
 A _BlockPackWithLocalEngineProject target makes Pack fail outright while the
 flag is set, because the resulting package would carry no engine dependency and
-no engine dll and must never be published. Both add-on projects carry the switch
-and the guard.
+no engine dll and must never be published. Every add-on project carries the
+switch and the guard.
 
 The same flag applies to padcheck, which sits downstream of Sdl2:
 
@@ -151,41 +190,28 @@ once shipped "fully hardware-verified" while being completely dead on the
 InputPump path — nothing that ran against real hardware had ever been built from
 local engine source.
 
-THE KenneyAssets PROJECT DEFAULTS THAT FLAG TO **TRUE** — AND THE HAND-OVER
----------------------------------------------------------------------------
-The Sdl2 project defaults UseLocalEngineProject to false; the KenneyAssets
-project defaults it to TRUE, deliberately and temporarily. The asset-provider
-contract it compiles against was co-developed WITH it — the contract is exercised
-by a real provider before it is frozen — so until an engine package carrying the
-Assets.Providers and Assets.Models namespaces is published, a PackageReference
-build of that project cannot compile at all and the solution gate would be red.
-Local mode can never be packed (the same guard) and forces
-GeneratePackageOnBuild off, so no unpublishable package can escape meanwhile.
+EVERY ADD-ON DEFAULTS THAT FLAG TO FALSE
+---------------------------------------
+Every add-on project (Sdl2, KenneyAssets, GeneratedMusic, CardsAndDice)
+defaults UseLocalEngineProject to false and pins a PUBLISHED engine version in
+its csproj, so an ordinary build, test run or pack uses the engine from
+nuget.org. Local mode is opt-in, per command, for verifying an engine change
+that is not published yet; it can never be packed (the guard above) and it
+forces GeneratePackageOnBuild off.
 
-THE HAND-OVER, in order, once the engine is published:
+KenneyAssets and GeneratedMusic once defaulted the flag to true while the
+engine seams they implement (the asset-provider contract and the
+streaming-music seam) were co-developed with them; both have been handed over
+to the published engine since, and the switch is now the same escape hatch as
+on Sdl2.
 
-  1. Publish the engine package and let it index.
-  2. In src/CodeBrix.Platform.GameEngine.KenneyAssets/
-     CodeBrix.Platform.GameEngine.KenneyAssets.csproj: flip the
-     UseLocalEngineProject default from true to false, and set the
-     CodeBrix.Platform.GameEngine.MitLicenseForever PackageReference version to
-     the engine version just published. Those TWO EDITS are the whole hand-over;
-     the comment block above them in the csproj says the same thing.
-  3. Rebuild the solution and run the four test suites against the package.
-  4. dotnet pack (or an ordinary Release build) and publish the KenneyAssets
-     package.
-  5. FROM THEN ON, THE IN-REPO SAMPLE NEEDS THE FLAG, exactly like padcheck: it
-     references the engine and the KenneyAssets project from source, so build it
-     with -p:UseLocalEngineProject=true when verifying an unpublished engine
-     change:
+THE IN-REPO SAMPLES NEED THE FLAG when verifying an unpublished engine change,
+exactly like padcheck: KenneyAssetsDemo references the engine, the host and the
+KenneyAssets project from source, so build it with the flag so that the add-on
+compiles against the same engine source as the sample:
 
     dotnet build samples/KenneyAssetsDemo/src/KenneyAssetsDemo.LinuxX11 \
         -p:UseLocalEngineProject=true
-
-Until step 2 is done, note that `dotnet build -p:UseLocalEngineProject=false` on
-the KenneyAssets project fails with CS0234 ("Providers does not exist in the
-namespace CodeBrix.Platform.GameEngine.Assets"). That is the documented symptom
-of the pinned engine version being older than the contract, not a project fault.
 
 TESTING
 =======
@@ -196,11 +222,12 @@ suites to pass; head-dependent host behavior is env-gated or skipped with a
 reason, and the ONE opt-in test in the repository (the Kenney corpus scan, below)
 skips itself with a reason when its variable is unset.
 
-Test dependencies, all four suites: xunit.v3, xunit.runner.visualstudio,
+Test dependencies, every suite: xunit.v3, xunit.runner.visualstudio,
 Microsoft.NET.Test.Sdk and SilverAssertions.ApacheLicenseForever; the
 engine-core suite adds SkiaSharp.NativeAssets.Linux and CodeBrix.Audio.Opus, and
 the Kenney suite adds SkiaSharp.NativeAssets.Linux for the same reason (it
-decodes pictures and rasterizes models headlessly). No coverage collector is
+decodes pictures and rasterizes models headlessly), and so does the CardsAndDice
+suite (it rasterizes every embedded SVG). No coverage collector is
 referenced by any test project.
 
 THE TEST RUNNER IS Microsoft.Testing.Platform (MTP), selected by global.json at
@@ -222,6 +249,7 @@ to filter down to one class or method while iterating:
     dotnet tests/CodeBrix.Platform.GameEngine.Sdl2.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Sdl2.Tests.dll
     dotnet tests/CodeBrix.Platform.GameEngine.Host.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.Host.Tests.dll
     dotnet tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.KenneyAssets.Tests.dll
+    dotnet tests/CodeBrix.Platform.GameEngine.CardsAndDice.Tests/bin/Debug/net10.0/CodeBrix.Platform.GameEngine.CardsAndDice.Tests.dll
 
     # filters
     ... .Tests.dll -class 'CodeBrix.Platform.GameEngine.Tests.TimerTests'
@@ -355,6 +383,30 @@ rule it exercises, at a smaller scale. RUN IT BEFORE PUBLISHING the KenneyAssets
 package: both defects it has found so far (a tile set hiding the sprites it
 lists, and an unclassified satellite buffer) were invisible at fixture scale.
 
+CardsAndDice TESTS
+------------------
+Headless: the table is driven through Update(seconds), Draw(DrawList) and
+Pointer(...) with no engine attached, so animation, dealing, selection and drag
+are asserted from the published draw commands. AssetCatalogTests re-hashes
+EVERY embedded resource against catalog.json, checks that the catalog and the
+manifest resources list exactly the same keys, that every licence identifier is
+one of MIT, CC0-1.0 or Public-Domain, and rasterizes every embedded SVG, so an
+asset added without its catalog entry (or a catalog entry left behind after its
+file was removed) fails the suite. Run update-notices.py (below) after any asset
+change so THIRD-PARTY-NOTICES.txt carries the same hashes.
+
+The suite does not touch the audio device (sound effects are opt-in and off in
+every test) and runs in parallel.
+
+THE CardsAndDiceDemo WALKTHROUGH
+--------------------------------
+samples/CardsAndDiceDemo carries an unattended pass over every table mode,
+switched on by the environment variable CARDSDICE_WALKTHROUGH=1; it needs a
+graphical desktop, prints "CARDSDICE WALKTHROUGH PASS" at the end and stops the
+engine. See the sample's README.md.
+
+    dotnet build samples/CardsAndDiceDemo/src/CardsAndDiceDemo.LinuxX11
+
 THE MusicDemo WALKTHROUGH
 ------------------------
 The music system's most important behaviours are audible-only: which instrument
@@ -381,7 +433,7 @@ PACKAGING AND PUBLISHING
 ========================
 Every packable project sets GeneratePackageOnBuild=true, so an ordinary Release
 build produces the .nupkg — except while UseLocalEngineProject is true, which
-forces it off (see the hand-over above).
+forces it off (see LOCAL VERIFICATION ESCAPE HATCH above).
 
 VERSIONING SCHEME (every package, independently)
 ------------------------------------------------
@@ -456,15 +508,45 @@ Two packaging sharp edges recorded in the Sdl2 csproj, worth not re-learning:
     under runtimes/osx/native/ would depend on RID-graph fallback, which .NET 8+
     de-emphasized by default.
 
+WHAT SHIPS IN CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever
+--------------------------------------------------------------------------
+Packed by src/CodeBrix.Platform.GameEngine.CardsAndDice.
+
+  * BOTH assemblies in lib/<tfm>: its own output, plus
+    CodeBrix.Platform.GameEngine.CardsAndDice.Assets.dll and its .xml injected
+    by the _IncludeCardsAndDiceAssets target (TargetsForTfmSpecificBuildOutput)
+    — the same shape the Host project uses for the engine core, and for the
+    same reason: the Assets project is IsPackable=false and is referenced with
+    PrivateAssets="all", so NuGet would otherwise ship neither a dependency nor
+    the dll. There is NO Assets package and the package must carry no
+    dependency on one.
+  * A PackageReference dependency on the engine package, and nothing else.
+  * The artwork, the sound effects and catalog.json are EMBEDDED RESOURCES of
+    the Assets dll ("cardsdice/<path>"): no contentFiles, no loose SVG/Ogg, no
+    build target and no extraction step ship.
+  * icon-codebrix-128.png, the repository-root README.md and
+    THIRD-PARTY-NOTICES.txt (which carries the per-file provenance of every
+    embedded asset), and ITS OWN LOCAL AGENT-README.txt.
+  * PackageLicenseExpression MIT; PackageRequireLicenseAcceptance true.
+
+Check a fresh package with unzip -l: both dlls and both .xml files under
+lib/net10.0, README.md, AGENT-README.txt, icon-codebrix-128.png and
+THIRD-PARTY-NOTICES.txt at the root, and in the .nuspec exactly one dependency
+(the engine package).
+
+    dotnet pack src/CodeBrix.Platform.GameEngine.CardsAndDice -c Release -o <folder>
+
+Source consumers (the in-repo sample and tests) reference the Assets project
+explicitly when they use AssetCatalog, because the library's own reference to
+it is private.
+
 PUBLISH ORDER
 -------------
 ENGINE FIRST, then whichever add-on needs something new from it. Publish the
 engine package, wait for it to index, bump the pinned engine version in the
 add-on csproj, then build and publish that add-on. Never pack an add-on with
-UseLocalEngineProject=true (the build blocks it). The KenneyAssets package has
-one further step the first time — see THE KenneyAssets PROJECT DEFAULTS THAT FLAG
-TO TRUE above — and consuming projects downstream of an add-on (padcheck, the
-samples) are re-pinned afterwards.
+UseLocalEngineProject=true (the build blocks it). Consuming projects downstream
+of an add-on (padcheck, the samples) are re-pinned afterwards.
 
 RELEASE NOTES
 -------------
@@ -541,11 +623,55 @@ markers. Its one direct third-party dependency,
 CodeBrix.Graphics3D.Gltf2.MitLicenseForever, is an ordinary PackageReference
 (MIT, no dependencies of its own) and is recorded in THIRD-PARTY-NOTICES.txt as
 a package, not as incorporated source. What it READS — Kenney's bundles — is CC0
-content a game supplies; the only Kenney files in this repository are the test
-fixtures under tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/fixtures/,
-which are credited in FIXTURES-LICENSE.txt beside them and ship in no package.
+content a game supplies. Its test fixtures under
+tests/CodeBrix.Platform.GameEngine.KenneyAssets.Tests/fixtures/ are credited in
+FIXTURES-LICENSE.txt beside them and ship in no package. (The separate
+CardsAndDice add-on does embed selected Kenney artwork and sounds; see below.)
 When adding or replacing a fixture, keep it small, keep it CC0, and describe in
 that file what rule it exercises.
+
+CARDS AND DICE ASSETS — EMBEDDED, NO VENDORED SOURCE. The CardsAndDice code is
+written for this repository. Its Assets project REDISTRIBUTES artwork and sounds
+inside the package, so every embedded file needs an identified licence that
+permits redistribution from an MIT repository. The sources in use are: Kenney
+packs (CC0), Adrian Kennard's traditional playing cards (CC0), the 1909/1910
+Rider-Waite-Smith tarot scans on Wikimedia Commons (public domain; traced to
+vector paths), the Star of Ishtar SVG on Wikimedia Commons (released to the
+public domain by its author), and original artwork generated by this
+repository's tools (MIT). THIRD-PARTY-NOTICES.txt holds the authoritative
+per-source permissions (section "CARDSANDDICE EMBEDDED ASSETS — PROVENANCE
+APPENDIX") and a per-file manifest with source and shipped SHA-256 hashes.
+catalog.json carries the same data at run time, and the test suite fails if the
+two drift from the files. Copies of the Kenney pack licence files are kept in
+the Assets project's Provenance/ folder, and the per-file Wikimedia evidence for
+the tarot in tarot-provenance.json; neither is embedded.
+
+The asset tools under tools/cards-and-dice are maintainer utilities: no build,
+test, pack or consumer ever runs them, and none of their dependencies ship.
+
+    tools/cards-and-dice/import-assets.py --kenney '/path/to/Kenney All-in-1'
+    tools/cards-and-dice/import-assets.py --playing
+    tools/cards-and-dice/import-assets.py --tarot
+    tools/cards-and-dice/import-assets.py --ishtar
+    tools/cards-and-dice/generate-originals.py
+    tools/cards-and-dice/update-notices.py
+
+  * import-assets.py copies or downloads third-party sources into Resources/
+    and records them in catalog.json; the network imports run only when asked.
+    --tarot additionally needs Pillow and vtracer in a Python environment you
+    set up yourself (the exact versions used are recorded in the notices). It
+    is resumable, throttles its requests, keeps its scans in the system temp
+    folder (it honours TMPDIR), and skips tarot cards that already exist; to
+    retrace one deliberately, delete that generated SVG first.
+  * generate-originals.py regenerates the original MIT artwork.
+  * update-notices.py rewrites ONLY the CardsAndDice appendix at the end of
+    THIRD-PARTY-NOTICES.txt from catalog.json, re-checking every hash. Run it
+    after any asset change, and run it last.
+  * Never run two catalog-writing commands at the same time.
+  * Verify the rights to any replacement source BEFORE importing it; a
+    public-domain metadata field on a new edition is not a review of it. Keep
+    every new source CC0, public domain, or authored for the repository unless
+    the change is discussed first, and record its provenance in the notices.
 
 THIRD-PARTY-NOTICES.txt (repository root) carries the full license texts and
 ships inside EVERY package.
@@ -627,9 +753,21 @@ CodeBrix.Platform.GameEngine.Sdl2
     at start-up and its event queue is never pumped — state is polled directly,
     so no second event loop runs alongside the CodeBrix.Platform one.
 
+CodeBrix.Platform.GameEngine.CardsAndDice (+ .Assets)
+    refs: the PUBLISHED engine package (a ProjectReference only with
+          UseLocalEngineProject=true), and the Assets project privately.
+    No other dependency. The logical model (CardDefinition, Card, CardPile,
+    Deck, Die) is plain .NET with no engine dependency; CardsAndDiceTable is
+    the presentation and input layer, drawing through a DrawList and attached
+    to an engine view or scene layer by UseCardsAndDice. Outcomes are decided
+    by the logic before any animation starts and animation never consumes the
+    random source. SVG artwork is rasterized lazily into a table-owned image
+    cache, optionally on a worker (ArtworkPreparation) that touches nothing but
+    the isolated SVG.
+
 CodeBrix.Platform.GameEngine.KenneyAssets
-    refs: the engine (as a package once published; as a ProjectReference while
-          UseLocalEngineProject defaults to true).
+    refs: the PUBLISHED engine package (a ProjectReference only with
+          UseLocalEngineProject=true).
     deps: CodeBrix.Graphics3D.Gltf2 only; SkiaSharp, CodeBrix.Compression,
           CodeBrix.SkiaSvg and CodeBrix.Audio come through the engine.
     Fills the engine's IGameAssetProvider seam for Kenney bundles, implementing

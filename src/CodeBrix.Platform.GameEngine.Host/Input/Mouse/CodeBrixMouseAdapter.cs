@@ -15,10 +15,26 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Mouse;
 /// position, button states, modifier keys, and scroll events on a <see cref="UIElement"/>
 /// (typically the game surface canvas).
 /// </summary>
+/// <remarks>
+/// Every pointer event this adapter reads on the element (press, release, wheel, cancel, capture loss, and
+/// a move while a button it tracks is held - a drag) is marked handled
+/// (<see cref="PointerRoutedEventArgs.Handled"/>); a hover move is read but left unhandled, so hover
+/// tracking above the surface keeps working. The game owns input over its surface, so ancestors of the surface (a ScrollViewer, a page-level handler) do not act on a game click
+/// as well, and the framework does not take a click on the focused surface as one nobody wanted (which
+/// would drop keyboard focus). Events that are not the surface's own never reach the adapter, and an event
+/// something inside the surface handled first (a button placed over the game) is left alone. A handler of
+/// the application's own on the surface sees the events too when it is subscribed with
+/// <see cref="UIElement.AddHandler"/> and <c>handledEventsToo: true</c>; one attached with <c>+=</c> after
+/// this adapter does not.
+/// </remarks>
 public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
 {
     private readonly UIElement _element;
     private readonly PointerCoordinateMapper _coordinates;
+    private readonly PointerEventHandler _pressedHandler;
+    private readonly PointerEventHandler _releasedHandler;
+    private readonly PointerEventHandler _movedHandler;
+    private readonly PointerEventHandler _wheelChangedHandler;
     private readonly HashSet<MouseButton> _pressed = new();
     private Point _currentPosition;
     private KeyboardModifierState _modifiers;
@@ -61,43 +77,63 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         _element = element ?? throw new ArgumentNullException(nameof(element));
         _coordinates = new PointerCoordinateMapper(element);
 
-        _element.PointerPressed += OnPointerPressed;
-        _element.PointerReleased += OnPointerReleased;
-        _element.PointerMoved += OnPointerMoved;
-        _element.PointerWheelChanged += OnPointerWheelChanged;
-        _element.PointerCanceled += OnPointerReleased;
-        _element.PointerCaptureLost += OnPointerReleased;
+        // Subscribed for handled events too, so the adapters on one surface each see every event
+        // whichever of them marked it handled first (see SurfacePointerEvents).
+        _pressedHandler = OnPointerPressed;
+        _releasedHandler = OnPointerReleased;
+        _movedHandler = OnPointerMoved;
+        _wheelChangedHandler = OnPointerWheelChanged;
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerPressedEvent, _pressedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerWheelChangedEvent, _wheelChangedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCanceledEvent, _releasedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCaptureLostEvent, _releasedHandler);
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e)) return;
+
         var point = e.GetCurrentPoint(_element);
         var props = point.Properties;
         SyncButtons(props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
         UpdatePosition(point.Position, e.KeyModifiers);
+        SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e)) return;
+
         var point = e.GetCurrentPoint(_element);
         var props = point.Properties;
         // Re-sync from the live button state so the button that was just released is cleared.
         SyncButtons(props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
         UpdatePosition(point.Position, e.KeyModifiers);
+        SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e)) return;
+
         var point = e.GetCurrentPoint(_element);
         UpdatePosition(point.Position, e.KeyModifiers);
+
+        // Only a drag is kept; a hover move still bubbles to the surface's ancestors.
+        if (_pressed.Count > 0) SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e)) return;
+
         // MouseWheelDelta is already in Windows WHEEL_DELTA units (120 per notch);
         // positive = scroll up/away, matching the engine convention.
         var delta = e.GetCurrentPoint(_element).Properties.MouseWheelDelta;
         Interlocked.Add(ref _scrollDelta, delta);
+        SurfacePointerEvents.Consume(e);
     }
 
     private void SyncButtons(bool left, bool right, bool middle)
@@ -126,11 +162,11 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         if (_isDisposed) return;
         _isDisposed = true;
 
-        _element.PointerPressed -= OnPointerPressed;
-        _element.PointerReleased -= OnPointerReleased;
-        _element.PointerMoved -= OnPointerMoved;
-        _element.PointerWheelChanged -= OnPointerWheelChanged;
-        _element.PointerCanceled -= OnPointerReleased;
-        _element.PointerCaptureLost -= OnPointerReleased;
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerPressedEvent, _pressedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerWheelChangedEvent, _wheelChangedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCanceledEvent, _releasedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCaptureLostEvent, _releasedHandler);
     }
 }

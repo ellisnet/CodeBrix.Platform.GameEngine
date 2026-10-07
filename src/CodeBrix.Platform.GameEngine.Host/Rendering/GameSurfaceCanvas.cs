@@ -1,4 +1,5 @@
 using System;
+using CodeBrix.Platform.GameEngine.Host.Input;
 using CodeBrix.Platform.GameEngine.Rendering;
 using CodeBrix.Platform.GameEngine.Rendering.Backbuffers;
 using Microsoft.UI.Xaml;
@@ -283,7 +284,14 @@ public class GameSurfaceCanvas : SKXamlCanvas
         if (IsLoaded)
             Focus(FocusState.Programmatic);
         Loaded += (_, _) => Focus(FocusState.Programmatic);
-        PointerPressed += (_, _) => Focus(FocusState.Programmatic);
+
+        // Subscribed for handled presses too, so the refocus runs although the mouse adapter marks
+        // the presses it reads handled.
+        SurfacePointerEvents.Subscribe(this, PointerPressedEvent, (_, e) =>
+        {
+            if (SurfacePointerEvents.IsAvailable(e))
+                Focus(FocusState.Programmatic);
+        });
     }
 
     /// <summary>

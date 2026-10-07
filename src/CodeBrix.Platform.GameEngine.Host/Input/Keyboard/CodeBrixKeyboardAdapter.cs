@@ -22,7 +22,10 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Keyboard;
 /// A CodeBrix.Platform panel/canvas is not focusable by default and only receives
 /// <see cref="UIElement.KeyDown"/>/<see cref="UIElement.KeyUp"/> while it holds keyboard focus.
 /// This adapter sets <see cref="UIElement.IsTabStop"/> and grabs focus on load and on pointer press,
-/// so clicking the game surface restores keyboard input.
+/// so clicking the game surface restores keyboard input. The refocus runs for every press on the surface,
+/// including one the mouse or touch adapter has already marked handled; this adapter does not mark pointer
+/// events handled itself - it reads no pointer input - so a press something inside the surface handled
+/// first (a button placed over the game) keeps the focus it took.
 /// <para>
 /// Keys the game uses are marked handled (<see cref="KeyRoutedEventArgs.Handled"/>) as they arrive, so while
 /// the game surface has focus they stay with the game: they do not bubble on to the application's
@@ -71,6 +74,8 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IKeyClaimingAdap
     private int _finalizeScheduled;
 
     private readonly KeyClaims _claims = new();
+
+    private readonly PointerEventHandler _pointerPressedHandler;
 
     private bool _isDisposed;
 
@@ -137,7 +142,11 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IKeyClaimingAdap
         _element.KeyDown += OnKeyDown;
         _element.KeyUp += OnKeyUp;
         _element.LostFocus += OnLostFocus;
-        _element.PointerPressed += OnPointerPressed;
+
+        // Subscribed for handled presses too: the mouse adapter marks the presses it reads handled,
+        // and the refocus must still run (see SurfacePointerEvents).
+        _pointerPressedHandler = OnPointerPressed;
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerPressedEvent, _pointerPressedHandler);
 
         if (_element is FrameworkElement frameworkElement)
             frameworkElement.Loaded += OnLoaded;
@@ -176,7 +185,7 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IKeyClaimingAdap
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         // Restore keyboard focus to the game surface when it is clicked.
-        if (!_isDisposed)
+        if (!_isDisposed && SurfacePointerEvents.IsAvailable(e))
             _element.Focus(FocusState.Programmatic);
     }
 
@@ -290,7 +299,7 @@ public sealed class CodeBrixKeyboardAdapter : IKeyboardAdapter, IKeyClaimingAdap
         _element.KeyDown -= OnKeyDown;
         _element.KeyUp -= OnKeyUp;
         _element.LostFocus -= OnLostFocus;
-        _element.PointerPressed -= OnPointerPressed;
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerPressedEvent, _pointerPressedHandler);
         if (_element is FrameworkElement frameworkElement)
             frameworkElement.Loaded -= OnLoaded;
 

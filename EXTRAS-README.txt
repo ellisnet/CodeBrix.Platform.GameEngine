@@ -8,12 +8,12 @@ here builds as part of the library build, the test run or the packaging build.
 None of it is in CodeBrix.Platform.GameEngine.slnx, deliberately: that solution
 holds only the product projects and their tests.
 
-  samples/    ten complete games/demos — the living reference for the engine
-  tools/      two hand-run developer utilities
+  samples/    complete games/demos — the living reference for the engine
+  tools/      hand-run developer and maintainer utilities
 
 SAMPLES
 =======
-samples/ holds ten complete CodeBrix.Platform applications. Each has the same
+samples/ holds complete CodeBrix.Platform applications. Each has the same
 shape: a shared .UI shared-project (App.xaml, Views/MainPage.xaml), a .Core
 library holding the view models and the engine reference, a .Game library
 holding the game itself, and three executable heads — LinuxX11, Win32Skia and
@@ -101,6 +101,22 @@ the sounds, fonts and vectors loaded with their keys — and a READY line at the
 end, which is what makes a provider problem legible without a screenshot.
 samples/KenneyAssetsDemo/README.md covers the controls, how to build and run each
 head, and where the bundles came from (Kenney, CC0).
+
+samples/CardsAndDiceDemo
+------------------------
+Mode A, direct Engine — the reference consumer for the cards and dice package
+(src/CodeBrix.Platform.GameEngine.CardsAndDice). A
+playable score game across several tables — traditional and simple playing
+cards, historical tarot, custom elemental decks built with CardComposer, dice
+sets, a three-player dealer table using the queued DealRoundRobin/DealTo APIs —
+plus a paged gallery of the embedded artwork with a large inspector. It shows
+shuffle-then-deal sequencing without blocking the engine thread, background
+artwork preparation with a progress bar, selection, drag between areas and onto a free
+board, click-to-hold dice, and a layout that reflows on resize. All of its
+artwork comes from the add-on's embedded Assets assembly, so the sample has no
+asset folder. Setting CARDSDICE_WALKTHROUGH=1 runs an unattended pass over every
+mode on a graphical desktop. samples/CardsAndDiceDemo/README.md covers the
+controls and the walkthrough.
 
 samples/Slider
 --------------
@@ -211,6 +227,17 @@ order is what catches that. A stick magnitude above 1.00 is EXPECTED, not a
 fault; the tool prints a note when it sees one. tools/padcheck/README.md carries
 the full tables.
 
+tools/cards-and-dice
+--------------------
+Three Python scripts that maintain the CardsAndDice package's embedded assets:
+import-assets.py (copies Kenney packs from a local bundle, and downloads the
+traditional playing cards, the tarot scans and the Star of Ishtar on request),
+generate-originals.py (the repository's original artwork) and update-notices.py
+(regenerates the CardsAndDice provenance appendix of THIRD-PARTY-NOTICES.txt
+from the asset catalog). No build, test, pack or consumer runs them; the files
+they produce are committed. MAINTAINER-README.txt (CARDS AND DICE ASSETS) has
+the commands, the prerequisites and the licensing rules for any new source.
+
 tools/sdl2_library_building
 ---------------------------
 build-sdl2-windows-arm64.ps1 builds the Windows-on-ARM64 SDL2.dll that ships
@@ -272,7 +299,7 @@ OTHER NON-PACKAGE CONTENT
                        ARE packed into the gamepad NuGet package, but they are
                        maintained by hand from the tools above. See
                        MAINTAINER-README.txt.
-  tests/               The four test projects. Not shipped in any package; see
+  tests/               The test projects. Not shipped in any package; see
                        MAINTAINER-README.txt for how to run them, for the
                        serial-execution and shared-audio-output rules, and for
                        the Kenney suite's asset fixtures and its opt-in corpus

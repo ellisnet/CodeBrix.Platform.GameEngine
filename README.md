@@ -9,8 +9,9 @@ This repository ships **two** core libraries, plus optional add-ons:
 * **`CodeBrix.Platform.GameEngine.Sdl2`** — *optional* game controller (gamepad) support; see below.
 * **`CodeBrix.Platform.GameEngine.KenneyAssets`** — *optional* Kenney asset bundle support; see below.
 * **`CodeBrix.Platform.GameEngine.GeneratedMusic`** — *optional* generated in-game music; see below.
+* **`CodeBrix.Platform.GameEngine.CardsAndDice`** — *optional* cards, decks, dice and tabletop interactions, with embedded card, dice and symbol artwork; see below.
 
-CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads, the optional `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` for Kenney asset bundles, and the optional `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` for generated music.
+CodeBrix.Platform.GameEngine is provided as .NET 10 libraries and NuGet packages: `CodeBrix.Platform.GameEngine.MitLicenseForever`, which bundles both the engine-core (`CodeBrix.Platform.GameEngine.dll`) and host (`CodeBrix.Platform.GameEngine.Host.dll`) assemblies, the optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` for gamepads, the optional `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` for Kenney asset bundles, the optional `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` for generated music, and the optional `CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever` for cards and dice.
 
 CodeBrix.Platform.GameEngine supports applications and assemblies that target Microsoft .NET version 10.0 and later.
 Microsoft .NET version 10.0 is a Long-Term Supported (LTS) version of .NET, and was released on Nov 11, 2025; and will be actively supported by Microsoft until Nov 14, 2028.
@@ -34,6 +35,10 @@ dotnet add package CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever
 dotnet add package CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever
 ```
 
+```
+dotnet add package CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever
+```
+
 Note that the NuGet package IDs and the namespaces are different - there is no package named plain `CodeBrix.Platform.GameEngine`:
 
 * NuGet package ID: `CodeBrix.Platform.GameEngine.MitLicenseForever`
@@ -45,8 +50,11 @@ Note that the NuGet package IDs and the namespaces are different - there is no p
   * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.KenneyAssets` - i.e. `using CodeBrix.Platform.GameEngine.KenneyAssets;`
 * NuGet package ID: `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever`
   * Assembly and primary namespace: `CodeBrix.Platform.GameEngine.GeneratedMusic` - i.e. `using CodeBrix.Platform.GameEngine.GeneratedMusic;`
+* NuGet package ID: `CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever`
+  * Assemblies: `CodeBrix.Platform.GameEngine.CardsAndDice` and `CodeBrix.Platform.GameEngine.CardsAndDice.Assets`; namespaces `CodeBrix.Platform.GameEngine.CardsAndDice` (the engine extension) plus its `.Cards`, `.Dice`, `.Layout`, `.Table` and `.Assets` sub-namespaces - i.e. `using CodeBrix.Platform.GameEngine.CardsAndDice;`
+  * One reference gives you both assemblies; there is no separate `.Assets` package.
 
-**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one. Add `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` only when your game loads Kenney asset bundles, and `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` only when it plays generated music, for the same reason.
+**Which one do I reference?** Every game references `CodeBrix.Platform.GameEngine.MitLicenseForever`. Add `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` only when you want game controller (gamepad) support - it is a separate package precisely so that games which do not want a native SDL2 dependency do not inherit one. Add `CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever` only when your game loads Kenney asset bundles, `CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever` only when it plays generated music, and `CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever` only when it uses cards or dice, for the same reason.
 
 XML documentation (IntelliSense) ships alongside the assemblies.
 
@@ -92,12 +100,13 @@ Your game is a CodeBrix.Platform application, so each executable project also ad
 
 ## Samples
 
-Ten complete games and demos live under `samples/`, each with Linux X11, Windows Win32-Skia and macOS heads and its own `.slnx`:
+Complete games and demos live under `samples/`, each with Linux X11, Windows Win32-Skia and macOS heads and its own `.slnx`:
 
 * `Spot.Brix` — the recommended hosting shape end to end: splash overlay, a XAML New Game dialog driving the engine, option persistence and save-on-game-over
 * `Platformer.Brix` — a side-view platform game: tile colliders, collision profiles, `CollisionAdjust` insets, gravity and jumping, camera follow, stompable enemies, and a pinned 960x576 letterboxed render resolution kept crisp with nearest-neighbour presentation filtering
 * `SpaceDuel.Brix` — a GPU-tier space duel: rotated sprites, a wrap-around world, parallax star layers, particle explosions, health bars and a splash
 * `KenneyAssetsDemo` — the Kenney asset reference: bundles registered with one call, a Tiled map imported into scene layers, a pre-rendered 3D character walking in eight directions, atlas sprites, a sound, HUD text in a Kenney font and a rasterised SVG icon
+* `CardsAndDiceDemo` — the cards and dice reference: a playable table game with shuffling, dealing, flipping, dragging and dice rolls, plus a gallery of the embedded artwork
 * `Slider`, `CoordinateTest`, `ParticleTest`, `SoftRender`, `GpuRender`, `MusicDemo` — focused references for the engine-direct hosting path, coordinate systems and layer wrapping, particles, the software-rendered (Mode B) path, GPU rendering and the music system
 
 See `EXTRAS-README.txt` for what each one demonstrates.
@@ -191,11 +200,41 @@ music.FollowUp("FourOnTheFloor");   // new music for the next level, at a bar li
 
 The music is generated while the game runs and never ends; silence while a model loads or falls behind is part of the design, never an error. With no model registered a recorded piece plays in its place, and the engine log says so. The package registers no instruments and no model of its own: those are the game's choices, one `Register()` line each. It is the first implementation of the engine's streaming-music provider contract, so it is also the worked example for a provider of your own. A game's music policy can be unit-tested with no model and no audio device: the provider is an `IGeneratedMusicSession`, starting one goes through `IGeneratedMusicStarter`, and the engine's `MusicManager` is an `IMusicManager`, so a test hands the game's music code scripted fakes.
 
+## Cards and dice (optional)
+
+Cards, decks, dice and an animated tabletop ship as a **separate** NuGet package, so that games which do not use them do not inherit its embedded artwork:
+
+```
+dotnet add package CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever
+```
+
+One call puts a table on an engine view; decks, piles and dice are ordinary objects whose logic can also be used and tested without a table:
+
+```csharp
+using CodeBrix.Platform.GameEngine.CardsAndDice;
+using CodeBrix.Platform.GameEngine.CardsAndDice.Cards;
+using CodeBrix.Platform.GameEngine.CardsAndDice.Dice;
+using CodeBrix.Platform.GameEngine.CardsAndDice.Layout;
+
+var table = Engine.Instance.UseCardsAndDice(host, view, new Rectangle(0, 0, 1280, 800));
+var deck = BuiltInDecks.PlayingCards();
+var hand = new CardPile("Hand");
+table.AddArea(deck.DrawPile, new SKRect(30, 200, 230, 530), CardLayout.Stack);
+table.AddArea(hand, new SKRect(270, 200, 1100, 530), CardLayout.Fan);
+table.AddDie(Die.Traditional(), new Vector2(650, 650));
+
+deck.Shuffle();
+table.Deal(deck, hand, 5);
+table.Roll();
+```
+
+Decks of any size and any number of copies, hands and piles, n-sided and symbolic dice, shuffling, sequential dealing, flipping, rolling, selection and drag-and-drop all animate on the table, while the outcomes are decided once, up front, by the logic. The package carries a second assembly that embeds traditional and simple playing cards, historical tarot cards, card backs, dice, symbols and optional sound effects as resources, so a game needs no loose asset files; `CardComposer` builds custom card faces from those symbols.
+
 ## Documentation
 
 The NuGet package includes `AGENT-README.txt`, a complete API reference and usage guide written for AI coding agents - point your agent at that file when it is writing code against this library.
 
-The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads. The Kenney asset package carries its own `AGENT-README.txt` too, covering asset keys, the per-kind rules and the limits of its Tiled and model support; and so does the generated-music package, covering its options, follow-ups and degraded paths.
+The gamepad package carries its own `AGENT-README.txt`, covering the controller API and the gotchas worth knowing before wiring a game to it; point your agent at that file as well when the game uses gamepads. The Kenney asset package carries its own `AGENT-README.txt` too, covering asset keys, the per-kind rules and the limits of its Tiled and model support; and so does the generated-music package, covering its options, follow-ups and degraded paths; and so does the cards and dice package, covering decks, piles, dice, the table's animation and input rules, and the embedded asset catalog.
 
 Additional sample code and usage examples are available in the `CodeBrix.Platform.GameEngine.Tests` project:
 https://github.com/ellisnet/CodeBrix.Platform.GameEngine/tree/main/tests/CodeBrix.Platform.GameEngine.Tests
@@ -207,5 +246,5 @@ CodeBrix.Platform.GameEngine is licensed under the MIT License - see the
 
 The optional `CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever` package is licensed `MIT AND Zlib`, because it redistributes the SDL2 native libraries.
 
-For licensing and provenance information about the open source code included in
+For licensing and provenance information about the open source code and the embedded artwork included in
 these packages, see [THIRD-PARTY-NOTICES.txt](https://github.com/ellisnet/CodeBrix.Platform.GameEngine/blob/main/THIRD-PARTY-NOTICES.txt).

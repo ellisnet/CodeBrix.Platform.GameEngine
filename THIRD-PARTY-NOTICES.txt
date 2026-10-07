@@ -22,6 +22,10 @@ music system. It INCORPORATES NO THIRD-PARTY SOURCE and redistributes no model,
 instrument or music of its own: the music generation, the models and the
 instrument libraries are NuGet packages the game references itself.
 
+CodeBrix.Platform.GameEngine.CardsAndDice redistributes selected CC0 and public-
+domain assets in its embedded Assets assembly. See the per-file CardsAndDice
+provenance appendix (CARDSANDDICE EMBEDDED ASSETS) below.
+
 NuGet package dependencies (SkiaSharp, CodeBrix.SkiaSvg, CodeBrix.Compression,
 CodeBrix.Audio, CodeBrix.Json.Extensions, CodeBrix.Graphics3D.Gltf2 — the glTF
 reader the KenneyAssets package depends on, and its only direct third-party
@@ -262,6 +266,3112 @@ third-party notices; their source is not incorporated into these assemblies.
    working on real content. Neither set is packed into a NuGet package: the
    CodeBrix.Platform.GameEngine.KenneyAssets package carries no assets at all,
    and a game supplies the bundles it wants to read.
+
+================================================================================
+CARDSANDDICE EMBEDDED ASSETS — PROVENANCE APPENDIX
+
+The optional CardsAndDice package includes the separate, non-packable Assets
+assembly. It redistributes the resources listed below inside that assembly.
+No artist credit screen or individual author lookup is required by these asset
+permissions. The normal MIT library copyright/license notice still applies.
+
+A. KENNEY — CC0-1.0
+Author/distributor: Kenney (Kenney Vleugels), https://kenney.nl/
+Source: Jeremy Ellis's purchased Kenney Game Assets All-in-1 3.6.0 bundle.
+Included: Board Game Icons 1.1 (Vector/Icons), Board Game Info 1.0
+(Vector/Fantasy), and five Casino Audio 1.1 effects. Files are unmodified.
+Their pack License.txt files explicitly designate Creative Commons Zero and
+state that credit is optional. Payment is not the permission basis: CC0 is.
+https://kenney.nl/assets/board-game-icons
+https://kenney.nl/assets/board-game-info
+https://kenney.nl/assets/casino-audio
+License: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Copies of the three original license files are under
+src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets/Provenance/.
+
+B. TRADITIONAL PLAYING CARDS — CC0-1.0
+Author: Adrian Kennard (RevK). https://www.me.uk/cards/
+The creator designates the cards CC0 and explicitly says attribution is not
+required. Court designs are based on nineteenth-century Goodall & Son cards.
+Only the standard 52-card English-suit deck with Plain ace was imported.
+No Alteran characters or other alternate branded variants are included.
+Source SVG roots were extracted from the creator's generated deck page;
+vector artwork was not otherwise changed. Original joker images in this
+package are our own geometric designs, not third-party playing-card variants.
+License: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+C. HISTORICAL RIDER–WAITE–SMITH TAROT — PUBLIC DOMAIN
+Artist: Pamela Colman Smith (1878–1951), conceived with Arthur Edward Waite
+(1857–1942). Original Pam-A edition, 1909/1910, not a modern recoloring.
+Source set: https://commons.wikimedia.org/wiki/Category:Rider-Waite-Smith_tarot_deck_(TaionWC)
+Scans uploaded by TaionWC; file pages identify the source as muzendo.jp/blog/.
+Each imported file was checked for a public-domain designation. Individual
+file-page and original-image URLs, and hashes, appear below. The Commons
+file pages designate the work public domain in the US through early publication
+and in its country of origin through expired copyright. Smith's death in 1951
+also places the original drawings beyond life-plus-70 terms as of 2022.
+This records the basis used here, not a claim about every country's term or
+about later editions, recolorings, card backs, or brands.
+Public Domain Mark: https://creativecommons.org/publicdomain/mark/1.0/
+
+Modification: scanned JPEGs were converted into genuine colored SVG paths
+using vtracer 0.6.15, after Pillow 12.3.0 resizing to fit 620 x 1000.
+Wikimedia cached 960px renditions were used when originals were rate limited;
+the manifest Source URL identifies the exact downloaded rendition.
+Trace settings: stacked colors, spline, filter_speckle=8, color_precision=5,
+layer_difference=24, corner_threshold=60, length_threshold=4,
+max_iterations=10, splice_threshold=45, path_precision=2.
+No raster images are embedded in those SVGs. Original print/paper texture is
+retained; automated traces are not hand-redrawn restoration artwork.
+The tools are build-time utilities, not vendored or redistributed dependencies.
+The source and output SHA-256 values below identify the exact conversion.
+Additional per-file factual evidence is in the repository at
+src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets/tarot-provenance.json.
+
+D. ORIGINAL GEOMETRIC ARTWORK — MIT
+Simple playing cards, two jokers, card-back frames, dice silhouettes and dotted die faces, numeric
+value glyphs and geometric elemental/alchemical symbols were generated by
+our tools/cards-and-dice/generate-originals.py. They are original repository
+artwork covered by the root MIT LICENSE, copyright 2026 Jeremy Ellis and
+contributors. Dynamic sample cards use CardComposer and these same symbols.
+No game-icons.net artwork, attribution-required icon set, or downloaded font
+is incorporated in these generated SVG files.
+
+E. STAR OF ISHTAR — PUBLIC DOMAIN (PD-self)
+Artist: Raphael 75 (Raphael). Published 8 December 2009.
+File page: https://commons.wikimedia.org/wiki/File:Ishtar-star-symbol.svg
+Reviewed revision: https://commons.wikimedia.org/w/index.php?title=File:Ishtar-star-symbol.svg&oldid=1210908454
+Original: https://upload.wikimedia.org/wikipedia/commons/f/f9/Ishtar-star-symbol.svg
+The creator releases this work into the public domain worldwide, with a fallback
+permission to use it for any purpose without conditions where dedication is not
+possible. No attribution condition is imposed. The original SVG is embedded as
+symbols/historical/ishtar-star.svg, byte-for-byte unchanged.
+The royal, celestial and crimson card backs incorporate its original vector
+geometry and colors, scaled to 154 x 154 and centered inside an enlarged medallion in the existing frame.
+Those composite backs retain MIT-covered original frames around this public-domain
+symbol. Their SourceSHA256 identifies the input star; their SHA256 identifies the
+complete composite SVG. No external links or raster image loads are needed to draw.
+
+PER-FILE MANIFEST
+Paths are relative to src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets/Resources.
+SourceSHA256 is the pre-conversion input; SHA256 identifies the shipped bytes.
+For unchanged files they coincide. The runtime catalog embeds these same data.
+
+backs/celestial.svg
+  License: MIT
+  Source: Original CodeBrix card-back frame; public-domain Ishtar star by Raphael 75; https://commons.wikimedia.org/wiki/File:Ishtar-star-symbol.svg; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d75527fd4954b85b30b1d206bb495cc8fb5cdb4eda0b45935d70269762f153c7
+  SHA256: 50052e94939d72981e162554e1e80103669b35d05a6205fb437c303bf4a0366b
+backs/crimson.svg
+  License: MIT
+  Source: Original CodeBrix card-back frame; public-domain Ishtar star by Raphael 75; https://commons.wikimedia.org/wiki/File:Ishtar-star-symbol.svg; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d75527fd4954b85b30b1d206bb495cc8fb5cdb4eda0b45935d70269762f153c7
+  SHA256: e49217bb3dc27df97ff9c49aa5bfdebff231ece9198c02c70dbac9e8604df078
+backs/royal.svg
+  License: MIT
+  Source: Original CodeBrix card-back frame; public-domain Ishtar star by Raphael 75; https://commons.wikimedia.org/wiki/File:Ishtar-star-symbol.svg; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d75527fd4954b85b30b1d206bb495cc8fb5cdb4eda0b45935d70269762f153c7
+  SHA256: 38eab30998993de9b57c1138c813487b4bd35d9f1336ea71c4a3c1b1d64ce4bb
+dice/d10.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 63c27bbb68efc60c57cc840b11b6c9db9f0250536d7b2e9a8f4b067804646b4c
+  SHA256: 63c27bbb68efc60c57cc840b11b6c9db9f0250536d7b2e9a8f4b067804646b4c
+dice/d12.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 52c3002bb2b07492b24e9f769ef346e8a57a01e94919407f6cf7d5b0e476b588
+  SHA256: 52c3002bb2b07492b24e9f769ef346e8a57a01e94919407f6cf7d5b0e476b588
+dice/d20.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: be14c1a701b1dae190bee88ff1db5099eecb7fb628911893557846e07ef51376
+  SHA256: be14c1a701b1dae190bee88ff1db5099eecb7fb628911893557846e07ef51376
+dice/d4.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ba484d6f9880ce487199da4a087f33bdb353de71f7b87075df473acd3134c2e1
+  SHA256: ba484d6f9880ce487199da4a087f33bdb353de71f7b87075df473acd3134c2e1
+dice/d6.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: e9a70ca7668f953ab47fef9404598d6a01a08765ec4deb89263f218663185925
+  SHA256: e9a70ca7668f953ab47fef9404598d6a01a08765ec4deb89263f218663185925
+dice/d8.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 75c80e054e3754dfbd100a99c7b4d34428cccb4b230e5b8b1303457d98426513
+  SHA256: 75c80e054e3754dfbd100a99c7b4d34428cccb4b230e5b8b1303457d98426513
+dice/numbered.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d7ef57ab8dda03985445d456243b131f172c8574460cf4ddb917bd06ceb3fddf
+  SHA256: d7ef57ab8dda03985445d456243b131f172c8574460cf4ddb917bd06ceb3fddf
+dice/pips/1.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ed81a1b6012290340a113d3d4b692eb29d2588229b1038093ccde92f693a3909
+  SHA256: ed81a1b6012290340a113d3d4b692eb29d2588229b1038093ccde92f693a3909
+dice/pips/2.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 06a35ddfce5def0c408dbe42eb13b4a11c9512e29e54897fd87483fac0ea9402
+  SHA256: 06a35ddfce5def0c408dbe42eb13b4a11c9512e29e54897fd87483fac0ea9402
+dice/pips/3.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a88b90020feb5863d524e3ff0c22cd593aeec6ee65fdad9ebdd6e4b0bab86608
+  SHA256: a88b90020feb5863d524e3ff0c22cd593aeec6ee65fdad9ebdd6e4b0bab86608
+dice/pips/4.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: b219d0ef4852646d0cb7dd825d18b3f40ac0bcc22a9aa05f837e88a93b5cc543
+  SHA256: b219d0ef4852646d0cb7dd825d18b3f40ac0bcc22a9aa05f837e88a93b5cc543
+dice/pips/5.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 3b8a093521321e832dd968d906b3f490bc9d98261492a1d90c1e8f253127cdba
+  SHA256: 3b8a093521321e832dd968d906b3f490bc9d98261492a1d90c1e8f253127cdba
+dice/pips/6.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 988a81c065fbd6f82de47457519f7e7d77e3a5bc936219d30c1bfcaadd0a72b8
+  SHA256: 988a81c065fbd6f82de47457519f7e7d77e3a5bc936219d30c1bfcaadd0a72b8
+playing/simple/10C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 856b76008f0d366164a2cbca207f0a66342bbec84610e03d8481f1dff04e0450
+  SHA256: 856b76008f0d366164a2cbca207f0a66342bbec84610e03d8481f1dff04e0450
+playing/simple/10D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 3dad0307e6825a2a6755877c4ab4f6022966d2d03c5b0a4463abc31e21941d9a
+  SHA256: 3dad0307e6825a2a6755877c4ab4f6022966d2d03c5b0a4463abc31e21941d9a
+playing/simple/10H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 2ddce284a2c4530c6d3be6b93303264382a6df90185f333970e3cdd8785869fd
+  SHA256: 2ddce284a2c4530c6d3be6b93303264382a6df90185f333970e3cdd8785869fd
+playing/simple/10S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 7584fb40120be005008e40dcc6e1886a46774080ab355b3c33792c3ec28ea757
+  SHA256: 7584fb40120be005008e40dcc6e1886a46774080ab355b3c33792c3ec28ea757
+playing/simple/2C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: e9f6ee88bcf3186962988a05399701106222a52f403bec427648122c6bad6dd1
+  SHA256: e9f6ee88bcf3186962988a05399701106222a52f403bec427648122c6bad6dd1
+playing/simple/2D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 169a635fd75a8b010f5f695d9cf82d67c80a702aa3b3aee82111384ca94ec672
+  SHA256: 169a635fd75a8b010f5f695d9cf82d67c80a702aa3b3aee82111384ca94ec672
+playing/simple/2H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 2912d1ce1d4dd7e9d705f4aab4ebcf724553d5dd48be3d488f07ac73ad21d718
+  SHA256: 2912d1ce1d4dd7e9d705f4aab4ebcf724553d5dd48be3d488f07ac73ad21d718
+playing/simple/2S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ac30e02bed821eb7524ba8457e2ce5f2e861461d8a77ac64bb3ef1d24fa59ba3
+  SHA256: ac30e02bed821eb7524ba8457e2ce5f2e861461d8a77ac64bb3ef1d24fa59ba3
+playing/simple/3C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: f4ef5e8328a34117c49dfba698ddd8393f4b23e55f0fc4c1c16439bb4cfb9aed
+  SHA256: f4ef5e8328a34117c49dfba698ddd8393f4b23e55f0fc4c1c16439bb4cfb9aed
+playing/simple/3D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1349c02a96bcd26fc9d20f581cb7c0a017a2424b96c4e36731a35107ec1c8ead
+  SHA256: 1349c02a96bcd26fc9d20f581cb7c0a017a2424b96c4e36731a35107ec1c8ead
+playing/simple/3H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1196eb6878744ddf7dec3019cf0dd464f4ad0f77e2052758d7d70822ca0b6089
+  SHA256: 1196eb6878744ddf7dec3019cf0dd464f4ad0f77e2052758d7d70822ca0b6089
+playing/simple/3S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a6667311e08baca769eea00b3e98432eddfd78328bcb29142b1920d1b75960c4
+  SHA256: a6667311e08baca769eea00b3e98432eddfd78328bcb29142b1920d1b75960c4
+playing/simple/4C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 959e84b2e29af7803eff80e2f55c4411a8fd782ae50c2e86fe452fc138ec02e4
+  SHA256: 959e84b2e29af7803eff80e2f55c4411a8fd782ae50c2e86fe452fc138ec02e4
+playing/simple/4D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a82170061bc67347160cb4c05d48060c9b93cc32901e58badc9e140910d6dc57
+  SHA256: a82170061bc67347160cb4c05d48060c9b93cc32901e58badc9e140910d6dc57
+playing/simple/4H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8b492fdd00e0db8f98924bc134d3a5bb6106eb026fcdd0b985105814f0d9622b
+  SHA256: 8b492fdd00e0db8f98924bc134d3a5bb6106eb026fcdd0b985105814f0d9622b
+playing/simple/4S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 881246c47d406de92ed3ec3591161c532790e96f4fb223f531d357c4fd7687cb
+  SHA256: 881246c47d406de92ed3ec3591161c532790e96f4fb223f531d357c4fd7687cb
+playing/simple/5C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1ee441cf130dcfe62f72bc72b4257cd901cf1e3afa60e4966b057ea32d8208f9
+  SHA256: 1ee441cf130dcfe62f72bc72b4257cd901cf1e3afa60e4966b057ea32d8208f9
+playing/simple/5D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 9830cea99116b18aef820ccac75692d89a92d900ae168cd6c6d21122421ea112
+  SHA256: 9830cea99116b18aef820ccac75692d89a92d900ae168cd6c6d21122421ea112
+playing/simple/5H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: c4ac7c7ae9de869b6cf6b229034e2f9c0c2f0481408a73115948495f7bb856d4
+  SHA256: c4ac7c7ae9de869b6cf6b229034e2f9c0c2f0481408a73115948495f7bb856d4
+playing/simple/5S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 2ee7c772e019879b2f3a7a98a19d3d265d222b4164048ce28f80587c9dc22fe5
+  SHA256: 2ee7c772e019879b2f3a7a98a19d3d265d222b4164048ce28f80587c9dc22fe5
+playing/simple/6C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: c58628609fb7541518218f3e7a41f2a072533a1aef1ee4f85bc82dbbf71bd0f4
+  SHA256: c58628609fb7541518218f3e7a41f2a072533a1aef1ee4f85bc82dbbf71bd0f4
+playing/simple/6D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 29424786270007af284f93050c481dc2fa8f78f9ee177e5be29879d4885592be
+  SHA256: 29424786270007af284f93050c481dc2fa8f78f9ee177e5be29879d4885592be
+playing/simple/6H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 17c20e60d8e86326d6b7b289846a8d61d3ffad9ca07262d6b762898e5c0728ec
+  SHA256: 17c20e60d8e86326d6b7b289846a8d61d3ffad9ca07262d6b762898e5c0728ec
+playing/simple/6S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8300b9c04bd5b662b871b7c79806a1a4a9574de0dfbb4fad5f28c56f2b03fad4
+  SHA256: 8300b9c04bd5b662b871b7c79806a1a4a9574de0dfbb4fad5f28c56f2b03fad4
+playing/simple/7C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 93951783824cb3092e11da3856d631184cd0df6a46b9be8fb9bb56635ec0e3be
+  SHA256: 93951783824cb3092e11da3856d631184cd0df6a46b9be8fb9bb56635ec0e3be
+playing/simple/7D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 40632bb4475d5ee2e0c0723722e291466434622f2591bdd4a1d49cb9e8d62e9b
+  SHA256: 40632bb4475d5ee2e0c0723722e291466434622f2591bdd4a1d49cb9e8d62e9b
+playing/simple/7H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: f436fae2f3644752e7408fa2a825ba963be550c8ed20eb42643bd3351900fe44
+  SHA256: f436fae2f3644752e7408fa2a825ba963be550c8ed20eb42643bd3351900fe44
+playing/simple/7S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8b595df4e01a7a0f40839e88f4312350bd9297dd40ac727a5cc36659f952a802
+  SHA256: 8b595df4e01a7a0f40839e88f4312350bd9297dd40ac727a5cc36659f952a802
+playing/simple/8C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: e9904966a86e454d4ef700fbacad293fee57cdf7e84c70c8f9725d4f782ef0c3
+  SHA256: e9904966a86e454d4ef700fbacad293fee57cdf7e84c70c8f9725d4f782ef0c3
+playing/simple/8D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 3657928f85573cd2a16f4ba7207ca9aebe484799d89b024af3aa1a80bcae323c
+  SHA256: 3657928f85573cd2a16f4ba7207ca9aebe484799d89b024af3aa1a80bcae323c
+playing/simple/8H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ac77e63143225f72cd54686d0c342771524f5c4a244f8a9b9657649a6e67792e
+  SHA256: ac77e63143225f72cd54686d0c342771524f5c4a244f8a9b9657649a6e67792e
+playing/simple/8S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1e19cb343fd6d166aa42660e827e9a752366a28733c7877428be1a835f15cac8
+  SHA256: 1e19cb343fd6d166aa42660e827e9a752366a28733c7877428be1a835f15cac8
+playing/simple/9C.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: fda02b364c273485691aa6ffa5b70bd6f60eb859696d0d6bbc9bdc01d1ec286f
+  SHA256: fda02b364c273485691aa6ffa5b70bd6f60eb859696d0d6bbc9bdc01d1ec286f
+playing/simple/9D.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a99b13d5511b4018507130a54e6582e166cdb076ee1d84a521e62d2360ba2bc2
+  SHA256: a99b13d5511b4018507130a54e6582e166cdb076ee1d84a521e62d2360ba2bc2
+playing/simple/9H.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d055e7f0d91e6137475dfc428585b550fa97cc6ae8560f6f737f4c184aa4ae8d
+  SHA256: d055e7f0d91e6137475dfc428585b550fa97cc6ae8560f6f737f4c184aa4ae8d
+playing/simple/9S.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 80a2a0638742a834c556309a4a57bfaea2e09ce383a28698125b946da4209043
+  SHA256: 80a2a0638742a834c556309a4a57bfaea2e09ce383a28698125b946da4209043
+playing/simple/AC.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 4c9829c1f632a18404bc4d6a999a0fdac9178f9d8c14e680bf0c2978a8a4f4fd
+  SHA256: 4c9829c1f632a18404bc4d6a999a0fdac9178f9d8c14e680bf0c2978a8a4f4fd
+playing/simple/AD.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 2a828a4f64db9bd358660ecbd9e84bc6dff84ec47dba0ed6dc23f01dffbc909d
+  SHA256: 2a828a4f64db9bd358660ecbd9e84bc6dff84ec47dba0ed6dc23f01dffbc909d
+playing/simple/AH.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 9add7ae73c9fbf2e9a70b1fe202c08cc14165d32b2752304345f4f8f4c9e1ce0
+  SHA256: 9add7ae73c9fbf2e9a70b1fe202c08cc14165d32b2752304345f4f8f4c9e1ce0
+playing/simple/AS.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8b1d30e729c4c5a696c04ba98076e6783fc5626e40da2517e80480bf4163c108
+  SHA256: 8b1d30e729c4c5a696c04ba98076e6783fc5626e40da2517e80480bf4163c108
+playing/simple/JC.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: b880b066b4fa5f90138cdbedd8b1e4d6d87bc322b636d1b79289bd30fc855027
+  SHA256: b880b066b4fa5f90138cdbedd8b1e4d6d87bc322b636d1b79289bd30fc855027
+playing/simple/JD.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 210995398a6d2adb8b3899394ac1e851e4cb24f8c17495c6ade9daadef313471
+  SHA256: 210995398a6d2adb8b3899394ac1e851e4cb24f8c17495c6ade9daadef313471
+playing/simple/JH.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: f4d595ccafc8a99328e3c7d499c73be49c41d32b5869613875b7c49edd971b0d
+  SHA256: f4d595ccafc8a99328e3c7d499c73be49c41d32b5869613875b7c49edd971b0d
+playing/simple/JS.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: deb82ad027214dc682b99dfaf610268822cbac2bb2462bed04f753db253e00ea
+  SHA256: deb82ad027214dc682b99dfaf610268822cbac2bb2462bed04f753db253e00ea
+playing/simple/KC.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 65e21f8d09de087e54b4f4f1997d3bdf30e6ca388765e85d518e1903d7f4d0ab
+  SHA256: 65e21f8d09de087e54b4f4f1997d3bdf30e6ca388765e85d518e1903d7f4d0ab
+playing/simple/KD.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: fbdfc66e219b4788de7ce97bd74f2289940e90c5f0ca52c1b0bcd13ae1e4e936
+  SHA256: fbdfc66e219b4788de7ce97bd74f2289940e90c5f0ca52c1b0bcd13ae1e4e936
+playing/simple/KH.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 9d3c4c6823ce35cc4e0ca3a6870c1bed3bb01363763185d94c147244d9fb92d8
+  SHA256: 9d3c4c6823ce35cc4e0ca3a6870c1bed3bb01363763185d94c147244d9fb92d8
+playing/simple/KS.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 39a939e9625fbf3191dc542a2abdc5335262b316aa7e31762d5430f2480e5371
+  SHA256: 39a939e9625fbf3191dc542a2abdc5335262b316aa7e31762d5430f2480e5371
+playing/simple/QC.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: caa378b845b07a05a28a2e9ef65494a94fdc83edd0e2c5d3bfe710bffea1d2aa
+  SHA256: caa378b845b07a05a28a2e9ef65494a94fdc83edd0e2c5d3bfe710bffea1d2aa
+playing/simple/QD.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d06c998c4a60e041fcd961b41fae3283313ac22e49939ae6ec13b584bcd4a631
+  SHA256: d06c998c4a60e041fcd961b41fae3283313ac22e49939ae6ec13b584bcd4a631
+playing/simple/QH.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ef0a02a74f6bc526578c518c592b1dd4462b40be648efc36ec80c35e69d977bf
+  SHA256: ef0a02a74f6bc526578c518c592b1dd4462b40be648efc36ec80c35e69d977bf
+playing/simple/QS.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 467da9d675ba1aba68d3193e2b61449a7c81da732fd483d406a88f9d03d666cb
+  SHA256: 467da9d675ba1aba68d3193e2b61449a7c81da732fd483d406a88f9d03d666cb
+playing/simple/joker1.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 4935a2449912d8f15227a674a1f260dc9f462412207a99f2ad642278485f7975
+  SHA256: 4935a2449912d8f15227a674a1f260dc9f462412207a99f2ad642278485f7975
+playing/simple/joker2.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 461a505573578e9d3991ad41ac49817d3b3b0da6cf5ce2adefd7bebdf1acb4d3
+  SHA256: 461a505573578e9d3991ad41ac49817d3b3b0da6cf5ce2adefd7bebdf1acb4d3
+playing/traditional/10C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: b05c0124a689400c913affd3817ad9725328b1df98d5c3bd8629bd2cfb56d0ff
+  SHA256: b05c0124a689400c913affd3817ad9725328b1df98d5c3bd8629bd2cfb56d0ff
+playing/traditional/10D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 96451dbbc8707d5a884e72a49b4bb6e3f6d7aeff05d988b2c265eee134305067
+  SHA256: 96451dbbc8707d5a884e72a49b4bb6e3f6d7aeff05d988b2c265eee134305067
+playing/traditional/10H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 08201e34f8b69c32cfd666a5c34d24144f2cb1fe31807527eb3cd761100db81d
+  SHA256: 08201e34f8b69c32cfd666a5c34d24144f2cb1fe31807527eb3cd761100db81d
+playing/traditional/10S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 860c3ff340718b9c3cb9c259cc097aea620a3ff8c3212f2573d47d106fbef773
+  SHA256: 860c3ff340718b9c3cb9c259cc097aea620a3ff8c3212f2573d47d106fbef773
+playing/traditional/2C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: e9a687db8157fc4a726cf4eaee0328c13237e5826e732cc4280b1e1e8c49311d
+  SHA256: e9a687db8157fc4a726cf4eaee0328c13237e5826e732cc4280b1e1e8c49311d
+playing/traditional/2D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: e7569d652c7594b700a93f8c3612f97f9eb3743d9c96f87a5cce51a0ba625948
+  SHA256: e7569d652c7594b700a93f8c3612f97f9eb3743d9c96f87a5cce51a0ba625948
+playing/traditional/2H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: bb88dbfda8a122a57e6cbc13ba25cb77b53e0150a8943abf7bfc7f6891e8accd
+  SHA256: bb88dbfda8a122a57e6cbc13ba25cb77b53e0150a8943abf7bfc7f6891e8accd
+playing/traditional/2S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: e4eb1655b0e1b3de2abfa687bea634916e613b96517f8254a6591666e30c1b15
+  SHA256: e4eb1655b0e1b3de2abfa687bea634916e613b96517f8254a6591666e30c1b15
+playing/traditional/3C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: b25bcc56b58887767ed7bc1f6a5168d4e32bb91d5220dc3482af93aece99980f
+  SHA256: b25bcc56b58887767ed7bc1f6a5168d4e32bb91d5220dc3482af93aece99980f
+playing/traditional/3D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 8b26d27adb9bfd2003dfda618074a6198d0f77a8ce9cf0b03261dfcceac87856
+  SHA256: 8b26d27adb9bfd2003dfda618074a6198d0f77a8ce9cf0b03261dfcceac87856
+playing/traditional/3H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: a4235299213c53f06421114330203883945a158e7c47c68de538597deb42565c
+  SHA256: a4235299213c53f06421114330203883945a158e7c47c68de538597deb42565c
+playing/traditional/3S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 6ba4ae0065d694c8a8fd085290612814039a9f08129a9e47025633860d74a367
+  SHA256: 6ba4ae0065d694c8a8fd085290612814039a9f08129a9e47025633860d74a367
+playing/traditional/4C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: e246ec92fd6609f61db136f0618f5d715f3b52a6e553ea763763ce02284cc92f
+  SHA256: e246ec92fd6609f61db136f0618f5d715f3b52a6e553ea763763ce02284cc92f
+playing/traditional/4D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: bc2e91288d853d79196c3e7851a2b7a2d94a9121ce097c28ad0c87922a9ddc57
+  SHA256: bc2e91288d853d79196c3e7851a2b7a2d94a9121ce097c28ad0c87922a9ddc57
+playing/traditional/4H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 612ca98111cb66a40862279ea57f1db46e1608676d254f48638ebd60ce7efc78
+  SHA256: 612ca98111cb66a40862279ea57f1db46e1608676d254f48638ebd60ce7efc78
+playing/traditional/4S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: f53b00d28d2fed318459ad2af848e7a774ffb23adddd2214e0f0ce5e66c050dd
+  SHA256: f53b00d28d2fed318459ad2af848e7a774ffb23adddd2214e0f0ce5e66c050dd
+playing/traditional/5C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 90f7434dc1a3e129ea56b01ba86c59b56b5a7aa6e5fd80b8323a1e5a678283e6
+  SHA256: 90f7434dc1a3e129ea56b01ba86c59b56b5a7aa6e5fd80b8323a1e5a678283e6
+playing/traditional/5D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 39bda21bcfb0c4fb4feb29b6bdebb271d56ad65f36da086a242e91bede33f268
+  SHA256: 39bda21bcfb0c4fb4feb29b6bdebb271d56ad65f36da086a242e91bede33f268
+playing/traditional/5H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 4360b50f8e6f6cbe41bfb8aab32bff1a400a3e405c603fcf6811d752c460d520
+  SHA256: 4360b50f8e6f6cbe41bfb8aab32bff1a400a3e405c603fcf6811d752c460d520
+playing/traditional/5S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: a650088b578577df819c44dfc95f19d58c2f85dfa5209a9e7fdddb7b49e27a34
+  SHA256: a650088b578577df819c44dfc95f19d58c2f85dfa5209a9e7fdddb7b49e27a34
+playing/traditional/6C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 3848a685f8c8ebc27bc5e9f610a9cbbbf7642c2c78c6a8f47d22765dfc06f1ef
+  SHA256: 3848a685f8c8ebc27bc5e9f610a9cbbbf7642c2c78c6a8f47d22765dfc06f1ef
+playing/traditional/6D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: d082a465a773a108522be228f25035f1dae22b3975398ab2747753fd54f7aba8
+  SHA256: d082a465a773a108522be228f25035f1dae22b3975398ab2747753fd54f7aba8
+playing/traditional/6H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: ad577f673bf1b26223e6618eb6ea349b2f17ccdae4e71f833afc7f9885480c94
+  SHA256: ad577f673bf1b26223e6618eb6ea349b2f17ccdae4e71f833afc7f9885480c94
+playing/traditional/6S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 2d98e125910ab5c12d0cee6963bccc0bde092ffb0844d907cf7960d665e6bc74
+  SHA256: 2d98e125910ab5c12d0cee6963bccc0bde092ffb0844d907cf7960d665e6bc74
+playing/traditional/7C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 2a803374284a1ae8d3d0b28a8ece8357cca609fa562aef6a4adc7b06403c0a7e
+  SHA256: 2a803374284a1ae8d3d0b28a8ece8357cca609fa562aef6a4adc7b06403c0a7e
+playing/traditional/7D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 680611f66fb6556e094e7486101eaa6a94848e7db16da826a35da55682715131
+  SHA256: 680611f66fb6556e094e7486101eaa6a94848e7db16da826a35da55682715131
+playing/traditional/7H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 14abfd9cfc8b1829dcba5786da734cb22b4b30862a3776c3293f73d7c395750f
+  SHA256: 14abfd9cfc8b1829dcba5786da734cb22b4b30862a3776c3293f73d7c395750f
+playing/traditional/7S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: b0b1b86f9771519d2e69e71e8118e7cf8ddfdee852a120b02464837986f47384
+  SHA256: b0b1b86f9771519d2e69e71e8118e7cf8ddfdee852a120b02464837986f47384
+playing/traditional/8C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 6a9e0aa59d8300d42a30ee4a70b0e0796e2a2822253f6fe56f7282c6fa7ae66c
+  SHA256: 6a9e0aa59d8300d42a30ee4a70b0e0796e2a2822253f6fe56f7282c6fa7ae66c
+playing/traditional/8D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: d4872bf9157c4f5baf63245fdbcbba6fcbb75c6daea1094e3184b8e0954aa7fc
+  SHA256: d4872bf9157c4f5baf63245fdbcbba6fcbb75c6daea1094e3184b8e0954aa7fc
+playing/traditional/8H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: bdf851e6a3137cf6e5395e4db05bbbd697f6d016e40173cedcc6946105d0a59b
+  SHA256: bdf851e6a3137cf6e5395e4db05bbbd697f6d016e40173cedcc6946105d0a59b
+playing/traditional/8S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 262de8fa3fb9953f5b40c54f48c59caff8266f03f5c4a5ed20587fd601d32a9e
+  SHA256: 262de8fa3fb9953f5b40c54f48c59caff8266f03f5c4a5ed20587fd601d32a9e
+playing/traditional/9C.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: cf86c9b0c852e185708be05dfcc8197dce2417e18766b90015e7d345873b3d07
+  SHA256: cf86c9b0c852e185708be05dfcc8197dce2417e18766b90015e7d345873b3d07
+playing/traditional/9D.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 6e3d8d828fba67c3c4b6b4de634abbae6dc7ecf5cd1494fda74f8f7ab541a02b
+  SHA256: 6e3d8d828fba67c3c4b6b4de634abbae6dc7ecf5cd1494fda74f8f7ab541a02b
+playing/traditional/9H.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 8b7f63a0a6fc4969b604d269689f0dd0e6f2c0e83d98dda42c4c187ed2688dda
+  SHA256: 8b7f63a0a6fc4969b604d269689f0dd0e6f2c0e83d98dda42c4c187ed2688dda
+playing/traditional/9S.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 2ff7adb10ed481d5ae4b6730d352c2463384c955e7a81e6fc500015048f892c6
+  SHA256: 2ff7adb10ed481d5ae4b6730d352c2463384c955e7a81e6fc500015048f892c6
+playing/traditional/AC.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 75cc283121f25829511a03214e90304ea276d67a7dabf2980648c27ff1f67934
+  SHA256: 75cc283121f25829511a03214e90304ea276d67a7dabf2980648c27ff1f67934
+playing/traditional/AD.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 0b754b4bc6b1b2a33c1dafb8e36cd90b46c331cc47d133257a4ecc7503509316
+  SHA256: 0b754b4bc6b1b2a33c1dafb8e36cd90b46c331cc47d133257a4ecc7503509316
+playing/traditional/AH.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 5caa931ad115d05077552d6ce5f8109beb110e4ed13f699f269ee2d6db4acbd9
+  SHA256: 5caa931ad115d05077552d6ce5f8109beb110e4ed13f699f269ee2d6db4acbd9
+playing/traditional/AS.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 62a8737167f1e5b239fd7af93a2d5252429b4c1a39208e48f4759003593fb651
+  SHA256: 62a8737167f1e5b239fd7af93a2d5252429b4c1a39208e48f4759003593fb651
+playing/traditional/JC.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: fe09a40a851e4558fe0326e396588cff78260b9dfe8c245477000d78c1676928
+  SHA256: fe09a40a851e4558fe0326e396588cff78260b9dfe8c245477000d78c1676928
+playing/traditional/JD.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: a76be841a2c3f8a1bd86649f4d15880a4f99ce938179aa0435081c6feeccef01
+  SHA256: a76be841a2c3f8a1bd86649f4d15880a4f99ce938179aa0435081c6feeccef01
+playing/traditional/JH.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: a0d8ff7a1a2479311ecd081c64ba47916bec7b913d3377afeb896d9aa899b1c5
+  SHA256: a0d8ff7a1a2479311ecd081c64ba47916bec7b913d3377afeb896d9aa899b1c5
+playing/traditional/JS.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 798482324c6bbd4b73f7f3335eca91c93f92c637a14be72c72e38db831ea9e0e
+  SHA256: 798482324c6bbd4b73f7f3335eca91c93f92c637a14be72c72e38db831ea9e0e
+playing/traditional/KC.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 02baee01efa73d04189e5ea3cf8c9a94c2b35c944c663fb5c4915421ecfc57a5
+  SHA256: 02baee01efa73d04189e5ea3cf8c9a94c2b35c944c663fb5c4915421ecfc57a5
+playing/traditional/KD.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: c8bdbd7c8826184dd1eabe30addd049ca9c16011eb219179869ee8a8af68d8eb
+  SHA256: c8bdbd7c8826184dd1eabe30addd049ca9c16011eb219179869ee8a8af68d8eb
+playing/traditional/KH.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: edfb597d6b0eac9743abc9ed13aa288cd10f009540fd16772f1210306b951c0f
+  SHA256: edfb597d6b0eac9743abc9ed13aa288cd10f009540fd16772f1210306b951c0f
+playing/traditional/KS.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 36eb9b5567b81108974a73b5b7b167fe77ab5baf272a8c727365cc57aadaeca0
+  SHA256: 36eb9b5567b81108974a73b5b7b167fe77ab5baf272a8c727365cc57aadaeca0
+playing/traditional/QC.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 6e0af3aba07295d6af9f523b9267e9f046cf3cb48919ee8d0bd3eb79bd0330a2
+  SHA256: 6e0af3aba07295d6af9f523b9267e9f046cf3cb48919ee8d0bd3eb79bd0330a2
+playing/traditional/QD.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: a380128f5b253bc4da056dd8d684446d72e05e81db486d0f8d15bf30b7d0b778
+  SHA256: a380128f5b253bc4da056dd8d684446d72e05e81db486d0f8d15bf30b7d0b778
+playing/traditional/QH.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: db696acd998a65041c4394c072f56a5246a1a5030f870833a468ee88805318cc
+  SHA256: db696acd998a65041c4394c072f56a5246a1a5030f870833a468ee88805318cc
+playing/traditional/QS.svg
+  License: CC0-1.0
+  Source: https://www.me.uk/cards/makeadeck.cgi?view&ace=Plain&back=Diamond
+  SourceSHA256: 3c59ed5b671bc331f296b83287162983e50e7d39693339764cbf0e230c675bb7
+  SHA256: 3c59ed5b671bc331f296b83287162983e50e7d39693339764cbf0e230c675bb7
+sounds/card-place-1.ogg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Audio/Casino Audio/Audio/card-place-1.ogg
+  SourceSHA256: d8f26c33a665dcbdcc6f632f6050bc9dd548feb0d4942d4547615926d3926810
+  SHA256: d8f26c33a665dcbdcc6f632f6050bc9dd548feb0d4942d4547615926d3926810
+sounds/card-shuffle.ogg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Audio/Casino Audio/Audio/card-shuffle.ogg
+  SourceSHA256: 96c84883a30845ede723a4cf2e8369e9837e7dd4e0d4eb0212b0a7ed21b0f544
+  SHA256: 96c84883a30845ede723a4cf2e8369e9837e7dd4e0d4eb0212b0a7ed21b0f544
+sounds/card-slide-1.ogg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Audio/Casino Audio/Audio/card-slide-1.ogg
+  SourceSHA256: 006cf9822d15d7063f8899e56041f41646df30adb6fbd8b974ee5d5420012690
+  SHA256: 006cf9822d15d7063f8899e56041f41646df30adb6fbd8b974ee5d5420012690
+sounds/dice-shake-1.ogg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Audio/Casino Audio/Audio/dice-shake-1.ogg
+  SourceSHA256: ba603441c857204dbe3ff3345902c7e1c3f523bf1bd314acf088609bc6c1e4e5
+  SHA256: ba603441c857204dbe3ff3345902c7e1c3f523bf1bd314acf088609bc6c1e4e5
+sounds/die-throw-1.ogg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Audio/Casino Audio/Audio/die-throw-1.ogg
+  SourceSHA256: b31d716165be60e442da3c1ca25a3968aad1e0851a7f0859f495aecc02fd9e13
+  SHA256: b31d716165be60e442da3c1ca25a3968aad1e0851a7f0859f495aecc02fd9e13
+symbols/historical/ishtar-star.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Ishtar-star-symbol.svg | https://upload.wikimedia.org/wikipedia/commons/f/f9/Ishtar-star-symbol.svg
+  SourceSHA256: d75527fd4954b85b30b1d206bb495cc8fb5cdb4eda0b45935d70269762f153c7
+  SHA256: d75527fd4954b85b30b1d206bb495cc8fb5cdb4eda0b45935d70269762f153c7
+symbols/info/ages.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages.svg
+  SourceSHA256: 261ff818a9c51a8853224a6591b6d96cce60f12b4967b682e3bd5a7a0b565a19
+  SHA256: 261ff818a9c51a8853224a6591b6d96cce60f12b4967b682e3bd5a7a0b565a19
+symbols/info/ages_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_10.svg
+  SourceSHA256: c5932c112f55558e2419aa45da05d5f4e22fcded11ef863cc3f6ffcafeac68af
+  SHA256: c5932c112f55558e2419aa45da05d5f4e22fcded11ef863cc3f6ffcafeac68af
+symbols/info/ages_13.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_13.svg
+  SourceSHA256: e0ebee42b6d4464f144af053fcea14290a9df74dec205374277c93ea0fae850c
+  SHA256: e0ebee42b6d4464f144af053fcea14290a9df74dec205374277c93ea0fae850c
+symbols/info/ages_17.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_17.svg
+  SourceSHA256: 90d018bc02563e96932a1077285fdb817a1330e3759858aa2a9cfb9e5aefc883
+  SHA256: 90d018bc02563e96932a1077285fdb817a1330e3759858aa2a9cfb9e5aefc883
+symbols/info/ages_18.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_18.svg
+  SourceSHA256: f606680b53c393441ec706f347323b311f1c7850874378451ff5480afbd0db2c
+  SHA256: f606680b53c393441ec706f347323b311f1c7850874378451ff5480afbd0db2c
+symbols/info/ages_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_3.svg
+  SourceSHA256: 579c33af8a721ac553a814df5da23090217650c559e2b6463b1321e169b3fe8f
+  SHA256: 579c33af8a721ac553a814df5da23090217650c559e2b6463b1321e169b3fe8f
+symbols/info/ages_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_7.svg
+  SourceSHA256: 14699b3516e86f6d84eda1b7e66084285435f04fe67669550537b94c87445108
+  SHA256: 14699b3516e86f6d84eda1b7e66084285435f04fe67669550537b94c87445108
+symbols/info/ages_all.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/ages_all.svg
+  SourceSHA256: b77d253ad94ce52e273fc5c19dcbe0c67bd1554ddf317430828596084a3bf545
+  SHA256: b77d253ad94ce52e273fc5c19dcbe0c67bd1554ddf317430828596084a3bf545
+symbols/info/blank.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/blank.svg
+  SourceSHA256: a125ad2fe0fd8abe4ac96ae98f3dabc1858bc4074d635c9fc2a163f369589abd
+  SHA256: a125ad2fe0fd8abe4ac96ae98f3dabc1858bc4074d635c9fc2a163f369589abd
+symbols/info/blank_panel.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/blank_panel.svg
+  SourceSHA256: c9d6548292e89028508779b98ce1e672a494518faaf4e007dd7f7e4a0e6c29b5
+  SHA256: c9d6548292e89028508779b98ce1e672a494518faaf4e007dd7f7e4a0e6c29b5
+symbols/info/cards.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/cards.svg
+  SourceSHA256: 00dc364b058b34b1fdff98ef8c970a1d2698ea2e477e0ca1592d9e9c3b71c2f8
+  SHA256: 00dc364b058b34b1fdff98ef8c970a1d2698ea2e477e0ca1592d9e9c3b71c2f8
+symbols/info/cards_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/cards_text.svg
+  SourceSHA256: 246be13648ecb96acda13c049519e5e326b6751a74d1aa66d8370c185bca5c0a
+  SHA256: 246be13648ecb96acda13c049519e5e326b6751a74d1aa66d8370c185bca5c0a
+symbols/info/choking_hazard.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/choking_hazard.svg
+  SourceSHA256: ff942a3c6329ff42a06e3266925b84670c0cb72f525bfc1ba6ac07240ddbdc90
+  SHA256: ff942a3c6329ff42a06e3266925b84670c0cb72f525bfc1ba6ac07240ddbdc90
+symbols/info/choking_hazard_age.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/choking_hazard_age.svg
+  SourceSHA256: bc8a7ff1ad8b5a213809f33746ade48fa148dfb361f5f150c35c09b83d9bdc81
+  SHA256: bc8a7ff1ad8b5a213809f33746ade48fa148dfb361f5f150c35c09b83d9bdc81
+symbols/info/choking_hazard_age_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/choking_hazard_age_text.svg
+  SourceSHA256: 422547a25438ec7710be6b4023c2f6067987f4ba978a76dd1d133790be8f2a8a
+  SHA256: 422547a25438ec7710be6b4023c2f6067987f4ba978a76dd1d133790be8f2a8a
+symbols/info/choking_hazard_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/choking_hazard_text.svg
+  SourceSHA256: 05036d93366a4cbd6f54bf6de904fc784cb8e8f357b7f75dd52a3761dba9fc3a
+  SHA256: 05036d93366a4cbd6f54bf6de904fc784cb8e8f357b7f75dd52a3761dba9fc3a
+symbols/info/duration.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration.svg
+  SourceSHA256: eacc8b1b7bcc0ba89f14aa6576b5f12013b5bb0017181e599d69c4af0dd52415
+  SHA256: eacc8b1b7bcc0ba89f14aa6576b5f12013b5bb0017181e599d69c4af0dd52415
+symbols/info/duration_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_10.svg
+  SourceSHA256: 88cafe440eaa1b954ad72e23d6cb2ece0fea9788629e8f34397a3165af1a5795
+  SHA256: 88cafe440eaa1b954ad72e23d6cb2ece0fea9788629e8f34397a3165af1a5795
+symbols/info/duration_120.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_120.svg
+  SourceSHA256: 6389221352d0c5849304e24463a259bf7768234f55b6ae361250977a7944b275
+  SHA256: 6389221352d0c5849304e24463a259bf7768234f55b6ae361250977a7944b275
+symbols/info/duration_15.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_15.svg
+  SourceSHA256: e31438a4da1cf2fe833fdd0c2eebd4b0dad91749402c10bb2102b01e33296950
+  SHA256: e31438a4da1cf2fe833fdd0c2eebd4b0dad91749402c10bb2102b01e33296950
+symbols/info/duration_15_30.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_15_30.svg
+  SourceSHA256: 14df702e944bdec133bfaa082d79689f408881bcaa7d03c0cc52582c81b4cab8
+  SHA256: 14df702e944bdec133bfaa082d79689f408881bcaa7d03c0cc52582c81b4cab8
+symbols/info/duration_20.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_20.svg
+  SourceSHA256: 68f068400aac95530b3897f50d7eb598797b84fdb98cae1620ad71a31f98f7ce
+  SHA256: 68f068400aac95530b3897f50d7eb598797b84fdb98cae1620ad71a31f98f7ce
+symbols/info/duration_30.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_30.svg
+  SourceSHA256: d2f5c8d7ec0b68f5772f00a96ddcbbd18b41a477ac4447d7aecc2924360d9a9d
+  SHA256: d2f5c8d7ec0b68f5772f00a96ddcbbd18b41a477ac4447d7aecc2924360d9a9d
+symbols/info/duration_45.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_45.svg
+  SourceSHA256: 3f365be8d033d96db529f5713aa0dddc573b4504cff783c7e6c58b2022fa5925
+  SHA256: 3f365be8d033d96db529f5713aa0dddc573b4504cff783c7e6c58b2022fa5925
+symbols/info/duration_45_60.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_45_60.svg
+  SourceSHA256: 3585f0298859dfcc05102b652e160a14058917927b2c5ac89a503dcae4574911
+  SHA256: 3585f0298859dfcc05102b652e160a14058917927b2c5ac89a503dcae4574911
+symbols/info/duration_60.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_60.svg
+  SourceSHA256: bbc8728a4db80c25fa3a62bc3f69d065085d6f50fad62027c03c5a4bdcb84861
+  SHA256: bbc8728a4db80c25fa3a62bc3f69d065085d6f50fad62027c03c5a4bdcb84861
+symbols/info/duration_60_90.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_60_90.svg
+  SourceSHA256: ba82318ba43ad19346f91cac7ab4c30c42f51404ca0155ce65205c06179aa66b
+  SHA256: ba82318ba43ad19346f91cac7ab4c30c42f51404ca0155ce65205c06179aa66b
+symbols/info/duration_90.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/duration_90.svg
+  SourceSHA256: 34b777f24e2913a9d4e98713bcf3b359a12a1814489b0c5236c8e5fdd6815ee9
+  SHA256: 34b777f24e2913a9d4e98713bcf3b359a12a1814489b0c5236c8e5fdd6815ee9
+symbols/info/heavy.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/heavy.svg
+  SourceSHA256: b75fb8b451d716649a44f4e9422fd34f0f3da810af2524484195d37c3ee89ff7
+  SHA256: b75fb8b451d716649a44f4e9422fd34f0f3da810af2524484195d37c3ee89ff7
+symbols/info/heavy_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/heavy_text.svg
+  SourceSHA256: e8b02bf204e37a52cea2061e39d4b94ba631762a4de4386ed6f0e63217e5276a
+  SHA256: e8b02bf204e37a52cea2061e39d4b94ba631762a4de4386ed6f0e63217e5276a
+symbols/info/hourglass.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/hourglass.svg
+  SourceSHA256: d020205606ad351f975a6a5f46867b4604d69672b8c3d0110bceab7e78b08b51
+  SHA256: d020205606ad351f975a6a5f46867b4604d69672b8c3d0110bceab7e78b08b51
+symbols/info/interaction.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/interaction.svg
+  SourceSHA256: 5a23d59a6f1804a1d8695b7de2e2a7d31ce92dbb8d6faff66d9123148f2877b6
+  SHA256: 5a23d59a6f1804a1d8695b7de2e2a7d31ce92dbb8d6faff66d9123148f2877b6
+symbols/info/interaction_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/interaction_text.svg
+  SourceSHA256: b30952ef02fa86feb5f89efaf511eef7f66295f797964bf37bafe6be6b5f1fdd
+  SHA256: b30952ef02fa86feb5f89efaf511eef7f66295f797964bf37bafe6be6b5f1fdd
+symbols/info/knowledge.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/knowledge.svg
+  SourceSHA256: b7fb467a03b5dbfa62d2beeb896a418e054fd6cb633c2e120dcc7d39769dd940
+  SHA256: b7fb467a03b5dbfa62d2beeb896a418e054fd6cb633c2e120dcc7d39769dd940
+symbols/info/knowledge_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/knowledge_text.svg
+  SourceSHA256: 9157f0875211b84bfa33cb4fbdf6d0bab2787db3f255dbe92c1633bffbadced0
+  SHA256: 9157f0875211b84bfa33cb4fbdf6d0bab2787db3f255dbe92c1633bffbadced0
+symbols/info/light.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/light.svg
+  SourceSHA256: f5e37f945e64697872e465cf1417c91691ec8a28a9ec2d118fbae8a5003ae8c0
+  SHA256: f5e37f945e64697872e465cf1417c91691ec8a28a9ec2d118fbae8a5003ae8c0
+symbols/info/light_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/light_text.svg
+  SourceSHA256: 3dde1fd3b7885afd80ff80c3e3bdb0548c212dbad62ec2063e025956aa7cc701
+  SHA256: 3dde1fd3b7885afd80ff80c3e3bdb0548c212dbad62ec2063e025956aa7cc701
+symbols/info/luck.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/luck.svg
+  SourceSHA256: deb35bbcccfdcaf01730a6d35ef3aeef55fb54b2ef6c8c57ad9dfa5dd3cda96a
+  SHA256: deb35bbcccfdcaf01730a6d35ef3aeef55fb54b2ef6c8c57ad9dfa5dd3cda96a
+symbols/info/luck_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/luck_text.svg
+  SourceSHA256: ab336384e97248ed79874fbdaff3d1e787a1438c43bd62dca1d1f8e47a666d3b
+  SHA256: ab336384e97248ed79874fbdaff3d1e787a1438c43bd62dca1d1f8e47a666d3b
+symbols/info/medium.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium.svg
+  SourceSHA256: 74a4cb28f200a48bc1bf68fcb95cab0151162e067a1107ead1c38d80f24bbad0
+  SHA256: 74a4cb28f200a48bc1bf68fcb95cab0151162e067a1107ead1c38d80f24bbad0
+symbols/info/medium_heavy.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium_heavy.svg
+  SourceSHA256: 924946ca74863645aa2fcb47ea1d5fa9b06d9ba8a1debd3c3b5d8ae1c00def8d
+  SHA256: 924946ca74863645aa2fcb47ea1d5fa9b06d9ba8a1debd3c3b5d8ae1c00def8d
+symbols/info/medium_heavy_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium_heavy_text.svg
+  SourceSHA256: 98f52fcbf26f20d46a947ed5196d939d2c64c098a573b4ad604afaabb7c1da44
+  SHA256: 98f52fcbf26f20d46a947ed5196d939d2c64c098a573b4ad604afaabb7c1da44
+symbols/info/medium_light.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium_light.svg
+  SourceSHA256: 0e6b7bc65fda2575612e3388ee0c30f67f0e795717ed8a4c9c4f8a6a57665e12
+  SHA256: 0e6b7bc65fda2575612e3388ee0c30f67f0e795717ed8a4c9c4f8a6a57665e12
+symbols/info/medium_light_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium_light_text.svg
+  SourceSHA256: c791f75760457947bdd2e464744a59df5bed33843b5689fec70e8e793d9028c1
+  SHA256: c791f75760457947bdd2e464744a59df5bed33843b5689fec70e8e793d9028c1
+symbols/info/medium_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/medium_text.svg
+  SourceSHA256: 44c2d5005eaf22c635c1a694daa3f11488d13b2c02221e85c0c3552264d1bc50
+  SHA256: 44c2d5005eaf22c635c1a694daa3f11488d13b2c02221e85c0c3552264d1bc50
+symbols/info/miniatures.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/miniatures.svg
+  SourceSHA256: 2b8121b8d92f4196d332feeddceb20af63fe1b1f25e17ec3b42cb6560f817123
+  SHA256: 2b8121b8d92f4196d332feeddceb20af63fe1b1f25e17ec3b42cb6560f817123
+symbols/info/miniatures_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/miniatures_text.svg
+  SourceSHA256: 49b08a1a678943f86b82142663fc851e03e2cb48aaeee151924d4a388c73c755
+  SHA256: 49b08a1a678943f86b82142663fc851e03e2cb48aaeee151924d4a388c73c755
+symbols/info/pen_paper.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/pen_paper.svg
+  SourceSHA256: 13bdeafbcd102bf090b83a7cec8f2897a780d20b2e9bbddba5dd98fe8f7f9874
+  SHA256: 13bdeafbcd102bf090b83a7cec8f2897a780d20b2e9bbddba5dd98fe8f7f9874
+symbols/info/pen_paper_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/pen_paper_text.svg
+  SourceSHA256: 9743b7b6c3b4c28fb62bd32f8a0d86b416bf40714459bc9bd179a21bfbb9c725
+  SHA256: 9743b7b6c3b4c28fb62bd32f8a0d86b416bf40714459bc9bd179a21bfbb9c725
+symbols/info/players.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players.svg
+  SourceSHA256: cd32b201e7361f500c046b47c84f397ef4077f5a1859c34724e390ef1e6c7f2a
+  SHA256: cd32b201e7361f500c046b47c84f397ef4077f5a1859c34724e390ef1e6c7f2a
+symbols/info/players_1.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1.svg
+  SourceSHA256: b020130736233c81bf5d9ce644cb88c4c5aed09696821febb74b59dfd8e2025d
+  SHA256: b020130736233c81bf5d9ce644cb88c4c5aed09696821febb74b59dfd8e2025d
+symbols/info/players_1_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_10.svg
+  SourceSHA256: 77a3138f060f793f2b7d0bbdd0b7c4e5eac9450f1df181e4a24aacda34357789
+  SHA256: 77a3138f060f793f2b7d0bbdd0b7c4e5eac9450f1df181e4a24aacda34357789
+symbols/info/players_1_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_2.svg
+  SourceSHA256: e5f2e91a5b8a27e18bcef753918692aee28aeff6faa08b4ed6f54e67218fc79c
+  SHA256: e5f2e91a5b8a27e18bcef753918692aee28aeff6faa08b4ed6f54e67218fc79c
+symbols/info/players_1_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_3.svg
+  SourceSHA256: 12068c338534467cda62091b65824ef11ebdb441fd8634e36734a71ff5bcabc8
+  SHA256: 12068c338534467cda62091b65824ef11ebdb441fd8634e36734a71ff5bcabc8
+symbols/info/players_1_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_4.svg
+  SourceSHA256: ec48bc5a1cb06919d7b5cfc4638cd79a7934d2d91de1f1946d181a0beaf44cf7
+  SHA256: ec48bc5a1cb06919d7b5cfc4638cd79a7934d2d91de1f1946d181a0beaf44cf7
+symbols/info/players_1_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_5.svg
+  SourceSHA256: 06b44c5e8df6fdfffd56b9c28b5abeda5a4af7c7e3fd87ac5d4f87e8982e372c
+  SHA256: 06b44c5e8df6fdfffd56b9c28b5abeda5a4af7c7e3fd87ac5d4f87e8982e372c
+symbols/info/players_1_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_6.svg
+  SourceSHA256: d431b7d0c29d88a3b08f37f8811c696079e24db3aa85155985ce18bcc3245c2f
+  SHA256: d431b7d0c29d88a3b08f37f8811c696079e24db3aa85155985ce18bcc3245c2f
+symbols/info/players_1_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_7.svg
+  SourceSHA256: 56ebdfa15905ccc1d4f8e08074265bda77e7e6190d7c006a52e972adb241acaa
+  SHA256: 56ebdfa15905ccc1d4f8e08074265bda77e7e6190d7c006a52e972adb241acaa
+symbols/info/players_1_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_8.svg
+  SourceSHA256: 1f78526ccdd2152a34ebbe8adfd8e02508a93ca23cddafe4cd165cc8fbfc1cd2
+  SHA256: 1f78526ccdd2152a34ebbe8adfd8e02508a93ca23cddafe4cd165cc8fbfc1cd2
+symbols/info/players_1_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_1_9.svg
+  SourceSHA256: b0a1ad46284574de4a8fe6f18a20a8bce37cd5299d37f57fe7692100cdd094cb
+  SHA256: b0a1ad46284574de4a8fe6f18a20a8bce37cd5299d37f57fe7692100cdd094cb
+symbols/info/players_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2.svg
+  SourceSHA256: dc2c0992877e020ff2430095b05da65388dcfc6cab2d74b7c53d940a09b5e535
+  SHA256: dc2c0992877e020ff2430095b05da65388dcfc6cab2d74b7c53d940a09b5e535
+symbols/info/players_2_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_10.svg
+  SourceSHA256: 517ba9da76add90f29f61beaa63cca7727f25d49976db0f7c841540357961a14
+  SHA256: 517ba9da76add90f29f61beaa63cca7727f25d49976db0f7c841540357961a14
+symbols/info/players_2_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_3.svg
+  SourceSHA256: 58260c594e1bb0e284280a003e95d0513eedbd64799bfe4871fffab34f6c9b51
+  SHA256: 58260c594e1bb0e284280a003e95d0513eedbd64799bfe4871fffab34f6c9b51
+symbols/info/players_2_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_4.svg
+  SourceSHA256: e656cb86578adbedd255d1549e7afd69b54d4510c03f1632774c8284f3ad4012
+  SHA256: e656cb86578adbedd255d1549e7afd69b54d4510c03f1632774c8284f3ad4012
+symbols/info/players_2_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_5.svg
+  SourceSHA256: ff59edf786dc68fa1521f1661d4723cdbecd2b1ab05a02b1e91ce8f496cb8fae
+  SHA256: ff59edf786dc68fa1521f1661d4723cdbecd2b1ab05a02b1e91ce8f496cb8fae
+symbols/info/players_2_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_6.svg
+  SourceSHA256: a305e00e4e018be612dbf03256e6cb4fd18c2793cb9170d74f2a2ef51d9b9f92
+  SHA256: a305e00e4e018be612dbf03256e6cb4fd18c2793cb9170d74f2a2ef51d9b9f92
+symbols/info/players_2_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_7.svg
+  SourceSHA256: b0419209f108ac1eb6fe2745d6345525581316035dae15b3543f100069fc4886
+  SHA256: b0419209f108ac1eb6fe2745d6345525581316035dae15b3543f100069fc4886
+symbols/info/players_2_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_8.svg
+  SourceSHA256: e959e4b0b3cd9731b63df4005335e6b6140d5c15e1fd40bf73dfea3d6e051e05
+  SHA256: e959e4b0b3cd9731b63df4005335e6b6140d5c15e1fd40bf73dfea3d6e051e05
+symbols/info/players_2_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_2_9.svg
+  SourceSHA256: b76b31e9d7c2fdb5004edff70c21cb5ef00094dd7e5579f5ffd4d2f3987ff4c7
+  SHA256: b76b31e9d7c2fdb5004edff70c21cb5ef00094dd7e5579f5ffd4d2f3987ff4c7
+symbols/info/players_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3.svg
+  SourceSHA256: bce449bd6f4089cb0bcdb34164c90799aa3c6d6bac4a2213dc0e15915b41d0b2
+  SHA256: bce449bd6f4089cb0bcdb34164c90799aa3c6d6bac4a2213dc0e15915b41d0b2
+symbols/info/players_3_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_10.svg
+  SourceSHA256: d0ea519171a333963b9a51a6e6a85b076f4b3bf5c2c0418c0613d4e2e705735c
+  SHA256: d0ea519171a333963b9a51a6e6a85b076f4b3bf5c2c0418c0613d4e2e705735c
+symbols/info/players_3_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_4.svg
+  SourceSHA256: eabf567d67950a6afd80e8af0baa5331a488fa34403911badc489c5f5c8bb006
+  SHA256: eabf567d67950a6afd80e8af0baa5331a488fa34403911badc489c5f5c8bb006
+symbols/info/players_3_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_5.svg
+  SourceSHA256: 5d1e4563c9bda392221fec43eb0b37f614096dadc81625ea9e7f38d2df92baa7
+  SHA256: 5d1e4563c9bda392221fec43eb0b37f614096dadc81625ea9e7f38d2df92baa7
+symbols/info/players_3_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_6.svg
+  SourceSHA256: 190458cc1ca9bdb1a7d065b57c1b1a22f7c33015d9edf6449929ebf1321ce3e1
+  SHA256: 190458cc1ca9bdb1a7d065b57c1b1a22f7c33015d9edf6449929ebf1321ce3e1
+symbols/info/players_3_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_7.svg
+  SourceSHA256: 7dea53c491408cee14b21fb2af443616cec61400f68d41476a52d8f0e1e2ad02
+  SHA256: 7dea53c491408cee14b21fb2af443616cec61400f68d41476a52d8f0e1e2ad02
+symbols/info/players_3_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_8.svg
+  SourceSHA256: cfec711ef9341810b7611e0d63ca9a50470fff2ad47d6faaca59dbbf793a743d
+  SHA256: cfec711ef9341810b7611e0d63ca9a50470fff2ad47d6faaca59dbbf793a743d
+symbols/info/players_3_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_3_9.svg
+  SourceSHA256: f2afa48a15c0b797d482ef63d17244c275df9698bb287d85049f0db97f11101c
+  SHA256: f2afa48a15c0b797d482ef63d17244c275df9698bb287d85049f0db97f11101c
+symbols/info/players_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4.svg
+  SourceSHA256: 8637ba70b1fa4bdbbe7138c5494420e5e1a4b27b35cac62372334298b56f0acd
+  SHA256: 8637ba70b1fa4bdbbe7138c5494420e5e1a4b27b35cac62372334298b56f0acd
+symbols/info/players_4_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_10.svg
+  SourceSHA256: 4c7af7371cbb62f60798abf7b125941b0dca76f9693abacf223234db7a1a849f
+  SHA256: 4c7af7371cbb62f60798abf7b125941b0dca76f9693abacf223234db7a1a849f
+symbols/info/players_4_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_5.svg
+  SourceSHA256: cda4e8b0c2d2a073568e5f468608920ca69a330ccdb46c057d2f5601de32c6f0
+  SHA256: cda4e8b0c2d2a073568e5f468608920ca69a330ccdb46c057d2f5601de32c6f0
+symbols/info/players_4_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_6.svg
+  SourceSHA256: ab763378b0bd51c48df4c78a47abb4a3c952c2cf82ba06c3c1e079176af27939
+  SHA256: ab763378b0bd51c48df4c78a47abb4a3c952c2cf82ba06c3c1e079176af27939
+symbols/info/players_4_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_7.svg
+  SourceSHA256: 3d03436c2f9710086bff34a94358b33782dd1cf4c076e23ab83d4609b1be83ba
+  SHA256: 3d03436c2f9710086bff34a94358b33782dd1cf4c076e23ab83d4609b1be83ba
+symbols/info/players_4_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_8.svg
+  SourceSHA256: 9352f9fd3a8a8e5b2116cfd3cde128688fd5034da2a9b61665ce6d64571a19df
+  SHA256: 9352f9fd3a8a8e5b2116cfd3cde128688fd5034da2a9b61665ce6d64571a19df
+symbols/info/players_4_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_4_9.svg
+  SourceSHA256: 23ecc7c313d4c8467ddb2e7978ba3dd799100392505754bafc058858a248fa0a
+  SHA256: 23ecc7c313d4c8467ddb2e7978ba3dd799100392505754bafc058858a248fa0a
+symbols/info/players_alternative.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_alternative.svg
+  SourceSHA256: ab255f4ff698808ae92203630eb9f3ead49d20a6853dec017c89ebdb4cae9892
+  SHA256: ab255f4ff698808ae92203630eb9f3ead49d20a6853dec017c89ebdb4cae9892
+symbols/info/players_table.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/players_table.svg
+  SourceSHA256: 885273ac5de6100474ef2166528e674f7990751fd87a57d317e64b8d0ce5bb94
+  SHA256: 885273ac5de6100474ef2166528e674f7990751fd87a57d317e64b8d0ce5bb94
+symbols/info/puzzle.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/puzzle.svg
+  SourceSHA256: fafe6037716df92aa2dd514f269d4429784944174276c07ebe2b41bb709055cc
+  SHA256: fafe6037716df92aa2dd514f269d4429784944174276c07ebe2b41bb709055cc
+symbols/info/puzzle_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/puzzle_text.svg
+  SourceSHA256: 2cf44c28f08b568dfbb432d2d2790eb61e49fb8bb25f6f0cac547a7d2c99ed90
+  SHA256: 2cf44c28f08b568dfbb432d2d2790eb61e49fb8bb25f6f0cac547a7d2c99ed90
+symbols/info/stopwatch.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/stopwatch.svg
+  SourceSHA256: 1dedeb7721e2406763643082a6cad0d2a8aa35e62eaaf1a7a441e2d3c361ccc5
+  SHA256: 1dedeb7721e2406763643082a6cad0d2a8aa35e62eaaf1a7a441e2d3c361ccc5
+symbols/info/strong_language.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/strong_language.svg
+  SourceSHA256: c42912d143e90b895c4fdb846dea64f3415edf405c2bfaf83c2ad3b9c6c478f4
+  SHA256: c42912d143e90b895c4fdb846dea64f3415edf405c2bfaf83c2ad3b9c6c478f4
+symbols/info/strong_language_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/strong_language_text.svg
+  SourceSHA256: 086c7401ccf27320af41da0c12d57817aeb0b9c28b83a999fffed47ffe11c8d8
+  SHA256: 086c7401ccf27320af41da0c12d57817aeb0b9c28b83a999fffed47ffe11c8d8
+symbols/info/tablet.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/tablet.svg
+  SourceSHA256: 9cfa5c6c054b38a348ee5012afacfe2997e0dedf8eab41efcf6e51ab0365da53
+  SHA256: 9cfa5c6c054b38a348ee5012afacfe2997e0dedf8eab41efcf6e51ab0365da53
+symbols/info/tablet_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/tablet_text.svg
+  SourceSHA256: eaa44d36b7f7da10840d5181fdbf6322d600fe50729221883268ef3dbeca607a
+  SHA256: eaa44d36b7f7da10840d5181fdbf6322d600fe50729221883268ef3dbeca607a
+symbols/info/teams_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/teams_text.svg
+  SourceSHA256: abeede61ac750e418396fe61486bcc2cd2b885a96a197d1499fb8167ac99e5c3
+  SHA256: abeede61ac750e418396fe61486bcc2cd2b885a96a197d1499fb8167ac99e5c3
+symbols/info/tiles.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/tiles.svg
+  SourceSHA256: a08a97987307715a115bc6e6faa9eacc58df42e50357c7bfce10fd54362b9b24
+  SHA256: a08a97987307715a115bc6e6faa9eacc58df42e50357c7bfce10fd54362b9b24
+symbols/info/tiles_text.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Info/Vector/Fantasy/tiles_text.svg
+  SourceSHA256: 5ccde9e0d7e3e36ef18b207f8c8771b39ef4ccb1e3b3ec9562c8efeaa41c6865
+  SHA256: 5ccde9e0d7e3e36ef18b207f8c8771b39ef4ccb1e3b3ec9562c8efeaa41c6865
+symbols/kenney/arrow_clockwise.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_clockwise.svg
+  SourceSHA256: 5972b4c59aa26f63329097b4580ccd5d159607fe7ca9653dfe1d89da1be882d3
+  SHA256: 5972b4c59aa26f63329097b4580ccd5d159607fe7ca9653dfe1d89da1be882d3
+symbols/kenney/arrow_counterclockwise.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_counterclockwise.svg
+  SourceSHA256: 7d11d0a4c3539787e751ff40c629d8e615e7f42eaee881e4f785374ac13f8ce5
+  SHA256: 7d11d0a4c3539787e751ff40c629d8e615e7f42eaee881e4f785374ac13f8ce5
+symbols/kenney/arrow_cross.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_cross.svg
+  SourceSHA256: 6c4edd62540042fe8342fbd539f1712c819b74c1801ab550c4a60415da9bdbed
+  SHA256: 6c4edd62540042fe8342fbd539f1712c819b74c1801ab550c4a60415da9bdbed
+symbols/kenney/arrow_cross_divided.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_cross_divided.svg
+  SourceSHA256: 93e8e7b742993fb06cee99cfc5f951ce01b6c868682c26020ca4e6927eec921b
+  SHA256: 93e8e7b742993fb06cee99cfc5f951ce01b6c868682c26020ca4e6927eec921b
+symbols/kenney/arrow_diagonal.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_diagonal.svg
+  SourceSHA256: 4df94ad39a31d3d27656b94654fdaabde2d74220bd2f33f13dee1218c1f86c09
+  SHA256: 4df94ad39a31d3d27656b94654fdaabde2d74220bd2f33f13dee1218c1f86c09
+symbols/kenney/arrow_diagonal_cross.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_diagonal_cross.svg
+  SourceSHA256: 7eb9815a2332786e6b480b780859a8eb0e0790c6d011f8bd7c5ddfb0e045e78f
+  SHA256: 7eb9815a2332786e6b480b780859a8eb0e0790c6d011f8bd7c5ddfb0e045e78f
+symbols/kenney/arrow_diagonal_cross_divided.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_diagonal_cross_divided.svg
+  SourceSHA256: c9d491c11c908ddc893e742248ea5671232004ea8cd85d71b2985435393492da
+  SHA256: c9d491c11c908ddc893e742248ea5671232004ea8cd85d71b2985435393492da
+symbols/kenney/arrow_horizontal.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_horizontal.svg
+  SourceSHA256: e4714adc58ebe93b3888fe45c798ae412bc17d58ea094730995880ad46407de9
+  SHA256: e4714adc58ebe93b3888fe45c798ae412bc17d58ea094730995880ad46407de9
+symbols/kenney/arrow_reserve.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_reserve.svg
+  SourceSHA256: 99c6a5f08bfa22983fd5fa156c8d2265c28f779cba83087ead50921e209fe5d7
+  SHA256: 99c6a5f08bfa22983fd5fa156c8d2265c28f779cba83087ead50921e209fe5d7
+symbols/kenney/arrow_right.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_right.svg
+  SourceSHA256: 8ba07def80ac5e7a639bae70351f7420c32037c80ce8ebf5cd31de54236d1ba1
+  SHA256: 8ba07def80ac5e7a639bae70351f7420c32037c80ce8ebf5cd31de54236d1ba1
+symbols/kenney/arrow_right_curve.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_right_curve.svg
+  SourceSHA256: bf5d988deceb6e67ae46673652cee8830b7ca4cb67854acf06254b6b9baf96ef
+  SHA256: bf5d988deceb6e67ae46673652cee8830b7ca4cb67854acf06254b6b9baf96ef
+symbols/kenney/arrow_rotate.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/arrow_rotate.svg
+  SourceSHA256: 60eb633ef2ca64e7919bf08392b765f2bb172ae264c606f4cd2cd105cd585153
+  SHA256: 60eb633ef2ca64e7919bf08392b765f2bb172ae264c606f4cd2cd105cd585153
+symbols/kenney/award.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/award.svg
+  SourceSHA256: 17b4124c1228cf9524b56757c9b446b20a03273049aae0f6690c7263590772a6
+  SHA256: 17b4124c1228cf9524b56757c9b446b20a03273049aae0f6690c7263590772a6
+symbols/kenney/book_closed.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/book_closed.svg
+  SourceSHA256: 81b68c81cd5aec71eac92658553d6162879b172d7711621bf11891a5f69843fa
+  SHA256: 81b68c81cd5aec71eac92658553d6162879b172d7711621bf11891a5f69843fa
+symbols/kenney/book_open.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/book_open.svg
+  SourceSHA256: b3288e12dc6b67bf42acd7ddc122aeedf2787580a03c9cc17b4a4274c45455b0
+  SHA256: b3288e12dc6b67bf42acd7ddc122aeedf2787580a03c9cc17b4a4274c45455b0
+symbols/kenney/bow.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/bow.svg
+  SourceSHA256: 1571497414aff233de257f921350dd49687986284b277e5c26db094688f785d0
+  SHA256: 1571497414aff233de257f921350dd49687986284b277e5c26db094688f785d0
+symbols/kenney/campfire.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/campfire.svg
+  SourceSHA256: 4d67e49f4db668d9be999e75f53ad2e7d153216454214c3241036e477a9b223c
+  SHA256: 4d67e49f4db668d9be999e75f53ad2e7d153216454214c3241036e477a9b223c
+symbols/kenney/card.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card.svg
+  SourceSHA256: 3c35826a1d11ceb373301ba60a862bf13b4a26a73c7ce33569d35e4e966e76f5
+  SHA256: 3c35826a1d11ceb373301ba60a862bf13b4a26a73c7ce33569d35e4e966e76f5
+symbols/kenney/card_add.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_add.svg
+  SourceSHA256: a109be6cf3ec3f3cb426f6ccca7a8ae84c0876d22190f651eff4650b9aaf101b
+  SHA256: a109be6cf3ec3f3cb426f6ccca7a8ae84c0876d22190f651eff4650b9aaf101b
+symbols/kenney/card_diagonal.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_diagonal.svg
+  SourceSHA256: 345c450d6032dd0bc9d49981770e75b12faa868427d2e6dcca0ada3ed8391fb2
+  SHA256: 345c450d6032dd0bc9d49981770e75b12faa868427d2e6dcca0ada3ed8391fb2
+symbols/kenney/card_down.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_down.svg
+  SourceSHA256: 8c06daa26fabb08728a9d4e40d855715d6430baa422a983267f300981760e5fe
+  SHA256: 8c06daa26fabb08728a9d4e40d855715d6430baa422a983267f300981760e5fe
+symbols/kenney/card_down_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_down_outline.svg
+  SourceSHA256: 777552379c71ae4698898b651e37636fe4630c61e9717075f2e75548a8e96bb6
+  SHA256: 777552379c71ae4698898b651e37636fe4630c61e9717075f2e75548a8e96bb6
+symbols/kenney/card_flip.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_flip.svg
+  SourceSHA256: 1834aef2f9e97711d11464fd6aa8a3e05b143d96e23eacc104dd6fd8a9769111
+  SHA256: 1834aef2f9e97711d11464fd6aa8a3e05b143d96e23eacc104dd6fd8a9769111
+symbols/kenney/card_flipdouble.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_flipdouble.svg
+  SourceSHA256: 4a5cd2c673550b27a15ee881096b10ee5e2b96aec6859a11db5ef307a911d528
+  SHA256: 4a5cd2c673550b27a15ee881096b10ee5e2b96aec6859a11db5ef307a911d528
+symbols/kenney/card_lift.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_lift.svg
+  SourceSHA256: b0c7a63f91141933f8add57fc723d7290640d2d92d2b57d4d7b759a36c70c6cf
+  SHA256: b0c7a63f91141933f8add57fc723d7290640d2d92d2b57d4d7b759a36c70c6cf
+symbols/kenney/card_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_outline.svg
+  SourceSHA256: 3891ee2eb8d530c3f34d387c72e9999ceeb5dbf5401a57993f3e3a9eaff387f9
+  SHA256: 3891ee2eb8d530c3f34d387c72e9999ceeb5dbf5401a57993f3e3a9eaff387f9
+symbols/kenney/card_outline_lift.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_outline_lift.svg
+  SourceSHA256: 8bff134fd70d9fabf7270a7eab8bbbc6801e86780c429ac03be6222951b15b99
+  SHA256: 8bff134fd70d9fabf7270a7eab8bbbc6801e86780c429ac03be6222951b15b99
+symbols/kenney/card_outline_place.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_outline_place.svg
+  SourceSHA256: b1aa5cc60b1a43b71d18c0616c74d5c2bc089f3ff0ef4db632e73eeafdb26301
+  SHA256: b1aa5cc60b1a43b71d18c0616c74d5c2bc089f3ff0ef4db632e73eeafdb26301
+symbols/kenney/card_outline_remove.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_outline_remove.svg
+  SourceSHA256: d4a75205d2b2e2d7ee8cfdd87dc60ec30d7a035ed1db3a14f61f7c71749c2c2e
+  SHA256: d4a75205d2b2e2d7ee8cfdd87dc60ec30d7a035ed1db3a14f61f7c71749c2c2e
+symbols/kenney/card_place.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_place.svg
+  SourceSHA256: 2630eb25579180f7eb9cd8b53d6fb92a39c7d7002b14c52e5b6de192508ca5d1
+  SHA256: 2630eb25579180f7eb9cd8b53d6fb92a39c7d7002b14c52e5b6de192508ca5d1
+symbols/kenney/card_remove.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_remove.svg
+  SourceSHA256: aae54745dddf11ede405177755b7858ba9741d5913e62a6f8bf517bcaef09984
+  SHA256: aae54745dddf11ede405177755b7858ba9741d5913e62a6f8bf517bcaef09984
+symbols/kenney/card_rotate.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_rotate.svg
+  SourceSHA256: efbe2b86cdbcb0c25e51f58b7f9412bb0f975c940a5a4e38647fe27a05e75c72
+  SHA256: efbe2b86cdbcb0c25e51f58b7f9412bb0f975c940a5a4e38647fe27a05e75c72
+symbols/kenney/card_subtract.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_subtract.svg
+  SourceSHA256: a9a3b1a6cf2339904d61c97dd0739291f17dde3115a5a12cde4350328172c97c
+  SHA256: a9a3b1a6cf2339904d61c97dd0739291f17dde3115a5a12cde4350328172c97c
+symbols/kenney/card_tap.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap.svg
+  SourceSHA256: 258c1741fcf7911d3b61a154a9b2d45881becc8cc3f6892162dda34c49183968
+  SHA256: 258c1741fcf7911d3b61a154a9b2d45881becc8cc3f6892162dda34c49183968
+symbols/kenney/card_tap_down.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap_down.svg
+  SourceSHA256: 411f962ddb609a7441c8c4000526e51b19ef3d24dfd3d30a22b59c51aa319e79
+  SHA256: 411f962ddb609a7441c8c4000526e51b19ef3d24dfd3d30a22b59c51aa319e79
+symbols/kenney/card_tap_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap_outline.svg
+  SourceSHA256: d5a741840b2b0135249bae7b270ee35ecb5469b66570a9dbd53124418de2433a
+  SHA256: d5a741840b2b0135249bae7b270ee35ecb5469b66570a9dbd53124418de2433a
+symbols/kenney/card_tap_outline_down.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap_outline_down.svg
+  SourceSHA256: 482cb93b82e629d1bfb2727de1f9faee39a0ada777d666ea486cd53ef39b4104
+  SHA256: 482cb93b82e629d1bfb2727de1f9faee39a0ada777d666ea486cd53ef39b4104
+symbols/kenney/card_tap_outline_up.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap_outline_up.svg
+  SourceSHA256: 37e45db2f01aded18d01b8fb94dcd9c5ca13e969f63e4a4d09d38788efa6ac56
+  SHA256: 37e45db2f01aded18d01b8fb94dcd9c5ca13e969f63e4a4d09d38788efa6ac56
+symbols/kenney/card_tap_up.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_tap_up.svg
+  SourceSHA256: 91676e9983f846ccf89b1ed421bc5cd4b29b7021cd1a4d5131581d4112614a5a
+  SHA256: 91676e9983f846ccf89b1ed421bc5cd4b29b7021cd1a4d5131581d4112614a5a
+symbols/kenney/card_target.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/card_target.svg
+  SourceSHA256: 834f7b45a5c7d93bec7c4d442cc68a09ce1aa800d4ea8d1729341ccdb81c7fe6
+  SHA256: 834f7b45a5c7d93bec7c4d442cc68a09ce1aa800d4ea8d1729341ccdb81c7fe6
+symbols/kenney/cards_collection.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_collection.svg
+  SourceSHA256: f92cfd2aa81033d0f7dfc3a034e5e273f1920b8574c615c299ee79fe31faf87c
+  SHA256: f92cfd2aa81033d0f7dfc3a034e5e273f1920b8574c615c299ee79fe31faf87c
+symbols/kenney/cards_collection_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_collection_outline.svg
+  SourceSHA256: c49500e05c164e3b56727da471e2847de470927c88e5121adfa74e776c03ec10
+  SHA256: c49500e05c164e3b56727da471e2847de470927c88e5121adfa74e776c03ec10
+symbols/kenney/cards_diagonal.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_diagonal.svg
+  SourceSHA256: fbcdef9d0a45f6eceea5bc79718cabbc821cb768c7a9a2f25c3b8635b0591704
+  SHA256: fbcdef9d0a45f6eceea5bc79718cabbc821cb768c7a9a2f25c3b8635b0591704
+symbols/kenney/cards_fan.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_fan.svg
+  SourceSHA256: 6d84e23ca9c681b87628d40800c9058d5f03a6cf036e23d721cba2224e1dded2
+  SHA256: 6d84e23ca9c681b87628d40800c9058d5f03a6cf036e23d721cba2224e1dded2
+symbols/kenney/cards_fan_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_fan_outline.svg
+  SourceSHA256: 8f39279348e74dde8882236a17623bed38438699c12795f78e215f1470475cdf
+  SHA256: 8f39279348e74dde8882236a17623bed38438699c12795f78e215f1470475cdf
+symbols/kenney/cards_flip.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_flip.svg
+  SourceSHA256: 067d62180f15f71f9fabda353e9b36753cc5c794f22894f8356de87ad02ea647
+  SHA256: 067d62180f15f71f9fabda353e9b36753cc5c794f22894f8356de87ad02ea647
+symbols/kenney/cards_order.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_order.svg
+  SourceSHA256: b526cff8c81f8ad08bf0b92013fdb61fe41e837b4b5cc628dab1c2786d38042e
+  SHA256: b526cff8c81f8ad08bf0b92013fdb61fe41e837b4b5cc628dab1c2786d38042e
+symbols/kenney/cards_return.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_return.svg
+  SourceSHA256: ba96fa05bb4d1675a6760b8e1379735ccce92f0f883698fd4d10aae7cb0fa233
+  SHA256: ba96fa05bb4d1675a6760b8e1379735ccce92f0f883698fd4d10aae7cb0fa233
+symbols/kenney/cards_seek.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_seek.svg
+  SourceSHA256: 504b8917b139e91238c7b6502931f1ec42a9b672234ec5ff7067e61be1958ee3
+  SHA256: 504b8917b139e91238c7b6502931f1ec42a9b672234ec5ff7067e61be1958ee3
+symbols/kenney/cards_seek_top.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_seek_top.svg
+  SourceSHA256: 8f4edb71ff9433fafe9b244c7187d8cb765c752d5fb716fd8624d64f9b1e35bd
+  SHA256: 8f4edb71ff9433fafe9b244c7187d8cb765c752d5fb716fd8624d64f9b1e35bd
+symbols/kenney/cards_shift.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_shift.svg
+  SourceSHA256: c41704f653756a10f4ff1116493a7e619bbed1fe8b49042ec359f5c8d9ef8283
+  SHA256: c41704f653756a10f4ff1116493a7e619bbed1fe8b49042ec359f5c8d9ef8283
+symbols/kenney/cards_shuffle.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_shuffle.svg
+  SourceSHA256: 0ca173fb39e35dbaacd4562c7a4fa1fad1f0f0deecf64c72650639fdb4f370d2
+  SHA256: 0ca173fb39e35dbaacd4562c7a4fa1fad1f0f0deecf64c72650639fdb4f370d2
+symbols/kenney/cards_skull.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_skull.svg
+  SourceSHA256: a3b91021f597d1f35e5ed87b7cb04908f40178db7769f76cfd38fd57f3216b5e
+  SHA256: a3b91021f597d1f35e5ed87b7cb04908f40178db7769f76cfd38fd57f3216b5e
+symbols/kenney/cards_stack.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_stack.svg
+  SourceSHA256: cee4aa6f4bd4127bce6ac0b193b08d65216ec9d1657370a2f84e851018887b31
+  SHA256: cee4aa6f4bd4127bce6ac0b193b08d65216ec9d1657370a2f84e851018887b31
+symbols/kenney/cards_stack_cross.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_stack_cross.svg
+  SourceSHA256: aa8bf13d00dc606534b830a66e998f2db607eeee3e76645e9755dff54c676690
+  SHA256: aa8bf13d00dc606534b830a66e998f2db607eeee3e76645e9755dff54c676690
+symbols/kenney/cards_stack_high.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_stack_high.svg
+  SourceSHA256: 17a660c34395ceb4d6834771cfd3b5008e3a9d71478c19626a2f0c554fc09ab7
+  SHA256: 17a660c34395ceb4d6834771cfd3b5008e3a9d71478c19626a2f0c554fc09ab7
+symbols/kenney/cards_take.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_take.svg
+  SourceSHA256: 257d7b054eddf2c0ada4cadeba25048fe3b1bf6b3e8232517620816f3ee10bdf
+  SHA256: 257d7b054eddf2c0ada4cadeba25048fe3b1bf6b3e8232517620816f3ee10bdf
+symbols/kenney/cards_under.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/cards_under.svg
+  SourceSHA256: 50dc29e1317117395fef84cfd9bb536d0d0d41ad8cb5b3798ec4b9248da43988
+  SHA256: 50dc29e1317117395fef84cfd9bb536d0d0d41ad8cb5b3798ec4b9248da43988
+symbols/kenney/character.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/character.svg
+  SourceSHA256: 8ca5a33faead4da33bf5955ae6edfecd59cbc4c1cd569c7e895be4117db7a4e3
+  SHA256: 8ca5a33faead4da33bf5955ae6edfecd59cbc4c1cd569c7e895be4117db7a4e3
+symbols/kenney/character_lift.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/character_lift.svg
+  SourceSHA256: dcacb9ca5266e09f7ea6821d75938ba5227e0a95e2e45d6547f210f805bd84a6
+  SHA256: dcacb9ca5266e09f7ea6821d75938ba5227e0a95e2e45d6547f210f805bd84a6
+symbols/kenney/character_place.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/character_place.svg
+  SourceSHA256: ff28a4dca678515004fadfefa66a0db76a55c906d3e6e89a43c097a296a5a134
+  SHA256: ff28a4dca678515004fadfefa66a0db76a55c906d3e6e89a43c097a296a5a134
+symbols/kenney/character_remove.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/character_remove.svg
+  SourceSHA256: 40339ad48dcad59f51659e5ec55940f707b52f17ecadd90dd78f1bb171c3b2d4
+  SHA256: 40339ad48dcad59f51659e5ec55940f707b52f17ecadd90dd78f1bb171c3b2d4
+symbols/kenney/chess_bishop.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_bishop.svg
+  SourceSHA256: 0dc947e9b0fc4cb7fca03e87fde763c3532323bc1d3da5ec4384681691ba7d15
+  SHA256: 0dc947e9b0fc4cb7fca03e87fde763c3532323bc1d3da5ec4384681691ba7d15
+symbols/kenney/chess_king.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_king.svg
+  SourceSHA256: fea98a2ad7e5c627215333f93152c223c2be9925f0a1e54567a4a6700ffc06da
+  SHA256: fea98a2ad7e5c627215333f93152c223c2be9925f0a1e54567a4a6700ffc06da
+symbols/kenney/chess_knight.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_knight.svg
+  SourceSHA256: 782ba5d7ff82892dd9568a6fa8482c142b4ff963003712fa58823fc053885e92
+  SHA256: 782ba5d7ff82892dd9568a6fa8482c142b4ff963003712fa58823fc053885e92
+symbols/kenney/chess_pawn.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_pawn.svg
+  SourceSHA256: 76898d409c0ea69ba218266d9ca74a45261ee818e92c0dfbc36e67323fd110f2
+  SHA256: 76898d409c0ea69ba218266d9ca74a45261ee818e92c0dfbc36e67323fd110f2
+symbols/kenney/chess_queen.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_queen.svg
+  SourceSHA256: 1039ab1b96effec7d44538b977544278c812311d1c8dfe8a9c4e16844a6595d8
+  SHA256: 1039ab1b96effec7d44538b977544278c812311d1c8dfe8a9c4e16844a6595d8
+symbols/kenney/chess_rook.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/chess_rook.svg
+  SourceSHA256: ec49236f46cbc590800d1c3d96435c1a88d65047e62e07732c1e13df1c0acd15
+  SHA256: ec49236f46cbc590800d1c3d96435c1a88d65047e62e07732c1e13df1c0acd15
+symbols/kenney/crown_a.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/crown_a.svg
+  SourceSHA256: d0bbefc14de1862470764f9a94dbb66e8230139922bcc0592419390a26803010
+  SHA256: d0bbefc14de1862470764f9a94dbb66e8230139922bcc0592419390a26803010
+symbols/kenney/crown_b.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/crown_b.svg
+  SourceSHA256: 7ace6944bbd554422bb101a9422370a1ca782b4558e96b13e71c68778571644d
+  SHA256: 7ace6944bbd554422bb101a9422370a1ca782b4558e96b13e71c68778571644d
+symbols/kenney/d10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d10.svg
+  SourceSHA256: 9c8c9dd68f579a3c4ae5159d5b0ca1fedf5010476068972c2040f5cd0d41d4de
+  SHA256: 9c8c9dd68f579a3c4ae5159d5b0ca1fedf5010476068972c2040f5cd0d41d4de
+symbols/kenney/d10_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d10_number.svg
+  SourceSHA256: 89d660aec183e45a742fe8b1ee218f7d3ba70a3b1fd38927b98382b63ad197f5
+  SHA256: 89d660aec183e45a742fe8b1ee218f7d3ba70a3b1fd38927b98382b63ad197f5
+symbols/kenney/d10_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d10_outline.svg
+  SourceSHA256: 698401d8ff70486b90b020628a090354f93c023d9e44823ae8a139f2a9693c1b
+  SHA256: 698401d8ff70486b90b020628a090354f93c023d9e44823ae8a139f2a9693c1b
+symbols/kenney/d10_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d10_outline_number.svg
+  SourceSHA256: 263d5c0b7fd82ceb71654ee8107516d5a1696d548e0c1c7edfd95f783eb31052
+  SHA256: 263d5c0b7fd82ceb71654ee8107516d5a1696d548e0c1c7edfd95f783eb31052
+symbols/kenney/d12.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d12.svg
+  SourceSHA256: c85f9b1592e607636e5b843e87005b49e7352077b990bef0bef2d87f73ce01aa
+  SHA256: c85f9b1592e607636e5b843e87005b49e7352077b990bef0bef2d87f73ce01aa
+symbols/kenney/d12_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d12_number.svg
+  SourceSHA256: 768989502f33666e5cd650c301a42e9f78bdd861c70ce750c609dd6c66345cbf
+  SHA256: 768989502f33666e5cd650c301a42e9f78bdd861c70ce750c609dd6c66345cbf
+symbols/kenney/d12_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d12_outline.svg
+  SourceSHA256: ec236d60c1429881abeacc027194eddf44575c78cff611e8c593c2c6545fcc8a
+  SHA256: ec236d60c1429881abeacc027194eddf44575c78cff611e8c593c2c6545fcc8a
+symbols/kenney/d12_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d12_outline_number.svg
+  SourceSHA256: beec28831046e7d1d947d6c7d0f9aa6fbde71c410320f1c143ee7010db415cbb
+  SHA256: beec28831046e7d1d947d6c7d0f9aa6fbde71c410320f1c143ee7010db415cbb
+symbols/kenney/d2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d2.svg
+  SourceSHA256: a7323bd1b8fd1a1252d001a971a1f8006c52a0671b2047d4f2acf749412c9a2a
+  SHA256: a7323bd1b8fd1a1252d001a971a1f8006c52a0671b2047d4f2acf749412c9a2a
+symbols/kenney/d20.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d20.svg
+  SourceSHA256: b5e36eb939799a2002752ad406a21df41087836222c025ecaa4d90de13ed54a5
+  SHA256: b5e36eb939799a2002752ad406a21df41087836222c025ecaa4d90de13ed54a5
+symbols/kenney/d20_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d20_number.svg
+  SourceSHA256: fa18b4ca65e39635d8f79eeed973620dc78f33e080a6536b0c4d27c510936195
+  SHA256: fa18b4ca65e39635d8f79eeed973620dc78f33e080a6536b0c4d27c510936195
+symbols/kenney/d20_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d20_outline.svg
+  SourceSHA256: 1cbe5daa66c51bfb75be313f5af9a8ed941ea7acbbe05668627fe7ad97b8b58d
+  SHA256: 1cbe5daa66c51bfb75be313f5af9a8ed941ea7acbbe05668627fe7ad97b8b58d
+symbols/kenney/d20_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d20_outline_number.svg
+  SourceSHA256: e69dfedb1cec9d1417cbf64c07aa9d5563628a60bfea697da72e6d88c06b3204
+  SHA256: e69dfedb1cec9d1417cbf64c07aa9d5563628a60bfea697da72e6d88c06b3204
+symbols/kenney/d2_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d2_number.svg
+  SourceSHA256: d484cdf5b6a62326d45b7eb1418811f2c2533b8aecbf6425f73b7a07e03c289b
+  SHA256: d484cdf5b6a62326d45b7eb1418811f2c2533b8aecbf6425f73b7a07e03c289b
+symbols/kenney/d2_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d2_outline.svg
+  SourceSHA256: 1f2bb87bfcb6b943ea367c272130ca0f0167816653549b69b0e1e126f8e14a0f
+  SHA256: 1f2bb87bfcb6b943ea367c272130ca0f0167816653549b69b0e1e126f8e14a0f
+symbols/kenney/d2_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d2_outline_number.svg
+  SourceSHA256: b46b149106110a72ba360242593fcbfc8dfa8d54cda29842acde9f3f32a9d680
+  SHA256: b46b149106110a72ba360242593fcbfc8dfa8d54cda29842acde9f3f32a9d680
+symbols/kenney/d3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d3.svg
+  SourceSHA256: 91bd81c56068b8abc6af919352055ab0cd14120c80670cbf1e3274c78b0b047f
+  SHA256: 91bd81c56068b8abc6af919352055ab0cd14120c80670cbf1e3274c78b0b047f
+symbols/kenney/d3_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d3_number.svg
+  SourceSHA256: 89b2dc5dfd3a7b35a2492c621b444670e3ea2ae9fe21844a8f5583f754881b89
+  SHA256: 89b2dc5dfd3a7b35a2492c621b444670e3ea2ae9fe21844a8f5583f754881b89
+symbols/kenney/d3_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d3_outline.svg
+  SourceSHA256: 224dce1530ed1c40a1117876f26469ff7674cfe9a65dae5ae0a78d3b0fe4fd3d
+  SHA256: 224dce1530ed1c40a1117876f26469ff7674cfe9a65dae5ae0a78d3b0fe4fd3d
+symbols/kenney/d3_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d3_outline_number.svg
+  SourceSHA256: 3223c8edbc72147cd3fee931a79600ab5b0eb68b473a6d58ab2d57a1801f91ac
+  SHA256: 3223c8edbc72147cd3fee931a79600ab5b0eb68b473a6d58ab2d57a1801f91ac
+symbols/kenney/d4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d4.svg
+  SourceSHA256: 4b7be896ab9e965f8baa5e93cd8262d334d5f411126d5b244d74a22b0a3ddce4
+  SHA256: 4b7be896ab9e965f8baa5e93cd8262d334d5f411126d5b244d74a22b0a3ddce4
+symbols/kenney/d4_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d4_number.svg
+  SourceSHA256: 5cd75815515e03d81bc3d2ead3ba781c46429bd3984e55c2ab13b640af4f9643
+  SHA256: 5cd75815515e03d81bc3d2ead3ba781c46429bd3984e55c2ab13b640af4f9643
+symbols/kenney/d4_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d4_outline.svg
+  SourceSHA256: 5b721e5f49d92ff3d4e41bd497fce2d1bb8fec5b43fec96ff587be8b7ae99a36
+  SHA256: 5b721e5f49d92ff3d4e41bd497fce2d1bb8fec5b43fec96ff587be8b7ae99a36
+symbols/kenney/d4_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d4_outline_number.svg
+  SourceSHA256: 614cbc228a840a7ba9790574d85f66035f420e3ec553859d90d2b5c5b6e0edb9
+  SHA256: 614cbc228a840a7ba9790574d85f66035f420e3ec553859d90d2b5c5b6e0edb9
+symbols/kenney/d6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d6.svg
+  SourceSHA256: 91bd81c56068b8abc6af919352055ab0cd14120c80670cbf1e3274c78b0b047f
+  SHA256: 91bd81c56068b8abc6af919352055ab0cd14120c80670cbf1e3274c78b0b047f
+symbols/kenney/d6_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d6_number.svg
+  SourceSHA256: 6e749f7170502f23f91dcb137aabff547e1865bb714d3af2fecd92cc7bc3c21e
+  SHA256: 6e749f7170502f23f91dcb137aabff547e1865bb714d3af2fecd92cc7bc3c21e
+symbols/kenney/d6_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d6_outline.svg
+  SourceSHA256: 224dce1530ed1c40a1117876f26469ff7674cfe9a65dae5ae0a78d3b0fe4fd3d
+  SHA256: 224dce1530ed1c40a1117876f26469ff7674cfe9a65dae5ae0a78d3b0fe4fd3d
+symbols/kenney/d6_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d6_outline_number.svg
+  SourceSHA256: 84f056574ed771cec6a0e1a6ba2fc2b34ad5464002e4db21310c39474386041d
+  SHA256: 84f056574ed771cec6a0e1a6ba2fc2b34ad5464002e4db21310c39474386041d
+symbols/kenney/d8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d8.svg
+  SourceSHA256: 77265d10f96db131d9ed03747fbbb4a14f33527f8e37c076e03c682f055f2819
+  SHA256: 77265d10f96db131d9ed03747fbbb4a14f33527f8e37c076e03c682f055f2819
+symbols/kenney/d8_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d8_number.svg
+  SourceSHA256: 4bd0837af4f9844ec90795b37fd8d0f32b8a191685ad786cf4eb1f2dfe4ead86
+  SHA256: 4bd0837af4f9844ec90795b37fd8d0f32b8a191685ad786cf4eb1f2dfe4ead86
+symbols/kenney/d8_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d8_outline.svg
+  SourceSHA256: 6c8d5c26b2faeea4164f2bd2541c03f1b4b5197a021a1fd918042ded8ff22085
+  SHA256: 6c8d5c26b2faeea4164f2bd2541c03f1b4b5197a021a1fd918042ded8ff22085
+symbols/kenney/d8_outline_number.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/d8_outline_number.svg
+  SourceSHA256: f38f94ede061a684ae0135c98ae0eac7c6ccf6c3c4adc125e1459f65d7d58e9d
+  SHA256: f38f94ede061a684ae0135c98ae0eac7c6ccf6c3c4adc125e1459f65d7d58e9d
+symbols/kenney/dice.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice.svg
+  SourceSHA256: 1e1ab0c29c979d86de63fca8144711a5c21d9b35b8b413f1b0918c0f571ecfdb
+  SHA256: 1e1ab0c29c979d86de63fca8144711a5c21d9b35b8b413f1b0918c0f571ecfdb
+symbols/kenney/dice_1.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_1.svg
+  SourceSHA256: d8948a811f1ea4d5c422dd6fdbe4c04fd8edaaf0c5cdbec4ed893906d720d76e
+  SHA256: d8948a811f1ea4d5c422dd6fdbe4c04fd8edaaf0c5cdbec4ed893906d720d76e
+symbols/kenney/dice_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_2.svg
+  SourceSHA256: 375ce3988f4b1e4d658fb3a752569e99704a332fc316b6f3b1ba0ebfe24d2f87
+  SHA256: 375ce3988f4b1e4d658fb3a752569e99704a332fc316b6f3b1ba0ebfe24d2f87
+symbols/kenney/dice_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_3.svg
+  SourceSHA256: 42741aba9012626c9ccf5691f73b97defeb13b9eb7c759de783a3413d599f2ea
+  SHA256: 42741aba9012626c9ccf5691f73b97defeb13b9eb7c759de783a3413d599f2ea
+symbols/kenney/dice_3D.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_3D.svg
+  SourceSHA256: 661a3a971f4b9ce3e26cdc21d6037c7e88d3c473b7cfc4b8f358c264d46af7f8
+  SHA256: 661a3a971f4b9ce3e26cdc21d6037c7e88d3c473b7cfc4b8f358c264d46af7f8
+symbols/kenney/dice_3D_detailed.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_3D_detailed.svg
+  SourceSHA256: 5e33234016b80f5620860524932238a9439f68b758c2d79a53ecd498373315ff
+  SHA256: 5e33234016b80f5620860524932238a9439f68b758c2d79a53ecd498373315ff
+symbols/kenney/dice_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_4.svg
+  SourceSHA256: ef9c9c47c3691f0db6151b2a4e1844f1a18b3ad24f435c176e66058e5e32e5e4
+  SHA256: ef9c9c47c3691f0db6151b2a4e1844f1a18b3ad24f435c176e66058e5e32e5e4
+symbols/kenney/dice_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_5.svg
+  SourceSHA256: d6b58542d99d008ce6b0a27b607ac298c9902e2d3fdde3fc264f12966bd2fb57
+  SHA256: d6b58542d99d008ce6b0a27b607ac298c9902e2d3fdde3fc264f12966bd2fb57
+symbols/kenney/dice_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_6.svg
+  SourceSHA256: cb2e627b95e088fa6cd7970288a68adc542054f4797b75376d16a618113ba709
+  SHA256: cb2e627b95e088fa6cd7970288a68adc542054f4797b75376d16a618113ba709
+symbols/kenney/dice_close.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_close.svg
+  SourceSHA256: fdd1d14b0c2bcb7ef66aba6091ccfcba5fa7fdcc704dca90d4a49e6bbb47b6d7
+  SHA256: fdd1d14b0c2bcb7ef66aba6091ccfcba5fa7fdcc704dca90d4a49e6bbb47b6d7
+symbols/kenney/dice_detailed.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_detailed.svg
+  SourceSHA256: 3789c2a8ea89e9e1123dcdacf01cb69a7e25b7838cb61b6859a3f7126fcc95bd
+  SHA256: 3789c2a8ea89e9e1123dcdacf01cb69a7e25b7838cb61b6859a3f7126fcc95bd
+symbols/kenney/dice_empty.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_empty.svg
+  SourceSHA256: 7ca79f032a68b225a293dab925b09a94194ce7e0b032efaf2ed5acf2821cfe6c
+  SHA256: 7ca79f032a68b225a293dab925b09a94194ce7e0b032efaf2ed5acf2821cfe6c
+symbols/kenney/dice_out.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_out.svg
+  SourceSHA256: 83b6846212aeeba351ef9b5b8105813496d1d3cfef47ad0ff848822333e6cf3a
+  SHA256: 83b6846212aeeba351ef9b5b8105813496d1d3cfef47ad0ff848822333e6cf3a
+symbols/kenney/dice_question.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_question.svg
+  SourceSHA256: a842c623b5e90eae24f1df6e699f0e0cac5c9ff972b7d1a42fb1f4fb24c0b8b3
+  SHA256: a842c623b5e90eae24f1df6e699f0e0cac5c9ff972b7d1a42fb1f4fb24c0b8b3
+symbols/kenney/dice_shield.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_shield.svg
+  SourceSHA256: e52558140031cbd4755a80d3d8e158a54f8e91a89e17e2c195e8eb174f3e17a4
+  SHA256: e52558140031cbd4755a80d3d8e158a54f8e91a89e17e2c195e8eb174f3e17a4
+symbols/kenney/dice_skull.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_skull.svg
+  SourceSHA256: 17b3d850b1f05c1389ad00aee9f1d591fd4ce3f8f76c68f1a952a02bdf935561
+  SHA256: 17b3d850b1f05c1389ad00aee9f1d591fd4ce3f8f76c68f1a952a02bdf935561
+symbols/kenney/dice_sword.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dice_sword.svg
+  SourceSHA256: c415c8a0318b70f60b20cbaad05ea84c4e27a9d1ac2fa23641280c4846388ff3
+  SHA256: c415c8a0318b70f60b20cbaad05ea84c4e27a9d1ac2fa23641280c4846388ff3
+symbols/kenney/direction_e.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/direction_e.svg
+  SourceSHA256: fdc3e4912203bcbc36c83f375e04f36a3b2a7597636601d5ab170047de5b1e9c
+  SHA256: fdc3e4912203bcbc36c83f375e04f36a3b2a7597636601d5ab170047de5b1e9c
+symbols/kenney/direction_n.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/direction_n.svg
+  SourceSHA256: 4a5801b33c6a23ff91f4a2ab33cf1fa8aa6ef27c6f564990e1748aeffdc7fa5b
+  SHA256: 4a5801b33c6a23ff91f4a2ab33cf1fa8aa6ef27c6f564990e1748aeffdc7fa5b
+symbols/kenney/direction_s.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/direction_s.svg
+  SourceSHA256: 4d32ca8391ace94d3a8a766ff4a0f59e5ea8ac9fc7474d13798e0c3b43a58d51
+  SHA256: 4d32ca8391ace94d3a8a766ff4a0f59e5ea8ac9fc7474d13798e0c3b43a58d51
+symbols/kenney/direction_w.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/direction_w.svg
+  SourceSHA256: a2a7af943b1a0375cc685559e28a99e4eb368ff9b89f0696b3a13c1337fa2767
+  SHA256: a2a7af943b1a0375cc685559e28a99e4eb368ff9b89f0696b3a13c1337fa2767
+symbols/kenney/dollar.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/dollar.svg
+  SourceSHA256: 680e19fa2486301805c399e1f2c35629e857ea5c8a01f27d37751a47824cc094
+  SHA256: 680e19fa2486301805c399e1f2c35629e857ea5c8a01f27d37751a47824cc094
+symbols/kenney/exploding.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/exploding.svg
+  SourceSHA256: ceee57b34ceffec9f187a8e40115f23a5f69ac89e53bbe7b90e1e403b1512209
+  SHA256: ceee57b34ceffec9f187a8e40115f23a5f69ac89e53bbe7b90e1e403b1512209
+symbols/kenney/exploding_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/exploding_6.svg
+  SourceSHA256: f1792d4374b5505ae1ad162a799f59fc387b0954cbbbdf09efaefe9387d28d94
+  SHA256: f1792d4374b5505ae1ad162a799f59fc387b0954cbbbdf09efaefe9387d28d94
+symbols/kenney/fire.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/fire.svg
+  SourceSHA256: 37e80e1b5497722b311284e6a26a7d25a9b112347eaa3b879f64acfaf2f9f272
+  SHA256: 37e80e1b5497722b311284e6a26a7d25a9b112347eaa3b879f64acfaf2f9f272
+symbols/kenney/flag_square.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flag_square.svg
+  SourceSHA256: 5be78d4d9a57de4280743ad35241b3dce95f7495f27f1a0d986f16ba5c409abf
+  SHA256: 5be78d4d9a57de4280743ad35241b3dce95f7495f27f1a0d986f16ba5c409abf
+symbols/kenney/flag_triangle.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flag_triangle.svg
+  SourceSHA256: 876590c8f5e5589e72b28ecc692da79477aa0f75c0fc9e39e1cb3e9ee42680b9
+  SHA256: 876590c8f5e5589e72b28ecc692da79477aa0f75c0fc9e39e1cb3e9ee42680b9
+symbols/kenney/flask_empty.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flask_empty.svg
+  SourceSHA256: 8dffda7626c6053ab07a70372fecf250ac4a461f676ac16411fe0a3638801df8
+  SHA256: 8dffda7626c6053ab07a70372fecf250ac4a461f676ac16411fe0a3638801df8
+symbols/kenney/flask_full.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flask_full.svg
+  SourceSHA256: 7ddb1e52bf26c19e2a6c29c14a860786ffd48b62366494a741559e1bf7802913
+  SHA256: 7ddb1e52bf26c19e2a6c29c14a860786ffd48b62366494a741559e1bf7802913
+symbols/kenney/flask_half.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flask_half.svg
+  SourceSHA256: 1b458396caf399d7b8a098e1f41d9dd1419f85f689ec6a630d9321152e18db23
+  SHA256: 1b458396caf399d7b8a098e1f41d9dd1419f85f689ec6a630d9321152e18db23
+symbols/kenney/flip_empty.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flip_empty.svg
+  SourceSHA256: 51439a51bcbaa172747d73ec442195ed02a79ab64a1ac282612d9ecea61c31b3
+  SHA256: 51439a51bcbaa172747d73ec442195ed02a79ab64a1ac282612d9ecea61c31b3
+symbols/kenney/flip_full.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flip_full.svg
+  SourceSHA256: a7323bd1b8fd1a1252d001a971a1f8006c52a0671b2047d4f2acf749412c9a2a
+  SHA256: a7323bd1b8fd1a1252d001a971a1f8006c52a0671b2047d4f2acf749412c9a2a
+symbols/kenney/flip_half.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flip_half.svg
+  SourceSHA256: d648ba4b311d701a0d9730307d5e835eb76b297e31fac0855ce537d65e6c1c1a
+  SHA256: d648ba4b311d701a0d9730307d5e835eb76b297e31fac0855ce537d65e6c1c1a
+symbols/kenney/flip_head.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flip_head.svg
+  SourceSHA256: 538f061979f585b1afa21441957062aa5d029bb7fc5a3401b15a8320357fc801
+  SHA256: 538f061979f585b1afa21441957062aa5d029bb7fc5a3401b15a8320357fc801
+symbols/kenney/flip_tails.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/flip_tails.svg
+  SourceSHA256: 01ee73d4702e96df37320296cc49c0befb3982e13e1069c5431e0778c3b51611
+  SHA256: 01ee73d4702e96df37320296cc49c0befb3982e13e1069c5431e0778c3b51611
+symbols/kenney/hand.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand.svg
+  SourceSHA256: 3bc359445facff4b2d582addc1580597a9c9459a98c5487e73b426c52e9905f1
+  SHA256: 3bc359445facff4b2d582addc1580597a9c9459a98c5487e73b426c52e9905f1
+symbols/kenney/hand_card.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_card.svg
+  SourceSHA256: 75c0b1c786856e498618e81daf4c2b47acdb8c123396b7e8c80757ed9f926195
+  SHA256: 75c0b1c786856e498618e81daf4c2b47acdb8c123396b7e8c80757ed9f926195
+symbols/kenney/hand_cross.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_cross.svg
+  SourceSHA256: 22535086264ff733f242a6ac5976d9798395856467ad7df6d02839efb7510923
+  SHA256: 22535086264ff733f242a6ac5976d9798395856467ad7df6d02839efb7510923
+symbols/kenney/hand_cube.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_cube.svg
+  SourceSHA256: 97cc5bb91756b6d98e9e6d98a746a872ee8497f044249dec86851436bdfba2b6
+  SHA256: 97cc5bb91756b6d98e9e6d98a746a872ee8497f044249dec86851436bdfba2b6
+symbols/kenney/hand_hexagon.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_hexagon.svg
+  SourceSHA256: b6237709a699ed5aa0f8d9e068e7710b1ef910ca8daf2fc36360428f46acd437
+  SHA256: b6237709a699ed5aa0f8d9e068e7710b1ef910ca8daf2fc36360428f46acd437
+symbols/kenney/hand_token.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_token.svg
+  SourceSHA256: 460f223566513e5d190001b7a4076c24695508eb7e78a66ba7af5b1be36b44cd
+  SHA256: 460f223566513e5d190001b7a4076c24695508eb7e78a66ba7af5b1be36b44cd
+symbols/kenney/hand_token_open.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hand_token_open.svg
+  SourceSHA256: 274139d9b8a5a5b365ee5ae1c3ad842ec0f3a90393d598555cbd862773175bb7
+  SHA256: 274139d9b8a5a5b365ee5ae1c3ad842ec0f3a90393d598555cbd862773175bb7
+symbols/kenney/hexagon.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon.svg
+  SourceSHA256: f4fd13be6773e69ba345125b9832e53e614542b99127313820b0b294df599f60
+  SHA256: f4fd13be6773e69ba345125b9832e53e614542b99127313820b0b294df599f60
+symbols/kenney/hexagon_in.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_in.svg
+  SourceSHA256: a7dd45947ac0b8faf88919e7cb3a4f9c0bc08324c69925527f1c190471646832
+  SHA256: a7dd45947ac0b8faf88919e7cb3a4f9c0bc08324c69925527f1c190471646832
+symbols/kenney/hexagon_out.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_out.svg
+  SourceSHA256: c1772ca4c352418fe80579005866c7aca961686e280d370a3fb0efdd76226ac8
+  SHA256: c1772ca4c352418fe80579005866c7aca961686e280d370a3fb0efdd76226ac8
+symbols/kenney/hexagon_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_outline.svg
+  SourceSHA256: 9bcbac2799d49be38751ca3bcfa8d159b28497cb4c3c07c4012c85d64ae33120
+  SHA256: 9bcbac2799d49be38751ca3bcfa8d159b28497cb4c3c07c4012c85d64ae33120
+symbols/kenney/hexagon_question.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_question.svg
+  SourceSHA256: b8dc30e4d8ba80d360747d868c8eafcd7c00ad6610e60b9839151e91a7faafd6
+  SHA256: b8dc30e4d8ba80d360747d868c8eafcd7c00ad6610e60b9839151e91a7faafd6
+symbols/kenney/hexagon_switch.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_switch.svg
+  SourceSHA256: ef2cd18c2988fb563be3c47017d1f588ee8cf233870800a6217e58fdfcabb7a2
+  SHA256: ef2cd18c2988fb563be3c47017d1f588ee8cf233870800a6217e58fdfcabb7a2
+symbols/kenney/hexagon_tile.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hexagon_tile.svg
+  SourceSHA256: a417171976737c1ba894f90a2a725a6446541e4ad1f11fc2f0ae42a859557356
+  SHA256: a417171976737c1ba894f90a2a725a6446541e4ad1f11fc2f0ae42a859557356
+symbols/kenney/hourglass.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hourglass.svg
+  SourceSHA256: 5abed8d1c98b26dccc1c6159a3cb5df0a2be52815c55e15897a9b463aa2374f8
+  SHA256: 5abed8d1c98b26dccc1c6159a3cb5df0a2be52815c55e15897a9b463aa2374f8
+symbols/kenney/hourglass_bottom.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hourglass_bottom.svg
+  SourceSHA256: bcc4f5dff962ba4823698134e8a12da482e92929dace72a5792498c548958309
+  SHA256: bcc4f5dff962ba4823698134e8a12da482e92929dace72a5792498c548958309
+symbols/kenney/hourglass_top.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/hourglass_top.svg
+  SourceSHA256: 6bb3d2ea375970994d7c4def4314c0f7a40d5f6911988be5a70c63b4c138f6db
+  SHA256: 6bb3d2ea375970994d7c4def4314c0f7a40d5f6911988be5a70c63b4c138f6db
+symbols/kenney/lock_closed.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/lock_closed.svg
+  SourceSHA256: 2c40259d27f07df973b8420df6e952fe635edb6c532bc3ac8b4f3393f71af2e6
+  SHA256: 2c40259d27f07df973b8420df6e952fe635edb6c532bc3ac8b4f3393f71af2e6
+symbols/kenney/lock_open.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/lock_open.svg
+  SourceSHA256: 05257797df3c2f4bab8a325ba7a604f8a606dc80cd930c06ca15d93005618f52
+  SHA256: 05257797df3c2f4bab8a325ba7a604f8a606dc80cd930c06ca15d93005618f52
+symbols/kenney/notepad.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/notepad.svg
+  SourceSHA256: a97fb9a966c4fd01147992f9240c1e624d1763b4d7a75b7c0431f5f5547e82fd
+  SHA256: a97fb9a966c4fd01147992f9240c1e624d1763b4d7a75b7c0431f5f5547e82fd
+symbols/kenney/notepad_write.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/notepad_write.svg
+  SourceSHA256: 388e3f1ccff501b5e570dc7bfe2cab56ee081d0ff310e20a11475629f4cbe101
+  SHA256: 388e3f1ccff501b5e570dc7bfe2cab56ee081d0ff310e20a11475629f4cbe101
+symbols/kenney/pawn.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn.svg
+  SourceSHA256: 37ef84528850c62cac3bdaeaa67f7676664bd8a15f828f4b2300ccc2fde8dd6f
+  SHA256: 37ef84528850c62cac3bdaeaa67f7676664bd8a15f828f4b2300ccc2fde8dd6f
+symbols/kenney/pawn_clockwise.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_clockwise.svg
+  SourceSHA256: 898abbe517d00dbd4b6b6354c3934802f041a830a7e4fb1eacce8906b08a1c32
+  SHA256: 898abbe517d00dbd4b6b6354c3934802f041a830a7e4fb1eacce8906b08a1c32
+symbols/kenney/pawn_counterclockwise.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_counterclockwise.svg
+  SourceSHA256: fb157264f2fb0a54035aba39dd6cfac97fbe0e469d3fdc6f80c54aec8cafb1a3
+  SHA256: fb157264f2fb0a54035aba39dd6cfac97fbe0e469d3fdc6f80c54aec8cafb1a3
+symbols/kenney/pawn_down.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_down.svg
+  SourceSHA256: 78a6353a473c872ca25fd05bfc631b12485619f0cec56ff0f4c80dc1d9a0bfb6
+  SHA256: 78a6353a473c872ca25fd05bfc631b12485619f0cec56ff0f4c80dc1d9a0bfb6
+symbols/kenney/pawn_flip.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_flip.svg
+  SourceSHA256: 57f94c1dfb6444af50e2f6cba841b05cc7d62abe73e585277253f058c41b3e56
+  SHA256: 57f94c1dfb6444af50e2f6cba841b05cc7d62abe73e585277253f058c41b3e56
+symbols/kenney/pawn_left.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_left.svg
+  SourceSHA256: f2d607a6f28569fc3d143a8ef376213bc3d34cf0e0880a46112ee31374fe9992
+  SHA256: f2d607a6f28569fc3d143a8ef376213bc3d34cf0e0880a46112ee31374fe9992
+symbols/kenney/pawn_reverse.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_reverse.svg
+  SourceSHA256: 05b3adebb72d2ae0978cd80a2bdc85c038cb5048c1e8ccad06e3223a94f1593b
+  SHA256: 05b3adebb72d2ae0978cd80a2bdc85c038cb5048c1e8ccad06e3223a94f1593b
+symbols/kenney/pawn_right.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_right.svg
+  SourceSHA256: 8dace5d351769353f0e8dee29b91f5da7cf481d5883a1845c5f45a462f961f5d
+  SHA256: 8dace5d351769353f0e8dee29b91f5da7cf481d5883a1845c5f45a462f961f5d
+symbols/kenney/pawn_skip.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_skip.svg
+  SourceSHA256: 0acea08f09d2172e5902a1f7cf958ff58d789d71de045d890dcd9779a712ef8a
+  SHA256: 0acea08f09d2172e5902a1f7cf958ff58d789d71de045d890dcd9779a712ef8a
+symbols/kenney/pawn_table.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_table.svg
+  SourceSHA256: ca23c59ca85b8cdc9f67edee04ff9edad1bb19d2dc61e09415d8af76587ab484
+  SHA256: ca23c59ca85b8cdc9f67edee04ff9edad1bb19d2dc61e09415d8af76587ab484
+symbols/kenney/pawn_up.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawn_up.svg
+  SourceSHA256: 3a4ab0d2ea0e5ee9f49b4814ecd8bb6c3120de6f0c7b1c0064539f6a71bc07f9
+  SHA256: 3a4ab0d2ea0e5ee9f49b4814ecd8bb6c3120de6f0c7b1c0064539f6a71bc07f9
+symbols/kenney/pawns.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pawns.svg
+  SourceSHA256: f606aadcc6a8a7348469a6cc127022fdc1efd3e4676d42dfc21d3ab1e1174cb5
+  SHA256: f606aadcc6a8a7348469a6cc127022fdc1efd3e4676d42dfc21d3ab1e1174cb5
+symbols/kenney/pentagon.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pentagon.svg
+  SourceSHA256: 4fcbfe1db0ebe830529be33d3830b2445a4f4a6bca903b8567163271ae0396e9
+  SHA256: 4fcbfe1db0ebe830529be33d3830b2445a4f4a6bca903b8567163271ae0396e9
+symbols/kenney/pentagon_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pentagon_outline.svg
+  SourceSHA256: 52ce017c2d426483222cae7d3552f7950d841f6f4e513056b97a9a19ccdeee97
+  SHA256: 52ce017c2d426483222cae7d3552f7950d841f6f4e513056b97a9a19ccdeee97
+symbols/kenney/pentagon_question.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pentagon_question.svg
+  SourceSHA256: 3f55ada1ffdef6d838d1fb3389ad403a113f0d7c18bb1ae19530c8a3cb8309ab
+  SHA256: 3f55ada1ffdef6d838d1fb3389ad403a113f0d7c18bb1ae19530c8a3cb8309ab
+symbols/kenney/pouch.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pouch.svg
+  SourceSHA256: 4167ea0c4c27d5ebb1c4ecb2813c24deb9f205f83c7f74bb4fd1b6809667942b
+  SHA256: 4167ea0c4c27d5ebb1c4ecb2813c24deb9f205f83c7f74bb4fd1b6809667942b
+symbols/kenney/pouch_add.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pouch_add.svg
+  SourceSHA256: 333ed1b61032a7f859870cde00c8586e8854e9a55551bb61a8f12f50ab54f07d
+  SHA256: 333ed1b61032a7f859870cde00c8586e8854e9a55551bb61a8f12f50ab54f07d
+symbols/kenney/pouch_remove.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/pouch_remove.svg
+  SourceSHA256: 2cc86d24699c3bf02a4cd423ffda91518e09f8f2f8e78a15b087b69631b0c9e8
+  SHA256: 2cc86d24699c3bf02a4cd423ffda91518e09f8f2f8e78a15b087b69631b0c9e8
+symbols/kenney/puzzle.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/puzzle.svg
+  SourceSHA256: 29d3e9c14baee00558aaac8b84b9f5a8fae2944e276ac153c3f4a2829664dd3d
+  SHA256: 29d3e9c14baee00558aaac8b84b9f5a8fae2944e276ac153c3f4a2829664dd3d
+symbols/kenney/resource_apple.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_apple.svg
+  SourceSHA256: 55bfd1e7ce5bf1feed028a7cbbd3a8903f839ca413f2fffe74e63256b9de33db
+  SHA256: 55bfd1e7ce5bf1feed028a7cbbd3a8903f839ca413f2fffe74e63256b9de33db
+symbols/kenney/resource_iron.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_iron.svg
+  SourceSHA256: 90afaee73fa8b64f0fe63eb2f62e84de2c410b0d385da1900c985bc4617f2bd1
+  SHA256: 90afaee73fa8b64f0fe63eb2f62e84de2c410b0d385da1900c985bc4617f2bd1
+symbols/kenney/resource_lumber.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_lumber.svg
+  SourceSHA256: f39b9e1b93ec24dc21ba2aae904324f6ac2069a294f75302f09dac20a58483f6
+  SHA256: f39b9e1b93ec24dc21ba2aae904324f6ac2069a294f75302f09dac20a58483f6
+symbols/kenney/resource_planks.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_planks.svg
+  SourceSHA256: 9e803ff8e54a42a1ca183fc44df017c33b5ed40092faaf84dde905247fdea880
+  SHA256: 9e803ff8e54a42a1ca183fc44df017c33b5ed40092faaf84dde905247fdea880
+symbols/kenney/resource_wheat.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_wheat.svg
+  SourceSHA256: 98a050c63904409a803fa98f8cd3a54dd04e236ee6a0d5cf0b27c2bbda8641d1
+  SHA256: 98a050c63904409a803fa98f8cd3a54dd04e236ee6a0d5cf0b27c2bbda8641d1
+symbols/kenney/resource_wood.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/resource_wood.svg
+  SourceSHA256: caaacd6126105eebb0538ebac64827a6da4b678428fbfbc668f683988b0d9cfb
+  SHA256: caaacd6126105eebb0538ebac64827a6da4b678428fbfbc668f683988b0d9cfb
+symbols/kenney/rhombus.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/rhombus.svg
+  SourceSHA256: 4ba2570619ad7a006bd20f4e1460a8bf8fad04e8d6b72304669699d2a18f781b
+  SHA256: 4ba2570619ad7a006bd20f4e1460a8bf8fad04e8d6b72304669699d2a18f781b
+symbols/kenney/rhombus_outline.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/rhombus_outline.svg
+  SourceSHA256: 9484e269ec3c1b9d196603c72cdb48d8527e070e92288c5623d4259088421001
+  SHA256: 9484e269ec3c1b9d196603c72cdb48d8527e070e92288c5623d4259088421001
+symbols/kenney/rhombus_question.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/rhombus_question.svg
+  SourceSHA256: ac9ba945938e396ab585d1de4fa06cb8da819aeedfb9668c0eeac6bca3761e90
+  SHA256: ac9ba945938e396ab585d1de4fa06cb8da819aeedfb9668c0eeac6bca3761e90
+symbols/kenney/shield.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/shield.svg
+  SourceSHA256: 377da5c6c7bac6cfdd8cd9702ed53017ff2e25bedffdf689346e4f282766ba1c
+  SHA256: 377da5c6c7bac6cfdd8cd9702ed53017ff2e25bedffdf689346e4f282766ba1c
+symbols/kenney/skull.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/skull.svg
+  SourceSHA256: 8d142ced6b7023ad181289ffe3967e441fc1a6b5054b39acde720ee159a67338
+  SHA256: 8d142ced6b7023ad181289ffe3967e441fc1a6b5054b39acde720ee159a67338
+symbols/kenney/spinner.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/spinner.svg
+  SourceSHA256: ff03844b8aa37a8c294bdb457ee6b06cbc0e9ac452564e13948c399352f14cb2
+  SHA256: ff03844b8aa37a8c294bdb457ee6b06cbc0e9ac452564e13948c399352f14cb2
+symbols/kenney/spinner_segment.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/spinner_segment.svg
+  SourceSHA256: c7ff327d401860ee529ccf28ba9243c8aed57351abfbcfd0b072c0e291621a68
+  SHA256: c7ff327d401860ee529ccf28ba9243c8aed57351abfbcfd0b072c0e291621a68
+symbols/kenney/structure_church.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_church.svg
+  SourceSHA256: bd0d12e389c1a6820434b88371430879ddc21f815206ad08f86e888593ecb8bb
+  SHA256: bd0d12e389c1a6820434b88371430879ddc21f815206ad08f86e888593ecb8bb
+symbols/kenney/structure_farm.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_farm.svg
+  SourceSHA256: 6169b52c980e98bc664c78cc828032777de61672a0cfff12f7667eb11866714e
+  SHA256: 6169b52c980e98bc664c78cc828032777de61672a0cfff12f7667eb11866714e
+symbols/kenney/structure_gate.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_gate.svg
+  SourceSHA256: 6e9a33c19a628342a09a8afe88d935ac5405e19c585f8cf64afaf46e29dae42e
+  SHA256: 6e9a33c19a628342a09a8afe88d935ac5405e19c585f8cf64afaf46e29dae42e
+symbols/kenney/structure_house.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_house.svg
+  SourceSHA256: f5ae7a4f9502af95af04c2c2d597aab6a932c99597eecddcfa1e652e25612c1b
+  SHA256: f5ae7a4f9502af95af04c2c2d597aab6a932c99597eecddcfa1e652e25612c1b
+symbols/kenney/structure_tower.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_tower.svg
+  SourceSHA256: b7d9538a06eb7e16b64d7c29076176b23a707a111dbb15ea1eae1e979b23e1e4
+  SHA256: b7d9538a06eb7e16b64d7c29076176b23a707a111dbb15ea1eae1e979b23e1e4
+symbols/kenney/structure_wall.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_wall.svg
+  SourceSHA256: 028ab03417114f11dec4f710deac8b56f21bbb9cc7462abb6748613f42949715
+  SHA256: 028ab03417114f11dec4f710deac8b56f21bbb9cc7462abb6748613f42949715
+symbols/kenney/structure_watchtower.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/structure_watchtower.svg
+  SourceSHA256: 26b04aa0a7daae57e838acb71d42ccc6a09bf71103f343e740e8b72705ed828e
+  SHA256: 26b04aa0a7daae57e838acb71d42ccc6a09bf71103f343e740e8b72705ed828e
+symbols/kenney/suit_clubs.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/suit_clubs.svg
+  SourceSHA256: a8f7a938bf316d1184c1ea85884fca3ca5428a280274c52c96945e12fee9d6af
+  SHA256: a8f7a938bf316d1184c1ea85884fca3ca5428a280274c52c96945e12fee9d6af
+symbols/kenney/suit_diamonds.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/suit_diamonds.svg
+  SourceSHA256: e439dd9aa76ed9ff6b853339d09a5eac5b24dbdb9a176473ad12d06bb130369e
+  SHA256: e439dd9aa76ed9ff6b853339d09a5eac5b24dbdb9a176473ad12d06bb130369e
+symbols/kenney/suit_hearts.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/suit_hearts.svg
+  SourceSHA256: c0be83d60cccca3a385a41b6afcbdd35850b9d3dfcb2e8599a150240388ab1cd
+  SHA256: c0be83d60cccca3a385a41b6afcbdd35850b9d3dfcb2e8599a150240388ab1cd
+symbols/kenney/suit_hearts_broken.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/suit_hearts_broken.svg
+  SourceSHA256: b02403bf5ce14e833cb12624bfe0810e27e7e5df288d28573b1efe548ffd3178
+  SHA256: b02403bf5ce14e833cb12624bfe0810e27e7e5df288d28573b1efe548ffd3178
+symbols/kenney/suit_spades.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/suit_spades.svg
+  SourceSHA256: dba70e93a6b7c88b6a11d0cdf975499498441265dc371efd059b0418b555b88d
+  SHA256: dba70e93a6b7c88b6a11d0cdf975499498441265dc371efd059b0418b555b88d
+symbols/kenney/sword.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/sword.svg
+  SourceSHA256: 65c51c8d87d04ee3cd157c836f711f503e930ac5ec544fd0b726a3a0d12e6cca
+  SHA256: 65c51c8d87d04ee3cd157c836f711f503e930ac5ec544fd0b726a3a0d12e6cca
+symbols/kenney/tag_1.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_1.svg
+  SourceSHA256: 3bd794dabcd15dd1f9f3d97ac103f82bd3da8cb802845ccd164b626df020a1a2
+  SHA256: 3bd794dabcd15dd1f9f3d97ac103f82bd3da8cb802845ccd164b626df020a1a2
+symbols/kenney/tag_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_10.svg
+  SourceSHA256: dd526a2980dcd888790c49cca3a923961fbc6a922bc14bfe108f00a16719c695
+  SHA256: dd526a2980dcd888790c49cca3a923961fbc6a922bc14bfe108f00a16719c695
+symbols/kenney/tag_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_2.svg
+  SourceSHA256: 6f06ccf9fe74cb5fab8cb57cbc0cea9558c61c331145b7ae1a0df923dfa5010e
+  SHA256: 6f06ccf9fe74cb5fab8cb57cbc0cea9558c61c331145b7ae1a0df923dfa5010e
+symbols/kenney/tag_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_3.svg
+  SourceSHA256: 3e85a3dbe00525c9cfe560780e997ddc4c78043fab30cd7bd6dbbedbdbd0bc2e
+  SHA256: 3e85a3dbe00525c9cfe560780e997ddc4c78043fab30cd7bd6dbbedbdbd0bc2e
+symbols/kenney/tag_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_4.svg
+  SourceSHA256: db7950c686a2b640362dbe632935ced029dd7df1f4990266e3b377611c938478
+  SHA256: db7950c686a2b640362dbe632935ced029dd7df1f4990266e3b377611c938478
+symbols/kenney/tag_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_5.svg
+  SourceSHA256: 882faef24aaf5cb924a7d07fa1f37fc679d0b150be11622a50e9f27fef813a03
+  SHA256: 882faef24aaf5cb924a7d07fa1f37fc679d0b150be11622a50e9f27fef813a03
+symbols/kenney/tag_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_6.svg
+  SourceSHA256: d7893ff0d0c88c386c585b5173c385f89fdfc6a1369af1168eaa74cb30c310fb
+  SHA256: d7893ff0d0c88c386c585b5173c385f89fdfc6a1369af1168eaa74cb30c310fb
+symbols/kenney/tag_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_7.svg
+  SourceSHA256: c60f0601e6e6946a7d5d35aee6b83e873a67dd95ac4557ecf753c38047bf6be7
+  SHA256: c60f0601e6e6946a7d5d35aee6b83e873a67dd95ac4557ecf753c38047bf6be7
+symbols/kenney/tag_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_8.svg
+  SourceSHA256: 4251865e525e9dd6096499d9a500f39db0d99e4cf8f1b07147083c0065a9f121
+  SHA256: 4251865e525e9dd6096499d9a500f39db0d99e4cf8f1b07147083c0065a9f121
+symbols/kenney/tag_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_9.svg
+  SourceSHA256: b3d28d1c09c83740a666376d5377e2ce2308bd7efebdf5d61dc72a9825591678
+  SHA256: b3d28d1c09c83740a666376d5377e2ce2308bd7efebdf5d61dc72a9825591678
+symbols/kenney/tag_d6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6.svg
+  SourceSHA256: c31c45419093d5760a7e97230e9559832237848f328d6bda322b4568e6981253
+  SHA256: c31c45419093d5760a7e97230e9559832237848f328d6bda322b4568e6981253
+symbols/kenney/tag_d6_1.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_1.svg
+  SourceSHA256: 654d0c8ede6d4833716eee332a49cde8c70483f68d549a61bc29d964f4c21b79
+  SHA256: 654d0c8ede6d4833716eee332a49cde8c70483f68d549a61bc29d964f4c21b79
+symbols/kenney/tag_d6_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_2.svg
+  SourceSHA256: 48b6e31fe6e13c82f8ab7d0359b43f4103f5c8c93cda5bc0b2c1e1f3d330379c
+  SHA256: 48b6e31fe6e13c82f8ab7d0359b43f4103f5c8c93cda5bc0b2c1e1f3d330379c
+symbols/kenney/tag_d6_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_3.svg
+  SourceSHA256: 8eb47b0351c7ccff40c5a4bed65992cabd2580ca3012743d2effae3fb26a07dd
+  SHA256: 8eb47b0351c7ccff40c5a4bed65992cabd2580ca3012743d2effae3fb26a07dd
+symbols/kenney/tag_d6_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_4.svg
+  SourceSHA256: 747d73bb4efc8d5adc8c13f5a2990df22422689bdfd798a31ddeeae0c24242a7
+  SHA256: 747d73bb4efc8d5adc8c13f5a2990df22422689bdfd798a31ddeeae0c24242a7
+symbols/kenney/tag_d6_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_5.svg
+  SourceSHA256: a29879f6b2f8441e38429739cfb51f06dd5a27fcd40ffc7b53b33d51bca88fce
+  SHA256: a29879f6b2f8441e38429739cfb51f06dd5a27fcd40ffc7b53b33d51bca88fce
+symbols/kenney/tag_d6_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_6.svg
+  SourceSHA256: 7d6dd46040f2177ef18cd090d8888ee864e0267b17d60d6bbb7c826900493496
+  SHA256: 7d6dd46040f2177ef18cd090d8888ee864e0267b17d60d6bbb7c826900493496
+symbols/kenney/tag_d6_check.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_check.svg
+  SourceSHA256: dff43a80bc12a2c5bb9c824f1438b93d5d91fb18746ee0f3019859323b1c05c8
+  SHA256: dff43a80bc12a2c5bb9c824f1438b93d5d91fb18746ee0f3019859323b1c05c8
+symbols/kenney/tag_d6_cross.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_cross.svg
+  SourceSHA256: 8572f29b480b27f03e6d439a122ff4a3dde6ab9740ea3bf2f3c905feadc2a3a6
+  SHA256: 8572f29b480b27f03e6d439a122ff4a3dde6ab9740ea3bf2f3c905feadc2a3a6
+symbols/kenney/tag_d6_infinte.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_d6_infinte.svg
+  SourceSHA256: 09bb598cac6770ebdf7c08d38ea85cf45e64647438a8ece53c9b818070a67204
+  SHA256: 09bb598cac6770ebdf7c08d38ea85cf45e64647438a8ece53c9b818070a67204
+symbols/kenney/tag_empty.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_empty.svg
+  SourceSHA256: 65b52efd37d92d4cc7637e85aa1aa8b1e2c1cf9757ed704eb13e499a9314675d
+  SHA256: 65b52efd37d92d4cc7637e85aa1aa8b1e2c1cf9757ed704eb13e499a9314675d
+symbols/kenney/tag_infinite.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_infinite.svg
+  SourceSHA256: 09787d0ef2c39f82942d52f295b94e107728f66b713bfa884f6715236b81794c
+  SHA256: 09787d0ef2c39f82942d52f295b94e107728f66b713bfa884f6715236b81794c
+symbols/kenney/tag_shield.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield.svg
+  SourceSHA256: 1674a6edbd1d73c4f54e99dcf9204d6f8af9a5666174870ddbb28299be9b17f7
+  SHA256: 1674a6edbd1d73c4f54e99dcf9204d6f8af9a5666174870ddbb28299be9b17f7
+symbols/kenney/tag_shield_1.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_1.svg
+  SourceSHA256: 9e4dab3144cb2d9d8e16aa6c98354b0fe347079e57740feb02a275294ccb9674
+  SHA256: 9e4dab3144cb2d9d8e16aa6c98354b0fe347079e57740feb02a275294ccb9674
+symbols/kenney/tag_shield_10.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_10.svg
+  SourceSHA256: 827f311165da7a554ed335b6ee81d68478511215f9bca61946ec5940e5c18f52
+  SHA256: 827f311165da7a554ed335b6ee81d68478511215f9bca61946ec5940e5c18f52
+symbols/kenney/tag_shield_2.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_2.svg
+  SourceSHA256: 75fe2f2171fefa423388993713d12e5710644ac4f4c00fbb52816b420b21cb08
+  SHA256: 75fe2f2171fefa423388993713d12e5710644ac4f4c00fbb52816b420b21cb08
+symbols/kenney/tag_shield_3.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_3.svg
+  SourceSHA256: a6ccab09a820c5dc06991e25a4ae23025cf97f7817bfdfe7ca27b8f138223164
+  SHA256: a6ccab09a820c5dc06991e25a4ae23025cf97f7817bfdfe7ca27b8f138223164
+symbols/kenney/tag_shield_4.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_4.svg
+  SourceSHA256: 6ec09704d2aceb8aceae3ed957c69c6bba761099eea623c32c198163ab9f74e3
+  SHA256: 6ec09704d2aceb8aceae3ed957c69c6bba761099eea623c32c198163ab9f74e3
+symbols/kenney/tag_shield_5.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_5.svg
+  SourceSHA256: 2dfba3ac9258d4a772bb159d76074c55e9b44b61a5b0ac3f9c57235885f19f96
+  SHA256: 2dfba3ac9258d4a772bb159d76074c55e9b44b61a5b0ac3f9c57235885f19f96
+symbols/kenney/tag_shield_6.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_6.svg
+  SourceSHA256: af96156796a7ec9e0b40b96999725fee7328204a7b231d22de4922465c95c5dc
+  SHA256: af96156796a7ec9e0b40b96999725fee7328204a7b231d22de4922465c95c5dc
+symbols/kenney/tag_shield_7.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_7.svg
+  SourceSHA256: 6b90062c8f9ba1eba2cb3cd1810dad8ca65f21cb1420dffe7e5d984d8cd86031
+  SHA256: 6b90062c8f9ba1eba2cb3cd1810dad8ca65f21cb1420dffe7e5d984d8cd86031
+symbols/kenney/tag_shield_8.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_8.svg
+  SourceSHA256: 00822ba5faa57c1858028633de2f1abfec3afbc952a1ba907f8597b379d5e747
+  SHA256: 00822ba5faa57c1858028633de2f1abfec3afbc952a1ba907f8597b379d5e747
+symbols/kenney/tag_shield_9.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_9.svg
+  SourceSHA256: 20e014cb53baf64be1b29fdbf8e5ea667edecb1a6eb65c4d1af99aaf6b80c68f
+  SHA256: 20e014cb53baf64be1b29fdbf8e5ea667edecb1a6eb65c4d1af99aaf6b80c68f
+symbols/kenney/tag_shield_infinite.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tag_shield_infinite.svg
+  SourceSHA256: 48d88f211762147ed8ca843e6926452ccb93e6582580bcf3ec337298c9176b73
+  SHA256: 48d88f211762147ed8ca843e6926452ccb93e6582580bcf3ec337298c9176b73
+symbols/kenney/timer_0.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_0.svg
+  SourceSHA256: 6690764c7be00afeedd577c932db1a47824395e49869fd4b41028d6812e9108d
+  SHA256: 6690764c7be00afeedd577c932db1a47824395e49869fd4b41028d6812e9108d
+symbols/kenney/timer_100.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_100.svg
+  SourceSHA256: e0449203117a6642bdaf9c1c5ed083eacab6d626f53a2085d4c8e6f502551853
+  SHA256: e0449203117a6642bdaf9c1c5ed083eacab6d626f53a2085d4c8e6f502551853
+symbols/kenney/timer_CCW_25.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CCW_25.svg
+  SourceSHA256: 248af8f382c925a19a29e903a24ed25feca37292abd5d299ef22cf190c336c1d
+  SHA256: 248af8f382c925a19a29e903a24ed25feca37292abd5d299ef22cf190c336c1d
+symbols/kenney/timer_CCW_50.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CCW_50.svg
+  SourceSHA256: b46dd9c011c268077b7604967d26945e13910e799b8f3fb71aa02d7a3ab92de3
+  SHA256: b46dd9c011c268077b7604967d26945e13910e799b8f3fb71aa02d7a3ab92de3
+symbols/kenney/timer_CCW_75.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CCW_75.svg
+  SourceSHA256: 9b64bba4dfe2d59558438425624a5f07bfed8aba27e507ac06b09a2266a83cd6
+  SHA256: 9b64bba4dfe2d59558438425624a5f07bfed8aba27e507ac06b09a2266a83cd6
+symbols/kenney/timer_CW_25.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CW_25.svg
+  SourceSHA256: 5395a9fc524914fcbdb841da304a157d1e2b0149c196c50cb21a7731ee7ea201
+  SHA256: 5395a9fc524914fcbdb841da304a157d1e2b0149c196c50cb21a7731ee7ea201
+symbols/kenney/timer_CW_50.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CW_50.svg
+  SourceSHA256: 8d1ffe69921c85e1c8afe3e2f34f430a9bfab11597b93c07a8f79d6f5ef4c143
+  SHA256: 8d1ffe69921c85e1c8afe3e2f34f430a9bfab11597b93c07a8f79d6f5ef4c143
+symbols/kenney/timer_CW_75.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/timer_CW_75.svg
+  SourceSHA256: 1484012a3ffe292973c08c35a38176bc3d3e7f2d52f54a4d0136895da97880ec
+  SHA256: 1484012a3ffe292973c08c35a38176bc3d3e7f2d52f54a4d0136895da97880ec
+symbols/kenney/token.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token.svg
+  SourceSHA256: 26cc57281358a30a605f4a4c0a264361dbbfb73f36c4692d97c253d8cff10489
+  SHA256: 26cc57281358a30a605f4a4c0a264361dbbfb73f36c4692d97c253d8cff10489
+symbols/kenney/token_add.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_add.svg
+  SourceSHA256: 32cf99bca560c8cba6e0e37517578feac075b0b0f057b48cb4baabb31123d448
+  SHA256: 32cf99bca560c8cba6e0e37517578feac075b0b0f057b48cb4baabb31123d448
+symbols/kenney/token_give.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_give.svg
+  SourceSHA256: 247685d2faa887ab1ede032f61cac7638fc40d7a8430141e0c4dd1dd67a63d06
+  SHA256: 247685d2faa887ab1ede032f61cac7638fc40d7a8430141e0c4dd1dd67a63d06
+symbols/kenney/token_in.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_in.svg
+  SourceSHA256: 3562006ca787d07ddf19878e9eed271477499ade6b5a5c60b3f879da8f8c5adb
+  SHA256: 3562006ca787d07ddf19878e9eed271477499ade6b5a5c60b3f879da8f8c5adb
+symbols/kenney/token_out.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_out.svg
+  SourceSHA256: 19a13e999a5be6c804f8b470c0552a3fc5dbb242046be195ab98d6be4e735e85
+  SHA256: 19a13e999a5be6c804f8b470c0552a3fc5dbb242046be195ab98d6be4e735e85
+symbols/kenney/token_remove.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_remove.svg
+  SourceSHA256: 534351d46c38e56abc9705b94064aae7de6b13b1316dc7abdfc5d8bde32b41a6
+  SHA256: 534351d46c38e56abc9705b94064aae7de6b13b1316dc7abdfc5d8bde32b41a6
+symbols/kenney/token_subtract.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/token_subtract.svg
+  SourceSHA256: c07051cfd530f9b57d22c7d630a13da9c45ace4a7d4f54cd7d3807a80f2e7a10
+  SHA256: c07051cfd530f9b57d22c7d630a13da9c45ace4a7d4f54cd7d3807a80f2e7a10
+symbols/kenney/tokens.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tokens.svg
+  SourceSHA256: 37374b34cee1ac2c797a9019720efb4defeea28261eaa5a2808973f2eab942b7
+  SHA256: 37374b34cee1ac2c797a9019720efb4defeea28261eaa5a2808973f2eab942b7
+symbols/kenney/tokens_shadow.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tokens_shadow.svg
+  SourceSHA256: 87deb0e45466cac0397fbbcfe235de2696ab76e76513f243807ae30018d2ef5b
+  SHA256: 87deb0e45466cac0397fbbcfe235de2696ab76e76513f243807ae30018d2ef5b
+symbols/kenney/tokens_stack.svg
+  License: CC0-1.0
+  Source: Kenney All-in-1 3.6.0/Icons/Board Game Icons/Vector/Icons/tokens_stack.svg
+  SourceSHA256: 68ca730cf94741c2eb26d40259a234e3a5b07c41264b2e1142a175dfb38c7283
+  SHA256: 68ca730cf94741c2eb26d40259a234e3a5b07c41264b2e1142a175dfb38c7283
+symbols/original/air.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: fe4232fe7b443d6c837d70262ccc3fd793e9d68943f79c08dc17e1a9ee2cfa5f
+  SHA256: fe4232fe7b443d6c837d70262ccc3fd793e9d68943f79c08dc17e1a9ee2cfa5f
+symbols/original/chalice.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1cd42e4e4785483816ff6f01fb9115d32ac42fdd09a3e756e30778517062a712
+  SHA256: 1cd42e4e4785483816ff6f01fb9115d32ac42fdd09a3e756e30778517062a712
+symbols/original/diamond.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 20ec3c8a2c46fa070ff6a12ecfbfbb1c422cc5d9be545d74ef5f3ca37637707c
+  SHA256: 20ec3c8a2c46fa070ff6a12ecfbfbb1c422cc5d9be545d74ef5f3ca37637707c
+symbols/original/earth.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d79f9afb058e879bfa9c2b11a4dca0e698986aed5c04df0efa0fce5696b6aa1d
+  SHA256: d79f9afb058e879bfa9c2b11a4dca0e698986aed5c04df0efa0fce5696b6aa1d
+symbols/original/eye.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 46f9cae212da51a489b1816d058bf68bf4dd6f6cc89e5cf11f47bbb649848638
+  SHA256: 46f9cae212da51a489b1816d058bf68bf4dd6f6cc89e5cf11f47bbb649848638
+symbols/original/fire.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 01e12d20612056ef75b05acff284693b13066c10d335c18a53297f18eb343e3e
+  SHA256: 01e12d20612056ef75b05acff284693b13066c10d335c18a53297f18eb343e3e
+symbols/original/hourglass.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 6e00a64c6943ff34b903a33641a6cc25cb2fa8c39379393604056876274dd28a
+  SHA256: 6e00a64c6943ff34b903a33641a6cc25cb2fa8c39379393604056876274dd28a
+symbols/original/infinity.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: beda58255c25835b6c457d077db721d879edb670b9853475c4fa67f1a98434c8
+  SHA256: beda58255c25835b6c457d077db721d879edb670b9853475c4fa67f1a98434c8
+symbols/original/key.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d3003c32fdfa90e60d7d74375e75d72a27dba83044f3132b7a7f3e92da00b11e
+  SHA256: d3003c32fdfa90e60d7d74375e75d72a27dba83044f3132b7a7f3e92da00b11e
+symbols/original/mars.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 99ed8d08cf32cdd3729a6db8549354bcc9457bf7b72044f6a772bdb6a63a088a
+  SHA256: 99ed8d08cf32cdd3729a6db8549354bcc9457bf7b72044f6a772bdb6a63a088a
+symbols/original/mercury.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 32eec9dfa290500cbc76ca572ceb5f1168c724d75ffde27ff6d038fb1dbb80f4
+  SHA256: 32eec9dfa290500cbc76ca572ceb5f1168c724d75ffde27ff6d038fb1dbb80f4
+symbols/original/moon.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 975c849904f1f6340f8cdfb142a06b086ac4e446497781b5d779bba914d8d114
+  SHA256: 975c849904f1f6340f8cdfb142a06b086ac4e446497781b5d779bba914d8d114
+symbols/original/pentagram.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a96a9b888b6fcf6aca7dd23f4c08d14ebdc05d5ba4380d3e8f58ca7a769b0c12
+  SHA256: a96a9b888b6fcf6aca7dd23f4c08d14ebdc05d5ba4380d3e8f58ca7a769b0c12
+symbols/original/salt.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ee2283ea0872eee8aad190679de7d6ea6b288a91580de4fd79e2ae88ea9662b2
+  SHA256: ee2283ea0872eee8aad190679de7d6ea6b288a91580de4fd79e2ae88ea9662b2
+symbols/original/shield.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 512591a6e39062cd661ba5faf38e6e0d30ed047b18abbec2d3e4495167d3c8fd
+  SHA256: 512591a6e39062cd661ba5faf38e6e0d30ed047b18abbec2d3e4495167d3c8fd
+symbols/original/spirit.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 58a7ddfbc318c12dfb966fb00e7b35d8ce9ea44cb1498b3f28490d0c5ad1a0ec
+  SHA256: 58a7ddfbc318c12dfb966fb00e7b35d8ce9ea44cb1498b3f28490d0c5ad1a0ec
+symbols/original/suit-c.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 108a665d236fe583b0d24e66ad730f2e32adbcf6e7854f6c9dce4b8a9254119b
+  SHA256: 108a665d236fe583b0d24e66ad730f2e32adbcf6e7854f6c9dce4b8a9254119b
+symbols/original/suit-d.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 3f445b82ded009a913c9ca7dfae24a29eddab344fde4a6468c7f7a38149c3980
+  SHA256: 3f445b82ded009a913c9ca7dfae24a29eddab344fde4a6468c7f7a38149c3980
+symbols/original/suit-h.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 45e46f4b989f8c4c8143080895ea7e74266d84fc93c0c536898721e223b53ac2
+  SHA256: 45e46f4b989f8c4c8143080895ea7e74266d84fc93c0c536898721e223b53ac2
+symbols/original/suit-s.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 9ef631b4e613794f9219715d672953b8543e8751608961084cc75fb7f8326df7
+  SHA256: 9ef631b4e613794f9219715d672953b8543e8751608961084cc75fb7f8326df7
+symbols/original/sulfur.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 6a42749d8973e519fc14b585d1efb562b0cedfeda7a4e3bad37125d3f861a422
+  SHA256: 6a42749d8973e519fc14b585d1efb562b0cedfeda7a4e3bad37125d3f861a422
+symbols/original/sun.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d3f95aa99cdcb9ac2f45b60f402502ee41ab6a9f4af8a53a553e7ae20f2012d0
+  SHA256: d3f95aa99cdcb9ac2f45b60f402502ee41ab6a9f4af8a53a553e7ae20f2012d0
+symbols/original/sword.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d58d922aaf9ebd8ca6dfa9513e4269f2cc3703328cb46fea8adcfa1150261fd5
+  SHA256: d58d922aaf9ebd8ca6dfa9513e4269f2cc3703328cb46fea8adcfa1150261fd5
+symbols/original/venus.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a4ed2f9369b522b92f46e922f772e467a0cb83b75367d8d60bcd8b10c4b8721a
+  SHA256: a4ed2f9369b522b92f46e922f772e467a0cb83b75367d8d60bcd8b10c4b8721a
+symbols/original/wand.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ccadf1d8fc126a5f6b1d2bcb7f1bf2e25ab691b1f8bb4c8773d08faeed941f10
+  SHA256: ccadf1d8fc126a5f6b1d2bcb7f1bf2e25ab691b1f8bb4c8773d08faeed941f10
+symbols/original/water.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 66cafaf03378043c3a854f337bd7a121f706064923d10378a93b2dd600d86498
+  SHA256: 66cafaf03378043c3a854f337bd7a121f706064923d10378a93b2dd600d86498
+symbols/values/value-1.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 258614568eaccb3f7d1ef43a36eeb95fd73105090f71a66d1170e44c28114196
+  SHA256: 258614568eaccb3f7d1ef43a36eeb95fd73105090f71a66d1170e44c28114196
+symbols/values/value-10.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 6abff1ced4f51133c41fe0f49e222c90007f3b23716b0a7c4fa4d804e9e586da
+  SHA256: 6abff1ced4f51133c41fe0f49e222c90007f3b23716b0a7c4fa4d804e9e586da
+symbols/values/value-11.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: a56a7b099d3140464adbbcb95f20a9f4fcd9464a318ca2523caf221897c2e751
+  SHA256: a56a7b099d3140464adbbcb95f20a9f4fcd9464a318ca2523caf221897c2e751
+symbols/values/value-12.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 15e6bae21f1f38599d774d8922f4ada1e65f9701d95b0c65d7f49ff8015afaff
+  SHA256: 15e6bae21f1f38599d774d8922f4ada1e65f9701d95b0c65d7f49ff8015afaff
+symbols/values/value-13.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d480a1c5752a100f7bd74d77b09e39c9aadf7392f016e95510df353d3af4221a
+  SHA256: d480a1c5752a100f7bd74d77b09e39c9aadf7392f016e95510df353d3af4221a
+symbols/values/value-14.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 78234fe44f19d25d7c5a1c087449d34330c538e9f1621fae1945c7157d5768fb
+  SHA256: 78234fe44f19d25d7c5a1c087449d34330c538e9f1621fae1945c7157d5768fb
+symbols/values/value-15.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d7ad026537bff19a325226712e4d6da95e247b2e91e7173a8605c1f45c9c971e
+  SHA256: d7ad026537bff19a325226712e4d6da95e247b2e91e7173a8605c1f45c9c971e
+symbols/values/value-16.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 111b560f511e110c00646559625dee010c938dd55fca9eea1953c7fafa826719
+  SHA256: 111b560f511e110c00646559625dee010c938dd55fca9eea1953c7fafa826719
+symbols/values/value-17.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: bfbe95da6ca6001d26a25403bab35e40ce945b223ae8491cbddb2102a777e628
+  SHA256: bfbe95da6ca6001d26a25403bab35e40ce945b223ae8491cbddb2102a777e628
+symbols/values/value-18.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 1fcf492cd97a58860c8e7f23e02a4d276cfab13235d6b5cfcd3070fd9e633872
+  SHA256: 1fcf492cd97a58860c8e7f23e02a4d276cfab13235d6b5cfcd3070fd9e633872
+symbols/values/value-19.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: c5cf17034ab3ac02fa067d4cc3ab89fd282c5c70dece70956d476b8138ba5156
+  SHA256: c5cf17034ab3ac02fa067d4cc3ab89fd282c5c70dece70956d476b8138ba5156
+symbols/values/value-2.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ced733b2dcf62f6e01a9c82bd0949ebdc253dc060c6a96f7ad789864f5c35294
+  SHA256: ced733b2dcf62f6e01a9c82bd0949ebdc253dc060c6a96f7ad789864f5c35294
+symbols/values/value-20.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8d00152b5afca0a941bf5491e516afb2448c6125155519b74eb021e2abfc2052
+  SHA256: 8d00152b5afca0a941bf5491e516afb2448c6125155519b74eb021e2abfc2052
+symbols/values/value-3.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d62b31dabde9a92b81bef2eaddf020659ad0ccaead9d0f7fb102aa36b35f47d5
+  SHA256: d62b31dabde9a92b81bef2eaddf020659ad0ccaead9d0f7fb102aa36b35f47d5
+symbols/values/value-4.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: ffebe0dd124abbe7754e4fd44b6da06a9e0a492ea165c1c5a959b0cb4a6eeb36
+  SHA256: ffebe0dd124abbe7754e4fd44b6da06a9e0a492ea165c1c5a959b0cb4a6eeb36
+symbols/values/value-5.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 43832dabc5c11f045a46ea43e9b1cf31e936e1d8c242209162bd3ff6434a6398
+  SHA256: 43832dabc5c11f045a46ea43e9b1cf31e936e1d8c242209162bd3ff6434a6398
+symbols/values/value-6.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 8a33500e32c64d9711ffd9e2c199ccf45b54bb773289b5a5530c997fa38acdca
+  SHA256: 8a33500e32c64d9711ffd9e2c199ccf45b54bb773289b5a5530c997fa38acdca
+symbols/values/value-7.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: c530ba8bba00360c1e464ec9e6da54c792bd3c6720bfbe9313c923341e3b4002
+  SHA256: c530ba8bba00360c1e464ec9e6da54c792bd3c6720bfbe9313c923341e3b4002
+symbols/values/value-8.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: 26a18cc95bf75018d0d26216ad0c5c70f378721a9af792f6b36f314c7fb1a941
+  SHA256: 26a18cc95bf75018d0d26216ad0c5c70f378721a9af792f6b36f314c7fb1a941
+symbols/values/value-9.svg
+  License: MIT
+  Source: Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py
+  SourceSHA256: d836fe8030cf0d5328f4a30c8a3b54700e3fb2033a71d533ddd2af4a5438babe
+  SHA256: d836fe8030cf0d5328f4a30c8a3b54700e3fb2033a71d533ddd2af4a5438babe
+tarot/cups01.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups01.jpg | https://upload.wikimedia.org/wikipedia/commons/3/36/Cups01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: fd157290a61bd075e837879275b811c86c32d3ea2beadb2b24327d133c5fb5f9
+  SHA256: 166ad6cf43f5cb7a6e09f09563fb8093f85c261582e2648df5f9dae8a3bb91da
+tarot/cups02.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups02.jpg | https://upload.wikimedia.org/wikipedia/commons/f/f8/Cups02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 5d1f09a9b69784e6006a9b662496f0664b26b15740062ac2285e77eadf3b36e4
+  SHA256: da66979ea8c894ab1c5a39a786bc3570c20d33b71d58b798ba45e24dab5fb524
+tarot/cups03.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups03.jpg | https://upload.wikimedia.org/wikipedia/commons/7/7a/Cups03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 25bfd4dbc2917a5a33b34c56579facffca464df0f4b4a0b4f00d9c9e96d9be0e
+  SHA256: e8ef75f2ec8b3ff86b4c35495a1d841ed756b62601957d7fd29823827caaf159
+tarot/cups04.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups04.jpg | https://upload.wikimedia.org/wikipedia/commons/3/35/Cups04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 92097fe69d21dd0a0c9d5ece68ed465fa4a53d5107509cde3689840b67ed3f13
+  SHA256: bd6fa45edc4d308546e6571acf15c3fded5b6ce1a7e5ceedf3fa630242a71def
+tarot/cups05.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups05.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d7/Cups05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 07d2354d331f8a9397c407cea0b2bcc1544b134eab526b9262ececb3d0a57166
+  SHA256: bd110c2361ab67aeb43e2a7c6c7d636b3acf7daa1ac6ce2579507194faf97b5f
+tarot/cups06.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups06.jpg | https://upload.wikimedia.org/wikipedia/commons/1/17/Cups06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: bb6fb5b6de8c22811e0c9057a05e46cd0014984e3d43160844bd5c395e8973bf
+  SHA256: a9e72f91b9864b6afc80848364183ad3cf83a44d7e29447d5f7b2bbf17e87fd6
+tarot/cups07.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups07.jpg | https://upload.wikimedia.org/wikipedia/commons/a/ae/Cups07.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 3c9d1d310ca3f4303a2e4beb872d998f7b45fbd26ee361ee48fadb366cf3b3a7
+  SHA256: 6e3c7b4199ce869d238dce03afc34d90d5a5ac5e941907ba6c5606cf523f33e4
+tarot/cups08.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups08.jpg | https://upload.wikimedia.org/wikipedia/commons/6/60/Cups08.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 727c07c60753aa7925c9421ca3a93e80eaadd0053018e68c819b2ac5e6562312
+  SHA256: 1926b3c24e401f3a2b214eb8df8177dbbf02867e54c413f0a0ff6c5ce3ad4bbd
+tarot/cups09.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups09.jpg | https://upload.wikimedia.org/wikipedia/commons/2/24/Cups09.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 5d0704e0dc1de8ab59da38230b609a5aeeceaf61473ca5271f48049976f3cb6f
+  SHA256: 65493944347361071600958624a6df0b087b55cdc4bce205d44500bc41bc3f65
+tarot/cups10.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups10.jpg | https://upload.wikimedia.org/wikipedia/commons/8/84/Cups10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: ac33d5a07ac63e10301cd632cedc020aca25a0d8a3e64f58fbd9e221b39fa261
+  SHA256: a26ed743bb4e0523982a9e47970b4ab34fca99aec10e8dcc22bf20fff665cb37
+tarot/cups11.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups11.jpg | https://upload.wikimedia.org/wikipedia/commons/a/ad/Cups11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: c6000e0ec6cf784ec75ac3a9fa8971e9ba56c8072c899cc0d44dece6acafc526
+  SHA256: 101d8181e7f4949e8b5de88e8e1348c49a87f9b1b7f0d32bf6bf57c8435fbf62
+tarot/cups12.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups12.jpg | https://upload.wikimedia.org/wikipedia/commons/f/fa/Cups12.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 99a7b7c91da744cb03a3741c4bac674ef91adbb5b22aca53404f3467d1ea8e65
+  SHA256: eb43add33ae7efbc1782faebe5439a85f10cf67145f9f8f86e759e2e78b9f534
+tarot/cups13.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups13.jpg | https://upload.wikimedia.org/wikipedia/commons/6/62/Cups13.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: a1732a137bfc441a68703e3c8c14653f22452a287e790b9d5047035afc374b2a
+  SHA256: 56b987a23ec2f4de0d692e0586043ec171fe47a612aa1f28650650e2c564e81a
+tarot/cups14.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Cups14.jpg | https://upload.wikimedia.org/wikipedia/commons/0/04/Cups14.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 79ae249016aaafb01279007e2da5ad00dffd6dc7d3017526853cfa6efc989372
+  SHA256: a9b417060f70c3c72cd1667883a0ca131b2b2ce9bf9283a5d513a084fb13cbcc
+tarot/pents01.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents01.jpg | https://upload.wikimedia.org/wikipedia/commons/f/fd/Pents01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: fd6ddf90ead3062dd3696856e9771356dd9a2527048dab19417ee7ad79e28464
+  SHA256: 755babf4ca5bf6948123cae147dffa8c13e4a78d1ee5845ac4316ab0ba1bd24b
+tarot/pents02.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents02.jpg | https://upload.wikimedia.org/wikipedia/commons/9/9f/Pents02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 1ee94470d0a0d53f867b5f6616bfe9e672b5693ba7c1d0a0c29303b2a1c08a88
+  SHA256: 284807c92c08adb310d3d0810de62b0d180b435504ebc78df67bebc67f5b1929
+tarot/pents03.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents03.jpg | https://upload.wikimedia.org/wikipedia/commons/4/42/Pents03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: a8d826b099c0920329be52de5b96c0b2e5ddcfb45b8d109490e9ab74ae6f9eaa
+  SHA256: 2ce2e7068eaeceb95070089bf62d68f2cfff0a3293265fe77a7a1f6e28cb003e
+tarot/pents04.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents04.jpg | https://upload.wikimedia.org/wikipedia/commons/3/35/Pents04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 37e44050b8ac86dc7db3c1bb00e80154e97986b028a1499504ab89c5612e5989
+  SHA256: 3ccd7f69f8dad1dfa3584ecaa2288bac035c98acc508624e6dec39765c95b1c9
+tarot/pents05.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents05.jpg | https://upload.wikimedia.org/wikipedia/commons/9/96/Pents05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 5a6705ba00c102c9e66a716b182e195f17c1bcf94a8d1b5163e2ce7195166938
+  SHA256: 2b5ff55f4b8183f56717724a6e501eb2ca52891e03cf51c258d8cf4c3f7e7f7f
+tarot/pents06.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents06.jpg | https://upload.wikimedia.org/wikipedia/commons/a/a6/Pents06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: d9d67638f7f4075b42b03ee80ca9bf3817d2406cda647618504140b85ab3ca6b
+  SHA256: 2db6b15bf872b428f4b592c717eede8ec3587a94e7fffe0b31a8c2e24fad544f
+tarot/pents07.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents07.jpg | https://upload.wikimedia.org/wikipedia/commons/6/6a/Pents07.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 78a9d4965ce497192e5186737a44d73b4e94aa8a4092b49b374879ed22b138ab
+  SHA256: cf75a2c3302994985410a44140d46671e2e75180e4077cc6024606e48e81dd5d
+tarot/pents08.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents08.jpg | https://upload.wikimedia.org/wikipedia/commons/4/49/Pents08.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 13c82cbdec9ce101f157ee502663eb38bbd8117cec5e019b8400474056caebd9
+  SHA256: 16f89cd92151324007b24d3acebefa396d4a60aaad2df2dac2e909de3dd28aa1
+tarot/pents09.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents09.jpg | https://upload.wikimedia.org/wikipedia/commons/f/f0/Pents09.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: e491630d7291a34266f2d227f4085602cb9a000e31346402773a653e07b48f32
+  SHA256: 13a68f0b6745ef441f5b2f8920fea40f6c48dc0dcc8bae992f4a89345d21aae0
+tarot/pents10.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents10.jpg | https://upload.wikimedia.org/wikipedia/commons/4/42/Pents10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: e14d5029ff2151a5ef53218c853382828dd0940bfd3a608d72ec59a967f97809
+  SHA256: 67cbcbc09a81e46b762cbd1b11794af2c4d500fb290211634632d0da0ddfbf87
+tarot/pents11.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents11.jpg | https://upload.wikimedia.org/wikipedia/commons/e/ec/Pents11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: d2c3cb2f6a602e62748f873eca72acfab06b64a6de50cf3499e6197d650b6fe9
+  SHA256: 0aeda98cd69da2c31a6cc3f7a0aa663f694108385923c85173f32e1d3465da8d
+tarot/pents12.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents12.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d5/Pents12.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 6a652fbf447b7d0c78145627749c87806d1c356e96e73ca365d2618d9b255e9f
+  SHA256: 03f94e51b6da83ae50e3f27cc38af5600d205d69371c3529a5c500a29f5fa524
+tarot/pents13.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents13.jpg | https://upload.wikimedia.org/wikipedia/commons/8/88/Pents13.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 051a9a46a806910754969d806b3cf1e1621d30f51225b0a3db9b5474e222a877
+  SHA256: c772c0f79cb49f245f326700d3cd0636ff5026023f6265efa1ffe2ac276a0520
+tarot/pents14.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Pents14.jpg | https://upload.wikimedia.org/wikipedia/commons/1/1c/Pents14.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 887b31bb3a9213e9f97dd6fd9c0f8b421c24735f3a0efd1d087fadfb600b0020
+  SHA256: 51523e49cd14da1384c670675ce5a860b5bb378af9361468009a5696b4f3be42
+tarot/rws-tarot-00-fool.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_00_Fool.jpg | https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 557c6592b73107508eac65ef140d090d2ccd657ac5a2d5d4fe31c6c2ceacbcb5
+  SHA256: cd2e753e3aaf041db94b06f4aa824d3c4a91e92de0cad4659ab8dd5ae838b804
+tarot/rws-tarot-01-magician.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_01_Magician.jpg | https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: e0569e468545abfd2987ec0af5d3c51da3a9d478e37077aeaa1d715ddfc9941b
+  SHA256: 408e3b79fe27612d9622eb9543f5ffe76339a032bf8a6f6f19e036bc6283c745
+tarot/rws-tarot-02-high-priestess.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_02_High_Priestess.jpg | https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 0e87b5a22187a299334188c2e8fd178125151f9015c122f6946367489cfd252a
+  SHA256: 3044d076018b40ec5b0592549cb97cb43754c2ef399d1df70ea8f125f01bbfbf
+tarot/rws-tarot-03-empress.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_03_Empress.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 2f0a9885c4f4e68bbca4cb40d3d5f42d4c7559f914bb5b3765ee429c74c142df
+  SHA256: ea7ad6ed7f41536d807bb18c4b7ecd34f0b9543910056f9d72cc219ff27fd231
+tarot/rws-tarot-04-emperor.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_04_Emperor.jpg | https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 7a800b57c5b7da7b493e6968da31325327134e98083e95ee75b3db6eaef7e868
+  SHA256: 38ef356c575f740afecf35d473fa79268e93205b743b36fd7b9be226cdf42765
+tarot/rws-tarot-05-hierophant.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_05_Hierophant.jpg | https://upload.wikimedia.org/wikipedia/commons/8/8d/RWS_Tarot_05_Hierophant.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 68faba7f016b2d76b2fc2200f834279a0b08b7228767ae744fcdc70f9402699d
+  SHA256: 622418678c1107f380785c020990fb63d81e45cf3826aa7ad2edf8d4f1b366a5
+tarot/rws-tarot-06-lovers.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_06_Lovers.jpg | https://upload.wikimedia.org/wikipedia/commons/d/db/RWS_Tarot_06_Lovers.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 5a24e337a146568ebbbfa9783fa451d22c02bccd3cb7fe518afdb3ff396487fe
+  SHA256: 2491e8c1691ef141b790ac4ec5888eb6428c2608854f56183de08685ee88294d
+tarot/rws-tarot-07-chariot.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_07_Chariot.jpg | https://upload.wikimedia.org/wikipedia/commons/9/9b/RWS_Tarot_07_Chariot.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 3906e01a159d3b7f1696e9094080e0a4ae95b2f4d4ca8b084131aba6ad133dd8
+  SHA256: e5c5412eee0a9bc05def214bd8b6672d413d649717d4eac42b8c643f982a7116
+tarot/rws-tarot-08-strength.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_08_Strength.jpg | https://upload.wikimedia.org/wikipedia/commons/f/f5/RWS_Tarot_08_Strength.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: b222f1799b8dc46944d28f6079b1551011691dc439740371126e874fcf0c768f
+  SHA256: 9a54c8b3ce97d0ceb45fb73faed3d539ed96c146ce9b314a12fb1b28a6a6d30e
+tarot/rws-tarot-09-hermit.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_09_Hermit.jpg | https://upload.wikimedia.org/wikipedia/commons/4/4d/RWS_Tarot_09_Hermit.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 0f86ac4560e598ced039665e21023d329e7a7e58872c46b3e9a9d85bb6cb2a50
+  SHA256: 83cc5bab715f3a67941cbc292b3cac558d1d8d97095a77799856aef43dda6a08
+tarot/rws-tarot-10-wheel-of-fortune.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_10_Wheel_of_Fortune.jpg | https://upload.wikimedia.org/wikipedia/commons/3/3c/RWS_Tarot_10_Wheel_of_Fortune.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 2979bea7530572f408739757c87200772f6171a5249684cc9ee2a379108b3657
+  SHA256: f28659589f4eed4cfc4219d23e9ae5110732553569e3df401a5bfcda3913e4c8
+tarot/rws-tarot-11-justice.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_11_Justice.jpg | https://upload.wikimedia.org/wikipedia/commons/e/e0/RWS_Tarot_11_Justice.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 028645f4ed40a82035c410f4b7b5b00adbdcdf1c21ffd706cddeaf9227e0151d
+  SHA256: 8d17686cd922a5ead449547135b15a5fbbcb9721a75ff2d7016c1ee3331868e9
+tarot/rws-tarot-12-hanged-man.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_12_Hanged_Man.jpg | https://upload.wikimedia.org/wikipedia/commons/2/2b/RWS_Tarot_12_Hanged_Man.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 0eacf7afe48e4b51c5405a8354ecb867a4d8868151137434ef84621e4d56359c
+  SHA256: 0457dbeb21dfdf519f92711f624faa10d9e052c2bbfcd2de572742ad3ddaa094
+tarot/rws-tarot-13-death.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_13_Death.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d7/RWS_Tarot_13_Death.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 9e9cdd41a4d975691e79acc2358b45f4f2c58661431c3113a5ccf27477356a66
+  SHA256: eadb3037e235186d08ede58cd01225bb56ed023c3f376b5e529f1792e51ddafc
+tarot/rws-tarot-14-temperance.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_14_Temperance.jpg | https://upload.wikimedia.org/wikipedia/commons/f/f8/RWS_Tarot_14_Temperance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: a306b373f8ff18270a2daabe3d89967eadd428e460c39ed717bda7bd38a1f009
+  SHA256: 136bcad0a879a3b3db6f89019b8ce80330dd699b9fc905c2e16db4f1ee26fae0
+tarot/rws-tarot-15-devil.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_15_Devil.jpg | https://upload.wikimedia.org/wikipedia/commons/5/55/RWS_Tarot_15_Devil.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: f8e37102cbf2120270c0ed8c3e193b260d2f79dd5908bc9acbd48e8335083cf8
+  SHA256: 7c89a71680a18bf19d67a51ec46d3a291ac07496077379771894edb6b1f74542
+tarot/rws-tarot-16-tower.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_16_Tower.jpg | https://upload.wikimedia.org/wikipedia/commons/5/53/RWS_Tarot_16_Tower.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: ab5ce9bf29f32b9cf61720b375fe35f23ce7e116ee1c648a9bf6832e17241163
+  SHA256: 33a0b1e215b89e8f9fc0861615a2c179a109f717c18ab7bef0b8adbf2efc06b9
+tarot/rws-tarot-17-star.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_17_Star.jpg | https://upload.wikimedia.org/wikipedia/commons/d/db/RWS_Tarot_17_Star.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 20bb3e04c1655cc318031d94a024d84199cfeae2ca55e80d2d341c2d30435ac7
+  SHA256: 80997e77e5db167ace9b6e5d043726dfb14fbe04d69957870992b29cf07b5d04
+tarot/rws-tarot-18-moon.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_18_Moon.jpg | https://upload.wikimedia.org/wikipedia/commons/7/7f/RWS_Tarot_18_Moon.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 866474dc3de02bf3817495fd75d254dac2b9f36470f2f29ecb54de572f9dc70e
+  SHA256: e2e54c32374e60084b8ac5da7909a9a0c2c7b7d340239e231491abf6f458211e
+tarot/rws-tarot-19-sun.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_19_Sun.jpg | https://upload.wikimedia.org/wikipedia/commons/1/17/RWS_Tarot_19_Sun.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 6c21ef99fef3807bafb26cd467464c8efc59e7312a688ae66285968e364c6450
+  SHA256: 37f5726afbd85b61039dacb322cfcf59a289b2d8f50ec853ac157f55de3955eb
+tarot/rws-tarot-20-judgement.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_20_Judgement.jpg | https://upload.wikimedia.org/wikipedia/commons/d/dd/RWS_Tarot_20_Judgement.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 1d670d30e651554051f1a04708a11c57583a92a2cc370b8c0fc54fb82f2ffbd3
+  SHA256: 94163969eb8d960c4b49eb8f498e4559cecd5d73e52077cdef98328af163a994
+tarot/rws-tarot-21-world.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:RWS_Tarot_21_World.jpg | https://upload.wikimedia.org/wikipedia/commons/f/ff/RWS_Tarot_21_World.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: f866b87a3c4422f96074080024860f46b5b3f456fcad74ca7aefdb5263bf0e69
+  SHA256: ba8a96417ba38823680fd06c018fd7e9ca114701b4ca1490e58a6cb18ae459f7
+tarot/swords01.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords01.jpg | https://upload.wikimedia.org/wikipedia/commons/1/1a/Swords01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 32f0f932346a25b6ec3753ff95d3e4a7481cb5c3582205ba76c53356a496f15a
+  SHA256: a8a45f55147311f47fe43d9289de45b77530f790d524c1fd88a3c832cb5aa110
+tarot/swords02.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords02.jpg | https://upload.wikimedia.org/wikipedia/commons/9/9e/Swords02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: a44b7e2b454db3dc1ff42f70107fb15750babf659f5750892de4b5be721ec380
+  SHA256: 957f2835bb6d21a4f523621b8cf959a41b191cc84cc54cbb8371cc2100b980e8
+tarot/swords03.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords03.jpg | https://upload.wikimedia.org/wikipedia/commons/0/02/Swords03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 4fdf7db3e7611561831af32b5c886f9862c7d90a851965cddf71298047da1dee
+  SHA256: f45950030ccdbdca66483cf2ed81dd6f52b797f5e82961550682fc4e99a91883
+tarot/swords04.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords04.jpg | https://upload.wikimedia.org/wikipedia/commons/b/bf/Swords04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: d4f9dad59b25daf3c9e98e50107dd692e9682f058cdc8424ce61fd448e941a78
+  SHA256: d9d5b16a035e62f5c9cbee9f288aa9c646e26fde2d79d15b509c4b9bd7153a7d
+tarot/swords05.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords05.jpg | https://upload.wikimedia.org/wikipedia/commons/2/23/Swords05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: e4fc379d7ce3f7675f474ec9b3c2c8e4be7bdc0af2f2186eb2e2de4643b0a0bf
+  SHA256: e2f40b035545d99a68988ff11e461ab9173c61d409f0652ad65595c377acaf68
+tarot/swords06.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords06.jpg | https://upload.wikimedia.org/wikipedia/commons/2/29/Swords06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 25279d7133301f59748f9ec0c6517a56fc4b8f76477ecfb4495f039adbc9aed5
+  SHA256: 9c59949a8de124c3b3e55ef6eb9a982e3864dda3d5b249c84c800ed31e7eb370
+tarot/swords07.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords07.jpg | https://upload.wikimedia.org/wikipedia/commons/3/34/Swords07.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 6204a31b5949937c95ea47ed47bae0cdd86ba112cb0c933935efbfc294033ea6
+  SHA256: 0f6312700726a0415860534de7d557c2d399f6ff7abe906ddc05d79e8f8e71c6
+tarot/swords08.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords08.jpg | https://upload.wikimedia.org/wikipedia/commons/a/a7/Swords08.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 019acbe3faff292c48c2744c42df052d7c7440a896f1cac42930e8c727d983b6
+  SHA256: 68d1c9bc5f0f7ecefb7db39168a6f91fabfc565ea7ccd346a10c52c3263f329b
+tarot/swords09.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords09.jpg | https://upload.wikimedia.org/wikipedia/commons/2/2f/Swords09.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: b592a2ebe7fca2b648c12d42ec1d5edd4da60d60b0ec7e548e7115c977c485fb
+  SHA256: dc93a783ed5cbf219c1062d45a5a927ebda0983c7a32fdf030b6b63dc858a8d0
+tarot/swords10.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords10.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d4/Swords10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 10d0b161d115dc340c6c54a274a9f0a21547584b9bd20dbd61fb12e78885043f
+  SHA256: 75978b5f0209c0e264a1e62aedcd4846e49b8a616892c1444f93ee61beccc2a1
+tarot/swords11.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords11.jpg | https://upload.wikimedia.org/wikipedia/commons/4/4c/Swords11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: ac69cec7c4b763fe229b3bc43214d5c81e573abe0584a13691970ab65be351ad
+  SHA256: 459bf4b607fe33f94b38b125c83b5c9dc581b3126d0cf4950728986a7b869c62
+tarot/swords12.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords12.jpg | https://upload.wikimedia.org/wikipedia/commons/b/b0/Swords12.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: b38c1618eb6b5eca33d5bfebfddf8739773fb4ec8918a8946b4df2790d95db4e
+  SHA256: 196f2e3089642ce4163b74a3d8f5f7559f89ef1499923be2a9d86c17dae44afd
+tarot/swords13.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords13.jpg | https://upload.wikimedia.org/wikipedia/commons/d/d4/Swords13.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 55854543540d12f9c201197537f4521b22379b84d0955149621755601ce6da90
+  SHA256: 226613083c4a4a00341e53ca871d78d229d0aee3740732dd93640b2db73c5af1
+tarot/swords14.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Swords14.jpg | https://upload.wikimedia.org/wikipedia/commons/3/33/Swords14.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 5307da08322c8ccf2bc748aec5fe919e16849568fda3986225a921bf2cac9cee
+  SHA256: 4660f806e9edb4b54ce782141fdcc65902f312f02f90ea527eade278c9fb75f7
+tarot/wands01.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands01.jpg | https://upload.wikimedia.org/wikipedia/commons/1/11/Wands01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: c29a4231878072d66be3aa344b348ea77cf12617571db4836a270730ae5a04e0
+  SHA256: 0bff6218e32bba7933b8075cc06b63f15fff09a381b89a9ac09b88297b431318
+tarot/wands02.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands02.jpg | https://upload.wikimedia.org/wikipedia/commons/0/0f/Wands02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: b715689f6097b32884678d52f946df0fafdd225ed8ead3979307f455a88e8e80
+  SHA256: e5c333b78c124975c5a2755171ad0b2730c11eb4c2dab68d4b31f6a2c60fba50
+tarot/wands03.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands03.jpg | https://upload.wikimedia.org/wikipedia/commons/f/ff/Wands03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 1177316634bf3990c95ccb908b7e5a6759ec0356039d896e6ee0bbb8796e958a
+  SHA256: cc6eb447643be4bf422ac13818e25475fd7d954ceb511920a65cababe4dc9c47
+tarot/wands04.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands04.jpg | https://upload.wikimedia.org/wikipedia/commons/a/a4/Wands04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 9850a241100dd084bacab39a8e87baaa13d1de1a590dc0dde013b92aa783af7e
+  SHA256: 584bf2bb256f10978508950750d3e2dd353c9b2952b90d14d2a40654137f3be5
+tarot/wands05.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands05.jpg | https://upload.wikimedia.org/wikipedia/commons/9/9d/Wands05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 6298f82e6ce5e7524041bb608852471b03e29d528f6a5b52b2b44a8ff1f06bba
+  SHA256: 077288508735224af1c435f809e0f335ac8f156a9cc0400dc9d1468c25b97f3f
+tarot/wands06.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands06.jpg | https://upload.wikimedia.org/wikipedia/commons/3/3b/Wands06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 249a1eaa2de24dc9c1095e953b9577ca613fcda4b4b884dab2a1964c686dad72
+  SHA256: 4ffe8d698cb62102a796aa729b9e575ace217bbf4281f385ad1a2b50014ec84b
+tarot/wands07.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands07.jpg | https://upload.wikimedia.org/wikipedia/commons/e/e4/Wands07.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 0117736a1c9d543960bb94c73d20a587e9ec877dfc2120b7d5ee0255c40dd731
+  SHA256: 1a3f97fb006a961e245bc9df2d6c1bfae31bc01fee918d2bea45ea4276779af3
+tarot/wands08.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands08.jpg | https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands08.jpg/960px-Wands08.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+  SourceSHA256: 0c9d38c0a6ff1556b82a4b52eb8285828153ab7dd1fbe2fdc3e00fc5bf2ff243
+  SHA256: 41e5104b11551a8451fea2329cc76bb19c1cc3adbcebc0074aee23c36bc7131a
+tarot/wands09.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands09.jpg | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e7/Wands09.jpg/960px-Wands09.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+  SourceSHA256: 02a4f8e34ce401d03c9e71b646d173efbbfa5674e0b05cbd1416e8ad70a55686
+  SHA256: 599cbe5bb764c7a99643b5859642586140df1ae5085d79ecea32d89afd73b6c8
+tarot/wands10.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands10.jpg | https://upload.wikimedia.org/wikipedia/commons/0/0b/Wands10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 64c10fe7ba527498547bb3bf85a4a5c5fc687ba2209b8d38ffe5722d25810685
+  SHA256: b56eae801d7c3d651ce4890db2a2e4e840b11537d9133ea496570231486a5472
+tarot/wands11.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands11.jpg | https://upload.wikimedia.org/wikipedia/commons/6/6a/Wands11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: ecb79ab9035c43d322cbef211e8028fc175e220a764db7fcb566c4e44d1842bb
+  SHA256: 765dee6c3ef48d4e83defebea92512872245ec57c5fb376b2d6518c9ba3d3cce
+tarot/wands12.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands12.jpg | https://upload.wikimedia.org/wikipedia/commons/1/16/Wands12.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+  SourceSHA256: 00dd859cf067753c5ed009ac0ab8a0673cb8e5bdf5677fb3c7d4b04c93c0e025
+  SHA256: 2628289c4cb4784eb9cdda6dc3707f6aa11811d499466c6eb92aa7985e60afe5
+tarot/wands13.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands13.jpg | https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0d/Wands13.jpg/960px-Wands13.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+  SourceSHA256: 56f84ac4f70328a56829b7839b35660bdde7cfb047fd0f34b84b2729269b161b
+  SHA256: 93906647ad918428ae517bf8c805f370393977979c62b82dc6bc447aab0142ed
+tarot/wands14.svg
+  License: Public-Domain
+  Source: https://commons.wikimedia.org/wiki/File:Wands14.jpg | https://thumb.wikimedia.org/wikipedia/commons/thumb/c/ce/Wands14.jpg/960px-Wands14.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+  SourceSHA256: d7927f8ef711dc4d9350c2181a34b6c71409e2420177a45fa5bc33653f272f23
+  SHA256: 9c8daa21324a99b4dbc38ea63707d3412660d3dbf820cd4b0e9c1e318bafd57f
 
 ================================================================================
 

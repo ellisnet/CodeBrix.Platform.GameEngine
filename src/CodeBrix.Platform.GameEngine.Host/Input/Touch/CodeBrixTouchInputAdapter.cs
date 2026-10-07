@@ -32,6 +32,12 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Touch;
 /// the letterbox or pillarbox margins keeps its outside coordinates rather than being clamped.
 /// </para>
 /// <para>
+/// The pointer events of the contacts this adapter tracks are marked handled
+/// (<see cref="PointerRoutedEventArgs.Handled"/>), so ancestors of the surface do not act on them as well;
+/// events it ignores (mouse input without <c>emulateMouse</c>, a move or release of a contact it is not
+/// tracking) are left as they were. An event something inside the surface handled first is left alone.
+/// </para>
+/// <para>
 /// Dispose this adapter to unsubscribe from all pointer events.
 /// </para>
 /// </remarks>
@@ -44,6 +50,10 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
     private TouchPoint[] _activeTouchesSnapshot = Array.Empty<TouchPoint>();
     private readonly ConcurrentQueue<TouchPoint> _pendingBegins = new();
     private readonly ConcurrentQueue<TouchPoint> _pendingEnds = new();
+    private readonly PointerEventHandler _pressedHandler;
+    private readonly PointerEventHandler _movedHandler;
+    private readonly PointerEventHandler _releasedHandler;
+    private readonly PointerEventHandler _captureLostHandler;
     private bool _isDisposed;
 
     /// <inheritdoc />
@@ -67,17 +77,26 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         _coordinates = new PointerCoordinateMapper(element);
         _emulateMouse = emulateMouse;
 
-        _element.PointerPressed += OnPointerPressed;
-        _element.PointerMoved += OnPointerMoved;
-        _element.PointerReleased += OnPointerReleased;
-        _element.PointerCaptureLost += OnPointerCaptureLost;
-        _element.PointerCanceled += OnPointerCaptureLost;
+        // Subscribed for handled events too, so the adapters on one surface each see every event
+        // whichever of them marked it handled first (see SurfacePointerEvents).
+        _pressedHandler = OnPointerPressed;
+        _movedHandler = OnPointerMoved;
+        _releasedHandler = OnPointerReleased;
+        _captureLostHandler = OnPointerCaptureLost;
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerPressedEvent, _pressedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCaptureLostEvent, _captureLostHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCanceledEvent, _captureLostHandler);
 
         Engine.Logger.LogInformation("CodeBrixTouchInputAdapter initialized.");
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e))
+            return;
+
         if (IsMouse(e) && !_emulateMouse)
             return;
 
@@ -93,10 +112,14 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         _activeTouches[id] = touch;
         RebuildSnapshot();
         _pendingBegins.Enqueue(touch);
+        SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e))
+            return;
+
         if (IsMouse(e) && !_emulateMouse)
             return;
 
@@ -111,10 +134,14 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
 
         _activeTouches[id] = touch;
         RebuildSnapshot();
+        SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e))
+            return;
+
         if (IsMouse(e) && !_emulateMouse)
             return;
 
@@ -129,10 +156,14 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         _activeTouches.Remove(id);
         RebuildSnapshot();
         _pendingEnds.Enqueue(touch);
+        SurfacePointerEvents.Consume(e);
     }
 
     private void OnPointerCaptureLost(object sender, PointerRoutedEventArgs e)
     {
+        if (!SurfacePointerEvents.IsAvailable(e))
+            return;
+
         if (IsMouse(e) && !_emulateMouse)
             return;
 
@@ -146,6 +177,7 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         _activeTouches.Remove(id);
         RebuildSnapshot();
         _pendingEnds.Enqueue(touch);
+        SurfacePointerEvents.Consume(e);
     }
 
     /// <inheritdoc />
@@ -195,11 +227,11 @@ public sealed class CodeBrixTouchInputAdapter : ITouchAdapter, IDisposable
         if (_isDisposed) return;
         _isDisposed = true;
 
-        _element.PointerPressed -= OnPointerPressed;
-        _element.PointerMoved -= OnPointerMoved;
-        _element.PointerReleased -= OnPointerReleased;
-        _element.PointerCaptureLost -= OnPointerCaptureLost;
-        _element.PointerCanceled -= OnPointerCaptureLost;
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerPressedEvent, _pressedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCaptureLostEvent, _captureLostHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCanceledEvent, _captureLostHandler);
 
         Engine.Logger.LogInformation("CodeBrixTouchInputAdapter disposed.");
     }

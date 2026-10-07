@@ -94,17 +94,12 @@
     package. Every engine build restamps its version, so a local source could shadow nuget.org and
     this package would be built against an engine version that was never published.
 
-    WHY UseLocalEngineProject DEFAULTS TO TRUE HERE (it defaults to false in the SDL2 and Kenney
-    asset packages): the newest PUBLISHED engine package predates the streaming-music seam entirely -
-    it has no IStreamingMusicProvider, no StreamingMusicTrack and no Managers.StreamingMusic - so a
-    PackageReference build of this project cannot compile. The seam and this first implementation of
-    it are deliberately being developed together against the working tree, so that a real provider
-    exercises the seam before it is frozen. Local mode can never be packed (the guard below) and
-    forces GeneratePackageOnBuild off.
-
-    HAND-OVER, once the engine carrying the streaming-music seam is published: flip the default below
-    to false and set the PackageReference version to the published engine version. Those two edits
-    are the whole hand-over; nothing else in this project depends on the switch.
+    LOCAL VERIFICATION ESCAPE HATCH (-p:UseLocalEngineProject=true), the same switch the SDL2 and
+    Kenney asset packages have: it swaps the PackageReference for a ProjectReference so a local build
+    compiles this project against THIS repo's engine source. The default is false: a normal build
+    uses the published engine pinned below (this project was handed over from local mode once the
+    engine carrying the streaming-music seam was published). Local mode can never be packed (the
+    guard below) and forces GeneratePackageOnBuild off.
 
     The guard runs before GenerateNuspec, not only before Pack, so a refused pack leaves no
     engine-less .nupkg behind in the output folder.

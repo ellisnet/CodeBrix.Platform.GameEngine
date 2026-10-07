@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="SilverAssertions.ApacheLicenseForever" Version="1.0.248.1071" />
+    <!-- The base SkiaSharp package carries Windows/macOS natives; Linux needs this explicit
+         native-assets package for the tests that rasterize the embedded SVG artwork. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
+  </ItemGroup>
+
+  <!-- The Assets project is referenced directly as well: the library's own reference to it is
+       PrivateAssets="all" (it is packed INTO the library's package), so it does not flow here. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine.CardsAndDice\CodeBrix.Platform.GameEngine.CardsAndDice.csproj" />
+    <ProjectReference Include="..\..\src\CodeBrix.Platform.GameEngine.CardsAndDice.Assets\CodeBrix.Platform.GameEngine.CardsAndDice.Assets.csproj" />
+  </ItemGroup>
+
+</Project>

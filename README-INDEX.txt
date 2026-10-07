@@ -30,6 +30,12 @@ AGENT-README FILES (consumer documentation, one per NuGet package)
       endless, model-generated music played on the engine's music bus through
       one UseGeneratedMusic call. License: MIT.
 
+  src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt
+      CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever — optional
+      cards, decks, piles and dice for that engine, with an animated tabletop
+      and embedded card, dice and symbol artwork (one package carrying two
+      assemblies). License: MIT.
+
 MAINTAINER AND EXTRAS
 ---------------------
   MAINTAINER-README.txt
@@ -40,6 +46,9 @@ MAINTAINER AND EXTRAS
 
 NESTED READMEs (samples and tools)
 ----------------------------------
+  samples/CardsAndDiceDemo/README.md
+      The cards and dice sample: its table modes, controls, desktop heads and
+      the unattended walkthrough.
   samples/KenneyAssetsDemo/README.md
       The Kenney asset sample: what it demonstrates, its controls, and where its
       asset bundles came from.
