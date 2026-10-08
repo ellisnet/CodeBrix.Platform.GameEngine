@@ -1,0 +1,17 @@
+# Line endings: LF on every platform for the files whose exact bytes ship in a package.
+#
+# src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets embeds every file under Resources/, and
+# catalog.json, as manifest resources, so whatever bytes are on disk at build time are baked into
+# the assembly and shipped in the NuGet package. catalog.json pins each embedded file by its
+# SHA-256 over LF bytes, and AssetCatalogTests checks every one. Without these rules a Windows
+# clone under core.autocrlf=true expands the SVGs to CRLF on checkout, so a Windows build embeds
+# different bytes from a Linux or macOS build and ships a catalog whose hashes do not match.
+#
+# The committed blobs are already LF. These rules only stop a checkout from expanding them.
+*.svg   text eol=lf
+*.json  text eol=lf
+
+# Never touched. Declared rather than left to git's heuristic, because a sound or image file
+# that gets newline translation applied to it is silently corrupt.
+*.ogg   binary
+*.png   binary
