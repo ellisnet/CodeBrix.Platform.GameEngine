@@ -4,10 +4,10 @@ from pathlib import Path
 import json,hashlib,math,html
 import xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[2];DEST=ROOT/'src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets';RES=DEST/'Resources'
-entries=json.loads((DEST/'catalog.json').read_text())
+entries=json.loads((DEST/'catalog.json').read_text(encoding='utf-8'))
 def svg(body,w=250,h=400):return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">{body}</svg>'
 def write(key,body):
- p=RES/key;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(body+'\n');sha=hashlib.sha256(p.read_bytes()).hexdigest()
+ p=RES/key;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(body+'\n',encoding='utf-8',newline='\n');sha=hashlib.sha256(p.read_bytes()).hexdigest()
  entries[:]=[e for e in entries if e['Key']!=key]
  entries.append(dict(Key=key,Name=Path(key).stem.replace('-',' ').title(),Category=key.split('/')[0],Source='Original CodeBrix artwork; tools/cards-and-dice/generate-originals.py',License='MIT',Sha256=sha,SourceSha256=sha))
 # Simple vector-stroke numerals and letters (no installed font dependency).
@@ -85,5 +85,5 @@ for count, positions in pips.items():
 glyphs={'fire':'M32 6 L58 54 H6Z','water':'M6 10 H58 L32 58Z','air':'M32 6 L58 54 H6Z M14 39 H50','earth':'M6 10 H58 L32 58Z M14 25 H50','salt':'M8 32 A24 24 0 1 0 56 32 A24 24 0 1 0 8 32 M8 32 H56','sulfur':'M32 5 L52 34 H12Z M32 34 V60 M20 49 H44','sun':'M12 32 A20 20 0 1 0 52 32 A20 20 0 1 0 12 32 M30 32 H34','moon':'M40 5 A27 27 0 1 0 40 59 A29 29 0 0 1 40 5','mercury':'M20 4 Q32 20 44 4 M18 27 A14 14 0 1 0 46 27 A14 14 0 1 0 18 27 M32 41 V61 M22 51 H42','venus':'M14 22 A18 18 0 1 0 50 22 A18 18 0 1 0 14 22 M32 40 V61 M20 51 H44','mars':'M8 39 A17 17 0 1 0 42 39 A17 17 0 1 0 8 39 M37 27 L57 7 H42 M57 7 V22','spirit':'M32 3 V61 M3 32 H61 M11 11 L53 53 M53 11 L11 53','infinity':'M32 32 C5 -5 -8 67 32 32 C72 -5 77 67 32 32','pentagram':'M32 4 L49 57 5 24 H59 L15 57 Z','shield':'M8 8 H56 V32 Q56 50 32 60 Q8 50 8 32 Z','diamond':'M18 8 H46 L60 24 32 59 4 24Z M4 24 H60 M18 8 L32 59 46 8','wand':'M9 56 L45 20 M46 2 V14 M55 11 H62 M50 17 L59 26','eye':'M3 32 Q32 1 61 32 Q32 63 3 32Z M21 32 A11 11 0 1 0 43 32 A11 11 0 1 0 21 32','key':'M6 20 A13 13 0 1 0 32 20 A13 13 0 1 0 6 20 M29 29 L57 57 M42 42 L49 35 M50 50 L57 43','chalice':'M12 5 H52 V17 Q52 37 32 37 Q12 37 12 17Z M32 37 V56 M18 58 H46','sword':'M32 3 L40 15 V41 H24 V15Z M15 42 H49 M32 42 V61','hourglass':'M12 5 H52 M12 59 H52 M17 5 Q17 24 32 32 Q47 40 47 59 M47 5 Q47 24 32 32 Q17 40 17 59'}
 for name,d in glyphs.items():write('symbols/original/'+name+'.svg',svg(f'<path d="{d}" fill="none" stroke="#dfbb70" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',64,64))
 for i in range(1,21):write(f'symbols/values/value-{i}.svg',svg('<circle cx="32" cy="32" r="29" fill="#182638" stroke="#dfbb70" stroke-width="2"/>'+label(str(i),19 if i<10 else 9,17,1.25,'#dfbb70'),64,64))
-(DEST/'catalog.json').write_text(json.dumps(sorted(entries,key=lambda e:e['Key']),indent=2)+'\n')
+(DEST/'catalog.json').write_text(json.dumps(sorted(entries,key=lambda e:e['Key']),indent=2)+'\n',encoding='utf-8',newline='\n')
 print('Catalog:',len(entries),'assets')

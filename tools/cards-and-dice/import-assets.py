@@ -8,13 +8,16 @@ ROOT=Path(__file__).resolve().parents[2]
 DEST=ROOT/'src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets'
 RES=DEST/'Resources'
 CAT=DEST/'catalog.json'
-entries=json.loads(CAT.read_text()) if CAT.exists() else []
+entries=json.loads(CAT.read_text(encoding='utf-8')) if CAT.exists() else []
 def add(key,data,source,license,source_hash=None):
+ source_hash=source_hash or hashlib.sha256(data).hexdigest()
+ # .gitattributes keeps *.svg LF on every platform, so hash the LF bytes git will store and check out.
+ if key.endswith('.svg'):data=data.replace(b'\r\n',b'\n')
  p=RES/key;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
  entries[:]=[e for e in entries if e['Key']!=key]
- entries.append(dict(Key=key,Name=Path(key).stem.replace('-',' ').replace('_',' ').title(),Category=key.split('/')[0],Source=source,License=license,Sha256=hashlib.sha256(data).hexdigest(),SourceSha256=source_hash or hashlib.sha256(data).hexdigest()))
+ entries.append(dict(Key=key,Name=Path(key).stem.replace('-',' ').replace('_',' ').title(),Category=key.split('/')[0],Source=source,License=license,Sha256=hashlib.sha256(data).hexdigest(),SourceSha256=source_hash))
 def save():
- CAT.write_text(json.dumps(sorted(entries,key=lambda e:e['Key']),indent=2)+'\n')
+ CAT.write_text(json.dumps(sorted(entries,key=lambda e:e['Key']),indent=2)+'\n',encoding='utf-8',newline='\n')
 def get(url):
  for attempt in range(5):
   try:
@@ -27,11 +30,11 @@ def local(folder):
  base=Path(folder)
  for foldername,pattern,prefix in [('Icons/Board Game Icons','Vector/Icons/*.svg','symbols/kenney'),('Icons/Board Game Info','Vector/Fantasy/*.svg','symbols/info')]:
   for p in sorted((base/foldername).glob(pattern)):
-   add(prefix+'/'+p.name,p.read_bytes(),'Kenney All-in-1 3.6.0/'+str(p.relative_to(base)),'CC0-1.0')
+   add(prefix+'/'+p.name,p.read_bytes(),'Kenney All-in-1 3.6.0/'+p.relative_to(base).as_posix(),'CC0-1.0')
  for filename in ['card-shuffle.ogg','card-slide-1.ogg','card-place-1.ogg','dice-shake-1.ogg','die-throw-1.ogg']:
   p=base/'Audio/Casino Audio/Audio'/filename
   if not p.exists():p=next((base/'Audio/Casino Audio').rglob(filename))
-  add('sounds/'+filename,p.read_bytes(),'Kenney All-in-1 3.6.0/'+str(p.relative_to(base)),'CC0-1.0')
+  add('sounds/'+filename,p.read_bytes(),'Kenney All-in-1 3.6.0/'+p.relative_to(base).as_posix(),'CC0-1.0')
  save()
 def ishtar():
  url='https://upload.wikimedia.org/wikipedia/commons/f/f9/Ishtar-star-symbol.svg'
@@ -57,10 +60,10 @@ def tarot(limit):
  # Scratch scans live in the system temp folder (honours TMPDIR); they are never shipped.
  cache=Path(tempfile.gettempdir())/'cardsdice-tarot';cache.mkdir(exist_ok=True)
  metadata=cache/'metadata.json'
- if metadata.exists():result=json.loads(metadata.read_text())
+ if metadata.exists():result=json.loads(metadata.read_text(encoding='utf-8'))
  else:
   result=api(generator='categorymembers',gcmtitle='Category:Rider-Waite-Smith tarot deck (TaionWC)',gcmlimit=100,prop='imageinfo',iiprop='url|extmetadata|sha1')
-  metadata.write_text(json.dumps(result))
+  metadata.write_text(json.dumps(result),encoding='utf-8',newline='\n')
  pages=list(result['query']['pages'].values())
  assert len(pages)==78,len(pages)
  for i,p in enumerate(sorted(pages,key=lambda p:p['title'])):
@@ -87,9 +90,9 @@ def tarot(limit):
   vtracer.convert_image_to_svg_py(str(png),str(out),colormode='color',hierarchical='stacked',mode='spline',filter_speckle=8,color_precision=5,layer_difference=24,corner_threshold=60,length_threshold=4.0,max_iterations=10,splice_threshold=45,path_precision=2)
   add(key,out.read_bytes(),info['descriptionurl']+' | '+source_url,'Public-Domain',sha)
   records=DEST/'tarot-provenance.json'
-  evidence=json.loads(records.read_text()) if records.exists() else {}
+  evidence=json.loads(records.read_text(encoding='utf-8')) if records.exists() else {}
   evidence[key]=dict(title=title,url=source_url,originalUrl=info['url'],sha1=info['sha1'],sourceSha256=sha,metadata={k:v for k,v in meta.items() if k in {'LicenseShortName','LicenseUrl','Copyrighted','AttributionRequired','DateTimeOriginal'}},trace='vtracer 0.6.15; max 620x1000; color_precision=5; layer_difference=24; filter_speckle=8; spline')
-  records.write_text(json.dumps(evidence,indent=2)+'\n');save()
+  records.write_text(json.dumps(evidence,indent=2)+'\n',encoding='utf-8',newline='\n');save()
   print(f'{i+1}/78 {key} {out.stat().st_size}',flush=True)
   time.sleep(12)
 p=argparse.ArgumentParser();p.add_argument('--ishtar',action='store_true');p.add_argument('--kenney');p.add_argument('--playing',action='store_true');p.add_argument('--tarot',action='store_true');p.add_argument('--limit',type=int,default=0)

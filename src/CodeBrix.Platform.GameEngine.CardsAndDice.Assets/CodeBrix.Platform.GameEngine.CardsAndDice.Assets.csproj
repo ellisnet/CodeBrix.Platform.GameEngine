@@ -61,10 +61,20 @@
     by that name. Nothing is copied to the output folder and nothing is extracted at run time.
     Provenance/ and tarot-provenance.json are repository records only and are not embedded; the
     shipped provenance is THIRD-PARTY-NOTICES.txt, packed at the root of the package.
+
+    The names use "/" whichever OS builds the assembly, so a key opens the same asset on every
+    platform. %(RecursiveDir) carries the build machine's separator ("\" on Windows), so it is
+    normalized here; _CheckPortableResourceNames fails the build rather than pack an assembly whose
+    names would differ.
   -->
   <ItemGroup>
-    <EmbeddedResource Include="Resources/**/*" LogicalName="cardsdice/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Resources/**/*" LogicalName="cardsdice/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
     <EmbeddedResource Include="catalog.json" LogicalName="cardsdice/catalog.json" />
   </ItemGroup>
+
+  <Target Name="_CheckPortableResourceNames" BeforeTargets="CoreCompile">
+    <Error Condition="$([System.String]::Copy('%(EmbeddedResource.LogicalName)').Contains('\'))"
+           Text="Embedded resource '%(EmbeddedResource.LogicalName)' has a backslash in its name. CardsAndDice asset names must use '/' on every build OS." />
+  </Target>
 
 </Project>

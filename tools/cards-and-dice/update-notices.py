@@ -8,12 +8,14 @@ from pathlib import Path
 import json, hashlib
 root=Path(__file__).resolve().parents[2]
 assets=root/'src/CodeBrix.Platform.GameEngine.CardsAndDice.Assets'
-entries=json.loads((assets/'catalog.json').read_text())
+entries=json.loads((assets/'catalog.json').read_text(encoding='utf-8'))
 SEP='='*80
 marker='CARDSANDDICE EMBEDDED ASSETS — PROVENANCE APPENDIX\n'
 closing=SEP+'\n\nIf you have any questions about any third-party code'
 p=root/'THIRD-PARTY-NOTICES.txt'
-text=p.read_text()
+# Keep the file's own line endings (CRLF in a Windows checkout under core.autocrlf), so only the appendix changes.
+newline='\r\n' if b'\r\n' in p.read_bytes() else '\n'
+text=p.read_text(encoding='utf-8')
 if marker in text:
  i=text.index(marker)
  start=i-len(SEP)-1 if text[max(0,i-len(SEP)-1):i]==SEP+'\n' else i
@@ -113,5 +115,5 @@ for e in entries:
  data=(assets/'Resources'/e['Key']).read_bytes()
  assert hashlib.sha256(data).hexdigest()==e['Sha256'],e['Key']
  notice+=f"{e['Key']}\n  License: {e['License']}\n  Source: {e['Source']}\n  SourceSHA256: {e['SourceSha256']}\n  SHA256: {e['Sha256']}\n"
-p.write_text(text[:k]+SEP+'\n'+marker+notice+'\n'+text[k:])
+p.write_text(text[:k]+SEP+'\n'+marker+notice+'\n'+text[k:],encoding='utf-8',newline=newline)
 print(f'Updated notices for {len(entries)} assets')
