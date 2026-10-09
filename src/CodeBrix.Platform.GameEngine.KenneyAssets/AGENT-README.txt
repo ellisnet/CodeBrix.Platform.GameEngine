@@ -56,6 +56,14 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   add-on, unrelated to assets); see
   src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt.
 
+  CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever — generated
+  in-game music on the engine's music bus (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt.
+
+  CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever — cards, decks,
+  piles and dice (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):

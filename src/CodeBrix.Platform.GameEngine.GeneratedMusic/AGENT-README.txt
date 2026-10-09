@@ -54,6 +54,10 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   CodeBrix.Platform.GameEngine.Sdl2.ZlibLicenseForever — gamepads (optional
   add-on); see src/CodeBrix.Platform.GameEngine.Sdl2/AGENT-README.txt.
 
+  CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever — cards, decks,
+  piles and dice (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):

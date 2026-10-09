@@ -26,6 +26,14 @@ namespace CodeBrix.Platform.GameEngine.Host.Input.Mouse;
 /// the application's own on the surface sees the events too when it is subscribed with
 /// <see cref="UIElement.AddHandler"/> and <c>handledEventsToo: true</c>; one attached with <c>+=</c> after
 /// this adapter does not.
+/// <para>
+/// The adapter captures the pointer on the element for the duration of a press
+/// (<see cref="UIElement.CapturePointer"/>), so the release reaches it even when the press opened
+/// something over the surface (a pane, a dialog) before the button came up; the capture is released when
+/// the last button is released or the pointer is cancelled. When the capture is lost
+/// (<see cref="UIElement.PointerCaptureLost"/>) or the pointer is cancelled, every pressed button is
+/// cleared, so a button is never reported held after the adapter stops seeing the pointer.
+/// </para>
 /// </remarks>
 public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
 {
@@ -35,10 +43,13 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
     private readonly PointerEventHandler _releasedHandler;
     private readonly PointerEventHandler _movedHandler;
     private readonly PointerEventHandler _wheelChangedHandler;
+    private readonly PointerEventHandler _canceledHandler;
+    private readonly PointerEventHandler _captureLostHandler;
     private readonly HashSet<MouseButton> _pressed = new();
     private Point _currentPosition;
     private KeyboardModifierState _modifiers;
     private int _scrollDelta;
+    private Pointer? _capturedPointer;
     private bool _isDisposed;
 
     /// <summary>
@@ -83,12 +94,14 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         _releasedHandler = OnPointerReleased;
         _movedHandler = OnPointerMoved;
         _wheelChangedHandler = OnPointerWheelChanged;
+        _canceledHandler = OnPointerCanceled;
+        _captureLostHandler = OnPointerCaptureLost;
         SurfacePointerEvents.Subscribe(_element, UIElement.PointerPressedEvent, _pressedHandler);
         SurfacePointerEvents.Subscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
         SurfacePointerEvents.Subscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
         SurfacePointerEvents.Subscribe(_element, UIElement.PointerWheelChangedEvent, _wheelChangedHandler);
-        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCanceledEvent, _releasedHandler);
-        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCaptureLostEvent, _releasedHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCanceledEvent, _canceledHandler);
+        SurfacePointerEvents.Subscribe(_element, UIElement.PointerCaptureLostEvent, _captureLostHandler);
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
@@ -100,6 +113,11 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         SyncButtons(props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
         UpdatePosition(point.Position, e.KeyModifiers);
         SurfacePointerEvents.Consume(e);
+
+        // Keep the pointer until the button comes up, so the release reaches this adapter even when
+        // the press opened something over the surface before it.
+        if (_pressed.Count > 0 && _element.CapturePointer(e.Pointer))
+            _capturedPointer = e.Pointer;
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
@@ -112,6 +130,46 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         SyncButtons(props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
         UpdatePosition(point.Position, e.KeyModifiers);
         SurfacePointerEvents.Consume(e);
+
+        if (_pressed.Count == 0) ReleaseCapture();
+    }
+
+    private void OnPointerCanceled(object sender, PointerRoutedEventArgs e)
+    {
+        if (!SurfacePointerEvents.IsAvailable(e)) return;
+
+        // The system took the pointer away: nothing is held any more.
+        _pressed.Clear();
+        UpdatePosition(e.GetCurrentPoint(_element).Position, e.KeyModifiers);
+        SurfacePointerEvents.Consume(e);
+        ReleaseCapture();
+    }
+
+    private void OnPointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        // The loss of the adapter's own capture is always read: the framework builds this event from the
+        // last one dispatched to the surface, which this adapter has usually marked handled already.
+        var ownCapture = _capturedPointer is { } captured
+            && captured.PointerId == e.Pointer.PointerId
+            && captured.PointerDeviceType == e.Pointer.PointerDeviceType;
+        if (!ownCapture && !SurfacePointerEvents.IsAvailable(e)) return;
+
+        // The release of a pointer whose capture is gone may never reach this adapter, so every pressed
+        // button counts as released - whatever buttons the event itself reports.
+        _capturedPointer = null;
+        _pressed.Clear();
+        UpdatePosition(e.GetCurrentPoint(_element).Position, e.KeyModifiers);
+        SurfacePointerEvents.Consume(e);
+    }
+
+    private void ReleaseCapture()
+    {
+        var pointer = _capturedPointer;
+        if (pointer is null) return;
+
+        // Cleared first: releasing raises PointerCaptureLost on the element, which comes back here.
+        _capturedPointer = null;
+        _element.ReleasePointerCapture(pointer);
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
@@ -166,7 +224,11 @@ public sealed class CodeBrixMouseAdapter : IMouseAdapter, IDisposable
         SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerReleasedEvent, _releasedHandler);
         SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerMovedEvent, _movedHandler);
         SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerWheelChangedEvent, _wheelChangedHandler);
-        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCanceledEvent, _releasedHandler);
-        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCaptureLostEvent, _releasedHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCanceledEvent, _canceledHandler);
+        SurfacePointerEvents.Unsubscribe(_element, UIElement.PointerCaptureLostEvent, _captureLostHandler);
+
+        // Handlers are gone, so a capture the adapter still holds is simply handed back.
+        ReleaseCapture();
+        _pressed.Clear();
     }
 }

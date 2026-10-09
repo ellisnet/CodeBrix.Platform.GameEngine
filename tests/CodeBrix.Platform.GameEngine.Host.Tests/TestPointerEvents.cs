@@ -86,6 +86,24 @@ internal static class TestPointerEvents
         raise.Invoke(source, [routedEvent, args, context]);
     }
 
+    /// <summary>
+    /// Raises <paramref name="routedEvent"/> on <paramref name="source"/> the way the framework's pointer
+    /// input does, so the element also records the event as the one being dispatched: a pointer captured
+    /// from a handler then remembers it, and releasing that capture later raises PointerCaptureLost.
+    /// </summary>
+    /// <param name="source">The element the event starts on.</param>
+    /// <param name="routedEvent">The pointer routed event.</param>
+    /// <param name="args">The args from <see cref="Create"/>.</param>
+    internal static void RaiseAsInput(UIElement source, RoutedEvent routedEvent, PointerRoutedEventArgs args)
+    {
+        var raise = typeof(UIElement)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Single(m => m.Name == "RaisePointerEvent" && m.GetParameters().Length == 3);
+        var context = Activator.CreateInstance(raise.GetParameters()[2].ParameterType);
+
+        raise.Invoke(source, [routedEvent, args, context]);
+    }
+
     private static void SetProperty(object target, string name, object value)
         => target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(target, value);

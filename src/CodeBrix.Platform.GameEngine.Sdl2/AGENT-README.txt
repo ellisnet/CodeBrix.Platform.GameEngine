@@ -44,6 +44,18 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   everything about scenes, sprites, rendering, audio, the hosting modes and the
   engine lifecycle. THIS file covers gamepads only.
 
+  CodeBrix.Platform.GameEngine.KenneyAssets.MitLicenseForever — Kenney asset
+  bundles, including their sound effects (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.KenneyAssets/AGENT-README.txt.
+
+  CodeBrix.Platform.GameEngine.GeneratedMusic.MitLicenseForever — generated
+  in-game music on the engine's music bus (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.GeneratedMusic/AGENT-README.txt.
+
+  CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever — cards, decks,
+  piles and dice (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):

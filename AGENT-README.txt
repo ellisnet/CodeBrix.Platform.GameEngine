@@ -54,6 +54,13 @@ OTHER PACKAGES FROM THE SAME REPOSITORY
   endless, model-generated music: one engine.UseGeneratedMusic(options) call
   after registering an instrument library and a model.
 
+  CodeBrix.Platform.GameEngine.CardsAndDice.MitLicenseForever — cards, decks,
+  piles and dice (optional add-on); see
+  src/CodeBrix.Platform.GameEngine.CardsAndDice/AGENT-README.txt. It builds on
+  this engine package and adds an animated tabletop plus embedded card, dice
+  and symbol artwork (one package carrying two assemblies) for card, dice and
+  board-style games.
+
 INSTALLATION
 ============
 NuGet package ID (note the license suffix):
@@ -655,10 +662,11 @@ RENDER MODES: CpuRendering (CPU, default) vs GpuRendering (GPU, opt-in) — Mode
     the platform's presentation cadence is independent of the engine's.
   * Dirty-region rendering is OFF for a scene bound to a GPU host: binding
     clears every layer's refresh queue and closes it, so nothing accumulates,
-    and DirectDrawing.ForceRefresh() is a no-op there (correct — the GL path
-    repaints the whole viewport every frame anyway). Scene.UsesDirtyRegionRendering
-    reports which regime a scene is in. Games that call ForceRefresh() every
-    frame in a view-mode drawable are safe under either backbuffer.
+    and DirectDrawingBase.ForceRefresh() (protected internal — call it from
+    your DirectDrawingBase subclass) is a no-op there (correct — the GL path
+    repaints the whole viewport every frame anyway). Games that call
+    ForceRefresh() every frame in a view-mode drawable are safe under either
+    backbuffer.
   * RenderBackbufferPostScene and custom DirectDrawingBase.OnDraw run on the
     UI thread with the GRContext current under GpuRendering — never marshal that
     canvas elsewhere; keep OnDraw a pure function of engine time/game state, or
@@ -1068,7 +1076,7 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   claimed on the adapter. Every other key is left unhandled and reaches the
   application as before. A game that only POLLS IsDown and registers nothing
   declares its keys by claiming them, typically in OnKeyboardAdapterInitialized:
-      if (KeyboardEventPoller.Adapter is CodeBrixKeyboardAdapter kbd)
+      if (Engine.Instance.Input.KeyboardEventPoller?.Adapter is CodeBrixKeyboardAdapter kbd)
           kbd.ClaimKeys([(int)VirtualKey.Left, (int)VirtualKey.Right,
                          (int)VirtualKey.Space]);
   CodeBrixKeyboardAdapter: ClaimKey(int) / ClaimKeys(IEnumerable<int>) /
@@ -1093,7 +1101,8 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   from the previous poll's delta.
 
   POLLING: IKeyboardAdapter.IsDown(int keyCode) (reach it via
-  KeyboardEventPoller.Adapter or your own adapter reference) is lock-free and
+  Engine.Instance.Input.KeyboardEventPoller?.Adapter — an instance property;
+  there is no static Adapter — or your own adapter reference) is lock-free and
   valid from any thread at any time — the per-tic gameplay path for held keys
   (movement). IMouseAdapter exposes CurrentPosition, PressedButtons
   (HashSet<MouseButton>), CurrentKeyboardModifiers, ScrollDelta. Gamepads: read
@@ -1307,7 +1316,10 @@ Two complementary paths — EVENTS (edge-triggered) and POLLING (level):
   handler) does not act on a game click as well, a wheel over the game does not
   scroll the page, and a click on the focused canvas keeps its keyboard focus.
   The refocus-on-press (keyboard adapter, EnsureFocus) still runs on every
-  press. The rule's edges:
+  press. The mouse adapter captures the pointer on the canvas for the duration
+  of a press (released on button-up or cancel), so the release still reaches
+  it when the press opens a pane over the canvas, and a lost capture clears
+  every held button. The rule's edges:
     - Only the canvas's own events: a click on a link or button OUTSIDE the
       canvas is untouched and moves focus to whatever handles it, as usual.
     - An event something INSIDE the canvas handled first (a Button placed over
@@ -1347,8 +1359,10 @@ device, so overlapping sounds are cheap):
   clips (LoadFromFile / LoadFromStream / LoadFromPcm /
   LoadFromEngineAssetsFile); each AudioResource owns a voice: Play(fromStart),
   Pause(), Resume(), Stop(), Seek(), IsLooping, Volume, Pan, PlaybackSpeed,
-  Duration, PlaybackCompleted. Clone() gives an independent voice of the same
-  clip.
+  Duration, PlaybackCompleted. AudioResourceManager.Instance.Clone(key,
+  newKey = null, volume = null, pan = null) gives an independent voice of the
+  same clip (AudioResource itself has no Clone method; it returns null when
+  the key is missing or newKey is taken).
 
     PLAYBACK SPEED. AudioResource.PlaybackSpeed is a playback-rate multiplier,
     1.0 by default and clamped to AudioResource.MinimumPlaybackSpeed (0.25) —
@@ -1356,7 +1370,8 @@ device, so overlapping sounds are cheap):
     ArgumentOutOfRangeException. PITCH FOLLOWS SPEED: this is resampling, not
     time-stretching, so a slower speed also sounds lower. It applies to EVERY
     loaded resource, can be changed while the clip is playing, is carried over
-    by Clone(), and is saved and restored with the engine state. ONE EXCEPTION:
+    by AudioResourceManager.Clone, and is saved and restored with the engine
+    state. ONE EXCEPTION:
     a TryPlaySfx trigger plays through the shared voice pool rather than the
     resource's own graph, so it keeps the recorded speed. Music tracks keep
     their own Speed, and SoundChannel keeps its own live Pitch.
@@ -1372,7 +1387,7 @@ device, so overlapping sounds are cheap):
   .flac) no longer than AudioResourceManager.PreloadShortSoundEffectMaxSeconds
   (default 10 s; 0 disables) are decoded ONCE to raw float PCM in memory at
   load time (AudioResource.IsPreloaded == true; the CachedSound type). Plays,
-  Clone()s, SoundChannel clips, and SfxVoicePool voices over a preloaded
+  clones, SoundChannel clips, and SfxVoicePool voices over a preloaded
   resource share that single decoded buffer — no decode, file, or MP3 work
   ever happens on the real-time audio thread. Ogg Vorbis and FLAC decode
   through the same managed path as WAV and MP3, which matters because free
@@ -2780,10 +2795,11 @@ The effect types (namespace CodeBrix.Platform.GameEngine.Effects):
 
 The concrete types sit under four public abstract bases — FadeEffect (FadeIn /
 FadeOut), SlideEffect (SlideIn / SlideOut), WipeEffect (Fill / Erase) and
-ZoomEffect (ZoomIn / ZoomOut) — all deriving DisplayEffect. Every constructor in
-that hierarchy, DisplayEffect's included, is `private protected`, so the set of
-effect types is CLOSED: use the bases for type tests and pattern matching, not
-for subclassing. They also carry the read-back properties:
+ZoomEffect (ZoomIn / ZoomOut) — all deriving DisplayEffect. The constructors of
+the bases, DisplayEffect's included, are `private protected` (the sealed
+concrete effects such as FadeInEffect have public ones), so the set of effect
+types is CLOSED: use the bases for type tests and pattern matching, not for
+subclassing. They also carry the read-back properties:
 
     SlideEffect.Direction        EffectDirection, get-only
     WipeEffect.Direction         EffectDirection, get-only
@@ -3363,6 +3379,7 @@ mouse click. Every call is a verified engine signature.
     using CodeBrix.Platform.GameEngine.Input.Keyboard;
     using CodeBrix.Platform.GameEngine.Physics.Movement.Easing;
     using CodeBrix.Platform.GameEngine.Scenes;
+    using Microsoft.Extensions.Logging;
     using Windows.System;
 
     public sealed class TinyGameHost : CodeBrixGameHost
@@ -3512,7 +3529,7 @@ MyGame.LinuxX11/Program.cs
         {
             var host = CodeBrixPlatformHostBuilder.Create()
                 .App(() => new App())
-                .UseLinuxX11()          // .UseWin32Skia() / .UseMacOS() on the other heads
+                .UseLinuxX11()          // .UseWindowsWin32() / .UseMacOS() on the other heads
                 .Build();
             host.Run();
         }
@@ -4314,10 +4331,11 @@ DRAW LISTS (Drawing.Direct.DrawLists)
 AUDIO / MUSIC
     AudioResourceManager.Instance: LoadFromFile / LoadFromStream / LoadFromPcm(key, data, rate,
         bits, channels) / LoadFromEngineAssetsFile(pack); bool TryPlaySfx(string key, float volume,
-        float pan, int priority); SfxPool; PreloadShortSoundEffectMaxSeconds
+        float pan, int priority); SfxPool; PreloadShortSoundEffectMaxSeconds;
+        AudioResource? Clone(key, newKey = null, volume = null, pan = null)
     AudioResource: Play(fromStart) / Pause / Resume / Stop / Seek; IsLooping; Volume; Pan;
         PlaybackSpeed (1.0 default, clamped MinimumPlaybackSpeed 0.25 - MaximumPlaybackSpeed 4.0;
-        pitch follows speed); Duration; CurrentTime; Clone()
+        pitch follows speed); Duration; CurrentTime
     AudioSystem.Initialize(int sampleRate, int channels); AudioSystem.Shutdown()
     SoundChannel: SetClip(key); Play(volume, pan, pitch); Volume/Pan/Pitch; State
     StreamingAudioSource: FillAudioBuffer(Span<float>) callback or ISampleProvider; Start/Stop; Volume
