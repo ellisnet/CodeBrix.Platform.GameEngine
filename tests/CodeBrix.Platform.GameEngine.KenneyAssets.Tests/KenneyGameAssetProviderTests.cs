@@ -710,6 +710,177 @@ public class KenneyGameAssetProviderTests : IDisposable
         blank.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public void AddSource_registers_a_stream_bundle_under_its_source_name_with_the_keys_of_the_path_route()
+    {
+        //Arrange
+        KenneyGameAssetProvider byPath = Provider(new KenneyAssetsOptions { ProviderId = "bypath" });
+        byPath.AddSources(TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName));
+        KenneyGameAssetProvider byStream = Provider(new KenneyAssetsOptions { ProviderId = "bystream" });
+        TestNonSeekableStream stream = TestNonSeekableStream.OverBundle(TestFixtures.SimulatedBundleFileName);
+
+        //Act
+        IReadOnlyList<string> warnings = byStream.AddSource(stream, "Assets/Packs/simulated_bundle.zip");
+
+        //Assert
+        warnings.Should().BeEmpty();
+        stream.IsDisposed.Should().BeTrue();
+        KenneyPackSummary pack = Assert.Single(byStream.Packs);
+        pack.SourcePath.Should().Be("Assets/Packs/simulated_bundle.zip");
+        pack.Slug.Should().Be(SimulatedSlug);
+        pack.AssetCount.Should().Be(byPath.Packs[0].AssetCount);
+        pack.CountsByKind.Should().BeEquivalentTo(byPath.Packs[0].CountsByKind);
+        byStream.Describe().Select(asset => asset.Key.Split(':', 2)[1])
+            .Should().Equal(byPath.Describe().Select(asset => asset.Key.Split(':', 2)[1]));
+        byStream.Warnings.Should().HaveCount(byPath.Warnings.Count);
+    }
+
+    [Fact]
+    public void AddSource_materializes_an_asset_from_a_stream_bundle_like_the_path_route()
+    {
+        //Arrange - the image Dispose_closes_the_archives_and_leaves_the_catalog_readable materializes
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        provider.AddSource(
+            TestNonSeekableStream.OverBundle(TestFixtures.SimulatedBundleFileName), "simulated_bundle.zip");
+        GameAssetDescriptor image = Descriptor(provider, $"kenney:{SimulatedSlug}/PNG/tile_0079");
+        byte[] expected;
+        using (KenneyAssetSource fromPath =
+            KenneyAssetSource.Open(TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName)))
+        {
+            expected = fromPath.Packs[0].Archive.ReadBytes("PNG/tile_0079.png");
+        }
+
+        //Act
+        Tilesheet sheet = provider.MaterializeTilesheet(image);
+        using Stream raw = provider.OpenRaw(image);
+        using MemoryStream copy = new();
+        raw.CopyTo(copy);
+
+        //Assert
+        sheet.Name.Should().Be(image.Key);
+        sheet.SkBitmap.Width.Should().BeGreaterThan(0);
+        TilesheetRegistry.Instance.TryGet(image.Key, out Tilesheet? registered).Should().BeTrue();
+        registered.Should().BeSameAs(sheet);
+        copy.ToArray().Should().Equal(expected);
+    }
+
+    [Fact]
+    public void AddSource_does_not_read_a_name_it_already_holds()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        provider.AddSource(
+            TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName), "packs/puzzle.zip");
+        int before = provider.AssetCount;
+        TestNonSeekableStream again = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+        using TestNonSeekableStream againKept = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+
+        //Act
+        IReadOnlyList<string> warnings = provider.AddSource(again, "packs/puzzle.zip");
+        IReadOnlyList<string> keptWarnings = provider.AddSource(againKept, "packs/puzzle.zip", leaveOpen: true);
+
+        //Assert - no second slug with a numeric suffix, and neither stream was read
+        warnings.Should().BeEmpty();
+        keptWarnings.Should().BeEmpty();
+        provider.Packs.Select(pack => pack.Slug).Should().Equal([PuzzleSlug]);
+        provider.AssetCount.Should().Be(before);
+        again.WasRead.Should().BeFalse();
+        again.IsDisposed.Should().BeTrue();
+        againKept.WasRead.Should().BeFalse();
+        againKept.IsDisposed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AddSource_recognizes_a_path_source_given_under_the_same_name()
+    {
+        //Arrange
+        string path = TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName);
+        KenneyGameAssetProvider provider = Provider(path);
+        using FileStream file = File.OpenRead(path);
+
+        //Act
+        IReadOnlyList<string> warnings = provider.AddSource(file, path, leaveOpen: true);
+
+        //Assert
+        warnings.Should().BeEmpty();
+        provider.Packs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AddSource_compares_names_with_the_source_path_comparison()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        provider.AddSource(
+            TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName), "packs/puzzle.zip");
+
+        //Act
+        provider.AddSource(
+            TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName), "PACKS/PUZZLE.ZIP");
+
+        //Assert - a name differing only in case is another source where case matters
+        bool caseMatters = KenneyGameAssetProvider.SourcePathComparison == StringComparison.Ordinal;
+        provider.Packs.Count.Should().Be(caseMatters ? 2 : 1);
+    }
+
+    [Fact]
+    public void SourcePathComparison_ignores_case_only_on_Windows_and_macOS()
+    {
+        //Arrange
+        bool ignoresCase = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+
+        //Act
+        StringComparison comparison = KenneyGameAssetProvider.SourcePathComparison;
+
+        //Assert
+        comparison.Should().Be(ignoresCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        if (OperatingSystem.IsLinux()) { comparison.Should().Be(StringComparison.Ordinal); }
+    }
+
+    [Fact]
+    public void AddSource_turns_a_stream_that_is_not_a_zip_into_a_warning()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(TestFixtures.SimulatedBundleFileName);
+        TestNonSeekableStream garbage = new(Utf8("this is not a zip file"));
+
+        //Act
+        IReadOnlyList<string> warnings = provider.AddSource(garbage, "packs/kenney_broken.zip");
+
+        //Assert
+        warnings.Should().ContainSingle().Which.Should().Contain("packs/kenney_broken.zip");
+        provider.Warnings.Should().Contain(warnings[0]);
+        provider.Packs.Should().ContainSingle();
+        garbage.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddSource_validates_its_arguments_without_touching_the_stream()
+    {
+        //Arrange
+        KenneyGameAssetProvider provider = Provider(new KenneyAssetsOptions());
+        using TestNonSeekableStream stream = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+        TestNonSeekableStream closed = new([1, 2, 3]);
+        closed.Dispose();
+        KenneyGameAssetProvider disposed = new();
+        disposed.Dispose();
+
+        //Act
+        Action nullStream = () => provider.AddSource(null!, "name");
+        Action blankName = () => provider.AddSource(stream, " ");
+        Action unreadable = () => provider.AddSource(closed, "closed.zip");
+        Action afterDispose = () => disposed.AddSource(stream, "name");
+
+        //Assert
+        nullStream.Should().Throw<ArgumentNullException>();
+        blankName.Should().Throw<ArgumentException>();
+        unreadable.Should().Throw<ArgumentException>();
+        afterDispose.Should().Throw<ObjectDisposedException>();
+        stream.WasRead.Should().BeFalse();
+        stream.IsDisposed.Should().BeFalse();
+        provider.Packs.Should().BeEmpty();
+    }
+
     private static GameAssetDescriptor Descriptor(KenneyGameAssetProvider provider, string key)
     {
         provider.TryDescribe(key, out GameAssetDescriptor? descriptor).Should().BeTrue();

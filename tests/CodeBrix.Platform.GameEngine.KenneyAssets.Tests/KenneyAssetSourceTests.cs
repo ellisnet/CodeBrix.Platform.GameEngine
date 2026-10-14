@@ -207,6 +207,200 @@ public class KenneyAssetSourceTests : IDisposable
         act.Should().Throw<ObjectDisposedException>();
     }
 
+    [Theory]
+    [InlineData(TestFixtures.SimulatedBundleFileName)]
+    [InlineData(TestFixtures.PuzzlePackFileName)]
+    [InlineData(TestFixtures.BrickKitFileName)]
+    public void OpenZip_from_a_seekable_stream_yields_the_same_pack_as_the_path(string bundleFileName)
+    {
+        //Arrange
+        string path = TestFixtures.BundlePath(bundleFileName);
+        using KenneyAssetSource fromPath = KenneyAssetSource.Open(path);
+        using FileStream file = File.OpenRead(path);
+
+        //Act
+        using KenneyAssetSource fromStream = KenneyAssetSource.OpenZip(file, "Assets/Packs/" + bundleFileName);
+
+        //Assert
+        fromStream.SourcePath.Should().Be("Assets/Packs/" + bundleFileName);
+        fromStream.IsFolder.Should().BeFalse();
+        fromStream.IsStream.Should().BeTrue();
+        fromPath.IsStream.Should().BeFalse();
+        ShouldMatch(fromStream, fromPath);
+    }
+
+    [Theory]
+    [InlineData(TestFixtures.SimulatedBundleFileName)]
+    [InlineData(TestFixtures.PuzzlePackFileName)]
+    [InlineData(TestFixtures.BrickKitFileName)]
+    public void OpenZip_from_a_stream_that_cannot_seek_yields_the_same_pack_as_the_path(string bundleFileName)
+    {
+        //Arrange
+        using KenneyAssetSource fromPath = KenneyAssetSource.Open(TestFixtures.BundlePath(bundleFileName));
+        TestNonSeekableStream stream = TestNonSeekableStream.OverBundle(bundleFileName);
+
+        //Act
+        using KenneyAssetSource fromStream = KenneyAssetSource.OpenZip(stream, bundleFileName);
+
+        //Assert
+        ShouldMatch(fromStream, fromPath);
+        fromStream.Packs[0].Archive.ReadBytes("License.txt")
+            .Should().Equal(fromPath.Packs[0].Archive.ReadBytes("License.txt"));
+    }
+
+    [Fact]
+    public void OpenZip_names_a_pack_without_a_licence_after_the_last_segment_of_the_source_name()
+    {
+        //Arrange
+        string root = CreateScratch("stream-unlicensed");
+        string zipPath = Path.Combine(root, "kenney_tiny-things.zip");
+        TestFixtures.BuildZip(zipPath, new Dictionary<string, byte[]> { ["PNG/tile.png"] = TestFixtures.FakeImage() });
+        using KenneyAssetSource fromPath = KenneyAssetSource.Open(zipPath);
+        using FileStream file = File.OpenRead(zipPath);
+
+        //Act
+        using KenneyAssetSource fromStream = KenneyAssetSource.OpenZip(file, @"packs\nested/kenney_tiny-things.zip");
+
+        //Assert
+        fromStream.Packs[0].Slug.Should().Be(fromPath.Packs[0].Slug);
+        fromStream.Packs[0].DisplayName.Should().Be(fromPath.Packs[0].DisplayName);
+    }
+
+    [Fact]
+    public void OpenZip_disposes_a_seekable_stream_with_the_source_unless_asked_to_leave_it_open()
+    {
+        //Arrange
+        string path = TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName);
+        using FileStream kept = File.OpenRead(path);
+        FileStream handedOver = File.OpenRead(path);
+
+        //Act
+        KenneyAssetSource keeping = KenneyAssetSource.OpenZip(kept, "kept", leaveOpen: true);
+        KenneyAssetSource owning = KenneyAssetSource.OpenZip(handedOver, "handed-over", leaveOpen: false);
+        bool handedOverOpenWhileInUse = handedOver.CanRead;
+        keeping.Dispose();
+        owning.Dispose();
+
+        //Assert
+        handedOverOpenWhileInUse.Should().BeTrue();
+        kept.CanRead.Should().BeTrue();
+        handedOver.CanRead.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OpenZip_leaves_a_buffered_stream_open_only_when_asked_to()
+    {
+        //Arrange
+        using TestNonSeekableStream kept = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+        TestNonSeekableStream handedOver = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+
+        //Act
+        KenneyAssetSource keeping = KenneyAssetSource.OpenZip(kept, "kept", leaveOpen: true);
+        KenneyAssetSource owning = KenneyAssetSource.OpenZip(handedOver, "handed-over", leaveOpen: false);
+        keeping.Dispose();
+        owning.Dispose();
+
+        //Assert
+        kept.IsDisposed.Should().BeFalse();
+        handedOver.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OpenZip_throws_for_a_stream_that_is_not_a_zip()
+    {
+        //Arrange
+        MemoryStream garbage = new(Encoding.UTF8.GetBytes("this is not a zip file"));
+
+        //Act
+        Action act = () => KenneyAssetSource.OpenZip(garbage, "kenney_broken.zip");
+
+        //Assert
+        act.Should().Throw<IOException>().WithMessage("*kenney_broken.zip*");
+        garbage.CanRead.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryOpenZip_turns_a_stream_that_is_not_a_zip_into_an_error()
+    {
+        //Arrange
+        using TestNonSeekableStream garbage = new(Encoding.UTF8.GetBytes("this is not a zip file"));
+
+        //Act
+        bool opened = KenneyAssetSource.TryOpenZip(
+            garbage, "kenney_broken.zip", leaveOpen: true, out KenneyAssetSource? source, out string? error);
+
+        //Assert
+        opened.Should().BeFalse();
+        source.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+        error.Should().Contain("kenney_broken.zip");
+        garbage.IsDisposed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryOpenZip_opens_a_readable_bundle()
+    {
+        //Arrange
+        using FileStream file = File.OpenRead(TestFixtures.BundlePath(TestFixtures.SciFiSoundsFileName));
+
+        //Act
+        bool opened = KenneyAssetSource.TryOpenZip(
+            file, "sounds", leaveOpen: true, out KenneyAssetSource? source, out string? error);
+        using KenneyAssetSource? openedSource = source;
+
+        //Assert
+        opened.Should().BeTrue();
+        error.Should().BeNull();
+        source!.Packs.Should().ContainSingle().Which.Slug.Should().Be("sci-fi-sounds");
+    }
+
+    [Fact]
+    public void OpenZip_and_TryOpenZip_validate_their_arguments()
+    {
+        //Arrange
+        using MemoryStream stream = new([1, 2, 3]);
+        MemoryStream closed = new([1, 2, 3]);
+        closed.Dispose();
+
+        //Act
+        Action openNull = () => KenneyAssetSource.OpenZip(null!, "name");
+        Action openBlank = () => KenneyAssetSource.OpenZip(stream, "  ");
+        Action openEmptyName = () => KenneyAssetSource.OpenZip(stream, string.Empty);
+        Action openClosed = () => KenneyAssetSource.OpenZip(closed, "closed.zip");
+        Action tryNull = () => KenneyAssetSource.TryOpenZip(null!, "name", false, out _, out _);
+        Action tryBlank = () => KenneyAssetSource.TryOpenZip(stream, " ", false, out _, out _);
+        Action tryClosed = () => KenneyAssetSource.TryOpenZip(closed, "closed.zip", false, out _, out _);
+
+        //Assert
+        openNull.Should().Throw<ArgumentNullException>();
+        openBlank.Should().Throw<ArgumentException>();
+        openEmptyName.Should().Throw<ArgumentException>();
+        openClosed.Should().Throw<ArgumentException>();
+        tryNull.Should().Throw<ArgumentNullException>();
+        tryBlank.Should().Throw<ArgumentException>();
+        tryClosed.Should().Throw<ArgumentException>();
+        stream.CanRead.Should().BeTrue();
+    }
+
+    //A source read from a stream catalogs exactly what the same bundle read by path does
+    private static void ShouldMatch(KenneyAssetSource fromStream, KenneyAssetSource fromPath)
+    {
+        fromStream.Packs.Should().ContainSingle();
+        KenneyPack streamPack = fromStream.Packs[0];
+        KenneyPack pathPack = fromPath.Packs[0];
+
+        streamPack.Slug.Should().Be(pathPack.Slug);
+        streamPack.DisplayName.Should().Be(pathPack.DisplayName);
+        streamPack.Version.Should().Be(pathPack.Version);
+        streamPack.LicenseTitle.Should().Be(pathPack.LicenseTitle);
+        streamPack.Archive.Entries.Select(e => (e.Path, e.SizeBytes))
+            .Should().Equal(pathPack.Archive.Entries.Select(e => (e.Path, e.SizeBytes)));
+        streamPack.Entries.Select(e => (e.GetKey("kenney"), e.Kind))
+            .Should().Equal(pathPack.Entries.Select(e => (e.GetKey("kenney"), e.Kind)));
+        fromStream.Warnings.Select(w => w.Replace(fromStream.SourcePath, "<source>"))
+            .Should().Equal(fromPath.Warnings.Select(w => w.Replace(fromPath.SourcePath, "<source>")));
+    }
+
     private static void WritePack(string folderPath, string title, string version)
     {
         Directory.CreateDirectory(folderPath);

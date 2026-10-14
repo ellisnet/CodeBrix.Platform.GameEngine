@@ -44,7 +44,8 @@ public sealed record KenneyPackSummary
     public string? LicenseTitle { get; init; }
 
     /// <summary>
-    /// Gets the path of the zip file or folder the pack was read from.
+    /// Gets the path of the zip file or folder the pack was read from, or, for a pack read from a
+    /// stream, the name it was registered under.
     /// </summary>
     public required string SourcePath { get; init; }
 

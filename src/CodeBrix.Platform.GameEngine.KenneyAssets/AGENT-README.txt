@@ -241,6 +241,10 @@ The entry point for the whole package.
         public static KenneyGameAssetProvider UseKenneyAssets(
             this Engine engine, KenneyAssetsOptions options);
 
+        public static KenneyGameAssetProvider UseKenneyAssets(
+            this Engine engine, Stream zipStream, string sourceName,
+            bool leaveOpen = false);
+
         public static KenneyAssetsRegistration RegisterKenneyAssets(
             this Engine engine, params string[] zipFilesOrFolders);
 
@@ -280,6 +284,11 @@ The entry point for the whole package.
     KenneyAssetsRegistration saying per path what happened. For a path read
     once the outcome, the log lines and the exceptions are exactly those of
     UseKenneyAssets. See REGISTERING MORE THAN ONCE below.
+  * UseKenneyAssets(engine, zipStream, sourceName, leaveOpen) is the STREAM
+    form: one zip bundle handed over as a stream instead of a path, added to the
+    default "kenney" provider (created and registered when there is none). It
+    is provider.AddSource(zipStream, sourceName, leaveOpen) plus the same log
+    lines; see that method below and PACKS FROM AN APP'S PACKAGED FILES.
 
 KenneyAssetsOptions (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
 ------------------------------------------------------------------------
@@ -330,6 +339,8 @@ KenneyGameAssetProvider (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
         public IReadOnlyList<string> AddSources(params string[] zipFilesOrFolders);
         public KenneyAssetsRegistration AddNewSources(KenneyAssetsOptions options);
         public KenneyAssetsRegistration AddNewSources(params string[] zipFilesOrFolders);
+        public IReadOnlyList<string> AddSource(Stream zipStream, string sourceName,
+            bool leaveOpen = false);
 
         public IReadOnlyList<string> CreditLines { get; }
         public KenneyKeyCheck CheckKeys(IEnumerable<string> keys);
@@ -388,6 +399,35 @@ KenneyGameAssetProvider (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
     KenneyAssetsRegistration instead of bare warnings; it is what
     RegisterKenneyAssets calls. The same bundle copied to ANOTHER path is a
     different source and is read again.
+  * AddSource(zipStream, sourceName, leaveOpen) registers ONE ZIP BUNDLE HELD
+    IN A STREAM, for code that has the bundle as a stream rather than a path.
+    The pack, slug, keys and warnings are exactly those of the same zip passed
+    to AddSources by path, and NOTHING TOUCHES THE FILE SYSTEM:
+      - sourceName IS THE SOURCE'S IDENTITY. It is what
+        KenneyPackSummary.SourcePath reports and what warnings name, and it is
+        never treated as a path. Its last segment (after the final / or \)
+        stands in for the zip's file name, which only matters for a pack with
+        no licence file.
+      - A SEEKABLE stream is read in place for as long as the provider is open,
+        so do not move or read it meanwhile. A stream that CANNOT SEEK is copied
+        into memory once, in full, and read from that copy; the copy belongs to
+        the provider.
+      - leaveOpen = false (the default) HANDS THE STREAM OVER: the provider
+        disposes it when it is disposed, right after copying a stream that
+        cannot seek, and straight away when it does not read it at all.
+        leaveOpen = true leaves it open in every case, buffered or not.
+      - A stream that does not hold a readable zip is a WARNING, exactly like an
+        unreadable path given to AddSources(paths): returned, kept in Warnings,
+        and it costs the game that pack only. A null stream, a blank name or a
+        stream that cannot be read at all (CanRead false) THROW - those are
+        mistakes in the calling code - and the stream is left untouched.
+      - SAFE TO CALL AGAIN: a name the provider already holds (an earlier
+        stream, or a path spelled exactly the same) is NOT read a second time -
+        no "-2" slug, no warnings returned, and the stream is disposed unless
+        leaveOpen is true. Two different bundles need two different names.
+      - Names compare CASE-SENSITIVELY except on Windows and macOS, the same
+        rule source paths follow; that rule holds on every other operating
+        system too, not only on desktop Linux.
   * CreditLines is one KenneyPackSummary.CreditLine per registered pack, in
     registration order, a line two packs share listed once.
   * CheckKeys and WriteKeyCatalog / GetKeyCatalog: see CHECKING KEYS and THE
@@ -428,6 +468,8 @@ KenneyPackSummary (namespace CodeBrix.Platform.GameEngine.KenneyAssets)
     the bundle, for the reasons under WHAT IS NOT AN ASSET OF ITS OWN.
   * CountsByKind OMITS a kind the pack holds none of, rather than mapping it to
     zero. Use GetValueOrDefault.
+  * SourcePath is the zip or folder path the pack was read from, as given, or
+    the sourceName of a pack registered from a stream.
   * CreditLine is the line a credits screen shows for the pack: the licence
     title, trimmed (the display name when the pack has no licence file),
     followed by " - Kenney (CC0)", e.g. "Puzzle Pack (1.1) - Kenney (CC0)".
@@ -1064,6 +1106,37 @@ ADDING A MOD FOLDER LATER
 
     Tilesheet modArt = providers.LoadTilesheet("mods:extra-tiles/PNG/tile_0001");
 
+PACKS FROM AN APP'S PACKAGED FILES
+----------------------------------
+A head that can only open the files packaged with the app as STREAMS, never as
+paths (some platforms keep packaged files inside the app package, where they
+are readable but not seekable), feeds packs to the engine one stream at a time,
+with no copy to disk:
+
+    // However this head opens a packaged file; it only has to return a Stream.
+    string[] packaged = ["Assets/kenney_puzzle-pack.zip", "Assets/kenney_sci-fi-sounds.zip"];
+
+    foreach (string name in packaged)
+    {
+        Stream zip = OpenPackagedFile(name);
+        Engine.Instance.UseKenneyAssets(zip, name);   // the provider now owns the stream
+    }
+
+    Tilesheet ball = Engine.Instance.Managers.AssetProviders
+        .LoadTilesheet("kenney:puzzle-pack/PNG/Double/ballBlue");
+
+  * The name is the source's IDENTITY: use the packaged-file path (or any
+    stable pack name), the same on every run. Keys come from the licence file
+    INSIDE the zip, so they are the same keys a desktop head gets from the same
+    bundle on disk - one game, one set of key constants, on every head.
+  * A stream that cannot seek is copied into memory once, so a packaged bundle
+    costs its zip size in memory while the provider is open. Ship the packs the
+    game uses, not a whole collection.
+  * Calling it again with a name already registered reads nothing and adds
+    nothing, so a loading step that runs twice is harmless.
+  * A provider built by hand takes the same streams through
+    provider.AddSource(zip, name).
+
 REGISTERING MORE THAN ONCE
 --------------------------
 UseKenneyAssets ADDS every path it is given, so calling it twice with the same
@@ -1509,6 +1582,10 @@ REGISTER (once, after the engine is initialized; call again to ADD sources)
     // Provider, Sources (KenneySourceResult: SourcePath, Status Read /
     // AlreadyRegistered / Missing / Unreadable, Packs, Message), Packs, Warnings,
     // Unavailable
+    Engine.Instance.UseKenneyAssets(zipStream, "Assets/kenney_puzzle-pack.zip");
+    // stream form: one zip, the name is its identity; a stream that cannot seek
+    // is buffered once; leaveOpen: false hands the stream over; a name already
+    // registered is not read again
 
 KEYS   <providerId>:<pack-slug>/<path>   case-insensitive; extension DROPPED for
        a materializable asset, KEPT for a listed-only one; the key is also the
@@ -1537,6 +1614,7 @@ PROVIDER  (KenneyGameAssetProvider)
     IReadOnlyList<KenneyPackSummary> Packs      int AssetCount
     IReadOnlyList<string> Warnings              IReadOnlySet<GameAssetKind> SupportedKinds
     AddSources(...)    AddNewSources(...) -> KenneyAssetsRegistration
+    AddSource(zipStream, sourceName, leaveOpen = false) -> warnings
     Describe / TryDescribe / OpenRaw
     IReadOnlyList<string> CreditLines           one line per registered pack
     KenneyKeyCheck CheckKeys(keys)              Keys, MissingKeys, AllFound,

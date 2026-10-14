@@ -81,10 +81,14 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
         GameAssetKind.Model3D,
     ]);
 
-    //Linux file systems tell case apart; the Windows and macOS defaults do not
-    private static readonly StringComparison SourcePathComparison = OperatingSystem.IsLinux()
-        ? StringComparison.Ordinal
-        : StringComparison.OrdinalIgnoreCase;
+    //Only the Windows and macOS default file systems ignore case; Linux, and the device systems built
+    //  on it that do not report themselves as Linux, tell case apart. Asked that way round so that an
+    //  unrecognized system gets the comparison that never merges two different sources into one.
+    //  Stream source names are compared the same way.
+    internal static readonly StringComparison SourcePathComparison =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
     private readonly object _gate = new();
     private readonly List<KenneyAssetSource> _sources = [];
@@ -276,6 +280,103 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
         ArgumentNullException.ThrowIfNull(zipFilesOrFolders);
 
         return AddSources(new KenneyAssetsOptions { ProviderId = ProviderId, Sources = zipFilesOrFolders });
+    }
+
+    /// <summary>
+    /// Registers a Kenney bundle (.zip) held in a stream with this provider - the way a head that can
+    /// only open its packaged files as streams feeds it packs, without copying them to disk first.
+    /// </summary>
+    /// <param name="zipStream">
+    /// A readable stream holding the whole zip archive from its start. A stream that cannot seek is
+    /// copied into memory once, in full, and read from that copy; a seekable stream is read in place
+    /// for as long as the provider is open, so the caller must not move or read it meanwhile.
+    /// </param>
+    /// <param name="sourceName">
+    /// The name the bundle is known by - a packaged-file path or a pack name of the caller's choosing.
+    /// It is the source's identity: it is what <see cref="KenneyPackSummary.SourcePath"/> reports, what
+    /// warnings name, and what a later call with the same name is recognized by. It is never treated
+    /// as a file system path.
+    /// </param>
+    /// <param name="leaveOpen">
+    /// <see langword="true"/> to leave <paramref name="zipStream"/> open whatever happens;
+    /// <see langword="false"/> to hand it over, so the provider disposes it - when the provider is
+    /// disposed, once it has been copied, or straight away when it is not read at all.
+    /// </param>
+    /// <returns>
+    /// What this call could not do exactly: why the bundle would not open, or the catalog warnings of
+    /// the pack it added. Empty when the bundle opened and catalogued cleanly, and when a source of
+    /// that name was already registered.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="zipStream"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="sourceName"/> is null, empty or whitespace, or when
+    /// <paramref name="zipStream"/> cannot be read.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">Thrown when the provider has been disposed.</exception>
+    /// <remarks>
+    /// <para>
+    /// The bundle is catalogued exactly as the same zip file passed to
+    /// <see cref="AddSources(string[])"/> would be: the same pack, slug, keys and warnings. Nothing
+    /// here touches the file system.
+    /// </para>
+    /// <para>
+    /// A STREAM THAT IS NOT A READABLE BUNDLE is a warning, not an exception, as an unreadable path is
+    /// for <see cref="AddSources(string[])"/>: it is returned, kept in <see cref="Warnings"/>, and costs
+    /// the game that pack only. A null stream, a blank name or a stream that cannot be read at all are
+    /// mistakes in the calling code and throw; the stream is left untouched when they do.
+    /// </para>
+    /// <para>
+    /// SAFE TO CALL AGAIN, as <see cref="AddNewSources(KenneyAssetsOptions)"/> is for paths: a name
+    /// this provider already holds - from an earlier stream, or a path spelled exactly the same - is
+    /// not read a second time, so a loading step that runs twice does not register the pack again
+    /// under a <c>-2</c> slug. The stream is not read, the call returns no warnings, and the stream is
+    /// disposed unless <paramref name="leaveOpen"/> is <see langword="true"/>. Names are compared
+    /// case-sensitively except on Windows and macOS, exactly as paths are. Two different bundles
+    /// therefore need two different names.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> AddSource(Stream zipStream, string sourceName, bool leaveOpen = false)
+    {
+        ArgumentNullException.ThrowIfNull(zipStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+        if (!zipStream.CanRead)
+        {
+            throw new ArgumentException(
+                $"The stream given for the Kenney bundle '{sourceName}' cannot be read.", nameof(zipStream));
+        }
+
+        ThrowIfDisposed();
+
+        List<string> added = [];
+
+        lock (_gate)
+        {
+            if (FindRegisteredSourceByName(sourceName) is not null)
+            {
+                if (!leaveOpen) { zipStream.Dispose(); }
+
+                return added;
+            }
+
+            int catalogWarningsBefore = _index.Warnings.Count;
+
+            if (!KenneyAssetSource.TryOpenZip(
+                zipStream, sourceName, leaveOpen, out KenneyAssetSource? source, out string? error))
+            {
+                _sourceWarnings.Add(error!);
+                added.Add(error!);
+
+                return added;
+            }
+
+            _sources.Add(source!);
+            _index.AddSource(source!);
+
+            added.AddRange(_index.Warnings.Skip(catalogWarningsBefore));
+            _packs = BuildPackSummaries();
+        }
+
+        return added;
     }
 
     /// <summary>
@@ -774,7 +875,8 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
         return added;
     }
 
-    //The source already registered from this path, compared as full paths
+    //The source already registered from this path, compared as full paths. A stream source's name is
+    //  not a path, so it is never resolved against the working folder and never matches here.
     private KenneyAssetSource? FindRegisteredSource(string? path)
     {
         string? wanted = NormalizeSourcePath(path);
@@ -782,10 +884,24 @@ public sealed class KenneyGameAssetProvider : IGameAssetProvider, ITilesheetAsse
 
         foreach (KenneyAssetSource source in _sources)
         {
+            if (source.IsStream) { continue; }
+
             if (string.Equals(NormalizeSourcePath(source.SourcePath), wanted, SourcePathComparison))
             {
                 return source;
             }
+        }
+
+        return null;
+    }
+
+    //The source already registered under this exact name - a stream source's name, or a path source's
+    //  path as it was given - with no path resolution, so the file system is never consulted
+    private KenneyAssetSource? FindRegisteredSourceByName(string sourceName)
+    {
+        foreach (KenneyAssetSource source in _sources)
+        {
+            if (string.Equals(source.SourcePath, sourceName, SourcePathComparison)) { return source; }
         }
 
         return null;

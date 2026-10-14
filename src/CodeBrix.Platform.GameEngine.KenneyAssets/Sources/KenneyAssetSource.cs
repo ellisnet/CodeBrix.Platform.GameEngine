@@ -7,8 +7,8 @@ namespace CodeBrix.Platform.GameEngine.KenneyAssets.Sources;
 
 /// <summary>
 /// One place a game points the provider at: a downloaded Kenney bundle (.zip), a folder extracted from
-/// one, or a folder that holds several such folders. Opening a source yields one pack, or several when
-/// the folder turns out to be a collection.
+/// one, a folder that holds several such folders, or a bundle (.zip) handed over as a stream. Opening a
+/// source yields one pack, or several when the folder turns out to be a collection.
 /// </summary>
 /// <remarks>
 /// A folder is a collection when it carries no licence file of its own but folders inside it do, which
@@ -34,17 +34,20 @@ internal sealed class KenneyAssetSource : IDisposable
         bool isFolder,
         IReadOnlyList<KenneyPack> packs,
         IReadOnlyList<IKenneyArchive> archives,
-        IReadOnlyList<string> warnings)
+        IReadOnlyList<string> warnings,
+        bool isStream = false)
     {
         SourcePath = sourcePath;
         IsFolder = isFolder;
+        IsStream = isStream;
         Packs = packs;
         _archives = archives;
         Warnings = warnings;
     }
 
     /// <summary>
-    /// Gets the path of the zip file or folder this source was opened from.
+    /// Gets the path of the zip file or folder this source was opened from, or, for a source opened
+    /// from a stream, the name the caller gave it.
     /// </summary>
     public string SourcePath { get; }
 
@@ -52,6 +55,12 @@ internal sealed class KenneyAssetSource : IDisposable
     /// Gets a value indicating whether the source is a folder rather than a zip file.
     /// </summary>
     public bool IsFolder { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the source was opened from a stream, in which case
+    /// <see cref="SourcePath"/> is a name rather than a file system path.
+    /// </summary>
+    public bool IsStream { get; }
 
     /// <summary>
     /// Gets the packs the source holds, in a stable order: one for a zip file or a single extracted
@@ -132,6 +141,111 @@ internal sealed class KenneyAssetSource : IDisposable
         {
             source = null;
             warning = $"The asset source '{zipFileOrFolderPath}' could not be opened: {exception.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Opens a zip bundle held in a stream and catalogs the pack it holds, exactly as
+    /// <see cref="Open"/> does for the same bundle opened by path.
+    /// </summary>
+    /// <param name="zipStream">
+    /// A readable stream holding the whole zip archive from its start. A stream that cannot seek - a
+    /// packaged app file, a network response - is copied into memory once, in full, and read from that
+    /// copy; a seekable stream is read in place for as long as the source is open.
+    /// </param>
+    /// <param name="sourceName">
+    /// The name the bundle is known by: its <see cref="SourcePath"/>, and the name every warning and
+    /// message about it uses. It is never treated as a file system path, and its last segment (after
+    /// the final <c>/</c> or <c>\</c>) stands in for the bundle's file name, which is what names a pack
+    /// that carries no licence file.
+    /// </param>
+    /// <param name="leaveOpen">
+    /// <see langword="true"/> to leave <paramref name="zipStream"/> open when the source is disposed or
+    /// fails to open; <see langword="false"/> to hand it over, so the source disposes it.
+    /// </param>
+    /// <returns>The open source, which is always one pack.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="zipStream"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="sourceName"/> is null, empty or whitespace, or when
+    /// <paramref name="zipStream"/> cannot be read.
+    /// </exception>
+    /// <exception cref="IOException">Thrown when the stream does not hold a readable zip archive.</exception>
+    /// <remarks>
+    /// Nothing here touches the file system. When <paramref name="leaveOpen"/> is
+    /// <see langword="false"/>, a stream that cannot seek is disposed as soon as it has been copied, and
+    /// a stream that does not hold a readable bundle is disposed before the exception is thrown.
+    /// </remarks>
+    public static KenneyAssetSource OpenZip(Stream zipStream, string sourceName, bool leaveOpen = false)
+    {
+        ArgumentNullException.ThrowIfNull(zipStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+
+        KenneyZipArchive archive = new(zipStream, sourceName, leaveOpen);
+        try
+        {
+            KenneyPack pack = KenneyPack.Create(archive, BundleFileName(sourceName));
+            return new KenneyAssetSource(
+                sourceName, isFolder: false, [pack], [archive], [.. pack.Warnings], isStream: true);
+        }
+        catch
+        {
+            archive.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to open a zip bundle held in a stream, turning a stream that does not hold a readable
+    /// bundle into a message instead of an exception.
+    /// </summary>
+    /// <param name="zipStream">A readable stream holding the whole zip archive from its start.</param>
+    /// <param name="sourceName">The name the bundle is known by; see <see cref="OpenZip(Stream, string, bool)"/>.</param>
+    /// <param name="leaveOpen">
+    /// <see langword="true"/> to leave <paramref name="zipStream"/> open when the source is disposed or
+    /// fails to open; <see langword="false"/> to hand it over, so the source disposes it.
+    /// </param>
+    /// <param name="source">The open source when the method returns <see langword="true"/>.</param>
+    /// <param name="error">Why the bundle could not be opened when the method returns <see langword="false"/>.</param>
+    /// <returns><see langword="true"/> when the source opened; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="zipStream"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="sourceName"/> is null, empty or whitespace, or when
+    /// <paramref name="zipStream"/> cannot be read.
+    /// </exception>
+    /// <remarks>
+    /// Unlike <see cref="TryOpen"/>, which is handed paths from configuration, this throws for a
+    /// missing stream or name: those are mistakes in the calling code, not a bundle that failed to
+    /// ship. Content that is not a zip archive, and a stream that fails while it is being read, are
+    /// what becomes the message.
+    /// </remarks>
+    public static bool TryOpenZip(
+        Stream zipStream,
+        string sourceName,
+        bool leaveOpen,
+        out KenneyAssetSource? source,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(zipStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+        if (!zipStream.CanRead)
+        {
+            throw new ArgumentException(
+                $"The stream given for the Kenney bundle '{sourceName}' cannot be read.", nameof(zipStream));
+        }
+
+        try
+        {
+            source = OpenZip(zipStream, sourceName, leaveOpen);
+            error = null;
+            return true;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or NotSupportedException
+                or ObjectDisposedException)
+        {
+            source = null;
+            error = $"The asset source '{sourceName}' could not be opened: {exception.Message}";
             return false;
         }
     }
@@ -258,6 +372,17 @@ internal sealed class KenneyAssetSource : IDisposable
         {
             return false;
         }
+    }
+
+    //The last segment of a stream source's name, whichever separator it uses, standing in for the
+    //  file name a zip opened by path would have; the whole name when it has no usable last segment
+    private static string BundleFileName(string sourceName)
+    {
+        string trimmed = sourceName.Trim().TrimEnd('/', '\\');
+        int separator = trimmed.LastIndexOfAny(['/', '\\']);
+        string fileName = separator < 0 ? trimmed : trimmed[(separator + 1)..];
+
+        return fileName.Length == 0 ? sourceName : fileName;
     }
 
     private static bool PathsMatch(string left, string right) =>

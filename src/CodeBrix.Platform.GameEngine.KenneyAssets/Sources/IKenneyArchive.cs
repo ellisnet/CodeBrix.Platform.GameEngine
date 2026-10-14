@@ -23,7 +23,8 @@ namespace CodeBrix.Platform.GameEngine.KenneyAssets.Sources;
 internal interface IKenneyArchive : IDisposable
 {
     /// <summary>
-    /// Gets the path of the zip file or folder this archive reads from.
+    /// Gets the path of the zip file or folder this archive reads from, or, for a zip read from a
+    /// stream, the name the caller gave it.
     /// </summary>
     string SourcePath { get; }
 

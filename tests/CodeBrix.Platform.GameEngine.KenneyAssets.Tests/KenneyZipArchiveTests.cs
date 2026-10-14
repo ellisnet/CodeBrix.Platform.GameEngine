@@ -8,8 +8,8 @@ using Xunit;
 namespace CodeBrix.Platform.GameEngine.KenneyAssets.Tests;
 
 /// <summary>
-/// Validates reading a real downloaded Kenney bundle: the entry listing, the reads, and the strict and
-/// loose forms of dependency resolution.
+/// Validates reading a real downloaded Kenney bundle: the entry listing, the reads, the strict and
+/// loose forms of dependency resolution, and reading the same bundle from a stream.
 /// </summary>
 public class KenneyZipArchiveTests
 {
@@ -228,5 +228,78 @@ public class KenneyZipArchiveTests
 
         //Assert
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Stream_constructor_lists_the_same_entries_as_the_path_constructor()
+    {
+        //Arrange
+        string path = TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName);
+        using KenneyZipArchive fromPath = new(path);
+        using FileStream file = File.OpenRead(path);
+
+        //Act
+        using KenneyZipArchive fromStream = new(file, "packaged/simulated_bundle.zip", leaveOpen: true);
+
+        //Assert
+        fromStream.SourcePath.Should().Be("packaged/simulated_bundle.zip");
+        fromStream.Entries.Select(e => (e.Path, e.SizeBytes))
+            .Should().Equal(fromPath.Entries.Select(e => (e.Path, e.SizeBytes)));
+        fromStream.ReadBytes("License.txt").Should().Equal(fromPath.ReadBytes("License.txt"));
+    }
+
+    [Fact]
+    public void Stream_constructor_buffers_a_stream_that_cannot_seek()
+    {
+        //Arrange
+        using KenneyZipArchive fromPath = new(TestFixtures.BundlePath(TestFixtures.PuzzlePackFileName));
+        using TestNonSeekableStream stream = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+
+        //Act
+        using KenneyZipArchive fromStream = new(stream, "puzzle", leaveOpen: true);
+
+        //Assert
+        fromStream.Entries.Select(e => e.Path).Should().Equal(fromPath.Entries.Select(e => e.Path));
+        fromStream.ReadBytes("PNG/Double/ballBlue.png")
+            .Should().Equal(fromPath.ReadBytes("PNG/Double/ballBlue.png"));
+        stream.IsDisposed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Stream_constructor_throws_for_bytes_that_are_not_a_zip_and_disposes_a_stream_it_was_given()
+    {
+        //Arrange
+        MemoryStream garbage = new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        MemoryStream empty = new();
+
+        //Act
+        Action notAZip = () => new KenneyZipArchive(garbage, "garbage.zip");
+        Action nothing = () => new KenneyZipArchive(empty, "empty.zip");
+
+        //Assert
+        notAZip.Should().Throw<IOException>().WithMessage("*garbage.zip*");
+        nothing.Should().Throw<IOException>().WithMessage("*empty.zip*");
+        garbage.CanRead.Should().BeFalse();
+        empty.CanRead.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Stream_constructor_validates_its_arguments()
+    {
+        //Arrange
+        using MemoryStream stream = new([1, 2, 3]);
+        MemoryStream closed = new([1, 2, 3]);
+        closed.Dispose();
+
+        //Act
+        Action nullStream = () => new KenneyZipArchive((Stream)null!, "name");
+        Action blankName = () => new KenneyZipArchive(stream, " ");
+        Action unreadable = () => new KenneyZipArchive(closed, "closed.zip");
+
+        //Assert
+        nullStream.Should().Throw<ArgumentNullException>();
+        blankName.Should().Throw<ArgumentException>();
+        unreadable.Should().Throw<ArgumentException>();
+        stream.CanRead.Should().BeTrue();
     }
 }

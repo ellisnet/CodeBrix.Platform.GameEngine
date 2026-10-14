@@ -315,6 +315,50 @@ public class EngineKenneyAssetsExtensionsTests : IDisposable
     }
 
     [Fact]
+    public void UseKenneyAssets_with_a_stream_registers_a_bundle_the_engine_loads_assets_from()
+    {
+        //Arrange
+        KenneyGameAssetProvider first = Register(TestFixtures.SimulatedBundleFileName);
+        TestNonSeekableStream stream = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+        TestNonSeekableStream again = TestNonSeekableStream.OverBundle(TestFixtures.PuzzlePackFileName);
+        string imageKey = $"kenney:{PuzzleSlug}/PNG/Double/ballBlue";
+
+        //Act
+        KenneyGameAssetProvider second = Engine.Instance.UseKenneyAssets(stream, "packaged/puzzle.zip");
+        KenneyGameAssetProvider third = Engine.Instance.UseKenneyAssets(again, "packaged/puzzle.zip");
+        Tilesheet image = _registry.LoadTilesheet(imageKey);
+
+        //Assert - added to the provider already serving, and not read twice under one name
+        second.Should().BeSameAs(first);
+        third.Should().BeSameAs(first);
+        _registry.Count.Should().Be(1);
+        first.Packs.Select(pack => pack.Slug).Should().Equal([SimulatedSlug, PuzzleSlug]);
+        first.Packs[1].SourcePath.Should().Be("packaged/puzzle.zip");
+        again.WasRead.Should().BeFalse();
+        image[0, 0].SkBitmap!.Width.Should().Be(44);
+    }
+
+    [Fact]
+    public void UseKenneyAssets_with_a_stream_creates_the_provider_when_there_is_none()
+    {
+        //Arrange
+        using FileStream file = File.OpenRead(TestFixtures.BundlePath(TestFixtures.SimulatedBundleFileName));
+
+        //Act
+        KenneyGameAssetProvider provider = Engine.Instance.UseKenneyAssets(file, "simulated", leaveOpen: true);
+        Action nullStream = () => Engine.Instance.UseKenneyAssets((Stream)null!, "name");
+        Action blankName = () => Engine.Instance.UseKenneyAssets(file, " ");
+
+        //Assert
+        _registry.Providers.Should().ContainSingle().Which.Should().BeSameAs(provider);
+        provider.ProviderId.Should().Be(KenneyGameAssetProvider.DefaultProviderId);
+        _registry.TryDescribe($"kenney:{SimulatedSlug}/Audio/radar2", out _).Should().BeTrue();
+        nullStream.Should().Throw<ArgumentNullException>();
+        blankName.Should().Throw<ArgumentException>();
+        file.CanRead.Should().BeTrue();
+    }
+
+    [Fact]
     public void An_identifier_of_its_own_gives_a_second_set_of_assets_a_second_provider()
     {
         //Arrange

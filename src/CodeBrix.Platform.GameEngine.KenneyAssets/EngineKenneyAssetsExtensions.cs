@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using CodeBrix.Platform.GameEngine.Assets.Providers;
 using Microsoft.Extensions.Logging;
 
@@ -127,6 +128,84 @@ public static class EngineKenneyAssetsExtensions
         {
             provider = existing;
             warnings = provider.AddSources(options with { ProviderId = provider.ProviderId });
+        }
+
+        LogRegistration(provider, warnings);
+
+        return provider;
+    }
+
+    /// <summary>
+    /// Registers a Kenney bundle (.zip) held in a stream with the engine and returns the provider that
+    /// serves it - the way a head that can only open its packaged files as streams feeds the engine
+    /// packs, without copying them to disk first.
+    /// </summary>
+    /// <param name="engine">The engine to register the assets with.</param>
+    /// <param name="zipStream">
+    /// A readable stream holding the whole zip archive from its start. A stream that cannot seek is
+    /// copied into memory once, in full; a seekable stream is read in place while the provider is open.
+    /// </param>
+    /// <param name="sourceName">
+    /// The name the bundle is known by - a packaged-file path or a pack name of the caller's choosing -
+    /// which is the source's identity in pack summaries, warnings and repeat calls.
+    /// </param>
+    /// <param name="leaveOpen">
+    /// <see langword="true"/> to leave <paramref name="zipStream"/> open whatever happens;
+    /// <see langword="false"/> to hand it over, so the provider disposes it.
+    /// </param>
+    /// <returns>
+    /// The registered provider, which is the one already serving
+    /// <see cref="KenneyGameAssetProvider.DefaultProviderId"/> when there is one.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="engine"/> or <paramref name="zipStream"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="sourceName"/> is null, empty or whitespace, or when
+    /// <paramref name="zipStream"/> cannot be read.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when another kind of asset provider is already registered under that identifier.
+    /// </exception>
+    /// <remarks>
+    /// The stream twin of <see cref="UseKenneyAssets(Engine, string[])"/>, with the same defaults, and
+    /// the same as calling <see cref="KenneyGameAssetProvider.AddSource(Stream, string, bool)"/> on the
+    /// provider it returns: a stream that does not hold a readable bundle is a warning written to the
+    /// engine log and kept in <see cref="KenneyGameAssetProvider.Warnings"/>, and a name the provider
+    /// already holds is not read again. Call it once per packaged bundle.
+    /// </remarks>
+    public static KenneyGameAssetProvider UseKenneyAssets(
+        this Engine engine, Stream zipStream, string sourceName, bool leaveOpen = false)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(zipStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+
+        GameAssetProviderRegistry registry = engine.Managers.AssetProviders;
+        KenneyGameAssetProvider? existing = FindExisting(registry, KenneyGameAssetProvider.DefaultProviderId);
+        KenneyGameAssetProvider provider;
+        IReadOnlyList<string> warnings;
+
+        if (existing is null)
+        {
+            provider = new KenneyGameAssetProvider();
+
+            try
+            {
+                warnings = provider.AddSource(zipStream, sourceName, leaveOpen);
+                registry.Register(provider);
+            }
+            catch
+            {
+                //Nothing is registered, so the archive this provider opened has to be closed again
+                provider.Dispose();
+                throw;
+            }
+        }
+        else
+        {
+            provider = existing;
+            warnings = provider.AddSource(zipStream, sourceName, leaveOpen);
         }
 
         LogRegistration(provider, warnings);
